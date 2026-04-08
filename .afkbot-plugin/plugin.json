@@ -1,0 +1,88 @@
+{
+  "plugin_id": "afkbotui",
+  "name": "AFKBOT UI",
+  "version": "0.2.0",
+  "afkbot_version": ">=1.0.7,<2.0.0",
+  "kind": "embedded",
+  "entrypoint": "afkbot_plugin_afkbotui.plugin:register",
+  "description": "Unified AFKBOT workspace for automations, Task Flow, and profile subagents.",
+  "default_config": {
+    "poll_interval_sec": 5,
+    "default_profile_id": "default",
+    "task_flow_poll_interval_sec": 5,
+    "task_flow_board_limit_per_column": 20,
+    "task_flow_actor_type": "human",
+    "task_flow_actor_ref": "web-user"
+  },
+  "config_schema": {
+    "fields": {
+      "poll_interval_sec": {
+        "type": "integer",
+        "title": "Poll interval",
+        "description": "How often the active workspace refreshes when it is idle.",
+        "minimum": 5,
+        "maximum": 300
+      },
+      "default_profile_id": {
+        "type": "string",
+        "title": "Default profile",
+        "description": "Profile id selected by default when the UI opens.",
+        "min_length": 1,
+        "max_length": 120
+      },
+      "task_flow_poll_interval_sec": {
+        "type": "integer",
+        "title": "Task Flow poll interval",
+        "description": "How often the Task Flow board refreshes while it is idle.",
+        "minimum": 1,
+        "maximum": 300
+      },
+      "task_flow_board_limit_per_column": {
+        "type": "integer",
+        "title": "Task Flow board limit",
+        "description": "Maximum number of Task Flow items fetched per status column.",
+        "minimum": 1,
+        "maximum": 200
+      },
+      "task_flow_actor_type": {
+        "type": "string",
+        "title": "Task Flow actor type",
+        "description": "Actor type used for Task Flow and operator-side actions.",
+        "choices": [
+          "human",
+          "ai_profile"
+        ]
+      },
+      "task_flow_actor_ref": {
+        "type": "string",
+        "title": "Task Flow actor ref",
+        "description": "Actor reference attached to Task Flow comments and review actions.",
+        "min_length": 1,
+        "max_length": 120
+      }
+    }
+  },
+  "permissions": {
+    "database": "read_write",
+    "taskflow": "read_write",
+    "outbound_http": false,
+    "data_dir_write": false
+  },
+  "capabilities": {
+    "api_router": true,
+    "static_web": true,
+    "tools": false,
+    "skills": false,
+    "apps": false,
+    "lifecycle": false
+  },
+  "mounts": {
+    "api_prefix": "/v1/plugins/afkbotui",
+    "web_prefix": "/plugins/afkbotui"
+  },
+  "paths": {
+    "python_root": "python",
+    "web_root": "web/dist",
+    "skills_root": null
+  }
+}
