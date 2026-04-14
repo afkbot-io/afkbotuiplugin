@@ -8,6 +8,120 @@ const DEFAULT_FILTERS = {
   includeDeleted: false,
 };
 
+const WEBHOOK_SECRET_STORAGE_KEY = "afkbotui.webhook-secrets.v1";
+const WEBHOOK_SECRET_RETENTION_MS = 1000 * 60 * 60 * 24 * 30;
+
+function getWebhookSecretStorage() {
+  try {
+    return window.localStorage;
+  } catch (_error) {
+    return window.sessionStorage;
+  }
+}
+
+function isFreshWebhookSecret(entry) {
+  const savedAt = Date.parse(entry?.saved_at || "");
+  if (Number.isNaN(savedAt)) {
+    return true;
+  }
+  return Date.now() - savedAt <= WEBHOOK_SECRET_RETENTION_MS;
+}
+
+function readWebhookSecretStore() {
+  try {
+    const storage = getWebhookSecretStorage();
+    const raw = storage.getItem(WEBHOOK_SECRET_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+    const filtered = Object.fromEntries(
+      Object.entries(parsed).filter(([, value]) => isFreshWebhookSecret(value))
+    );
+    if (Object.keys(filtered).length !== Object.keys(parsed).length) {
+      storage.setItem(WEBHOOK_SECRET_STORAGE_KEY, JSON.stringify(filtered));
+    }
+    return filtered;
+  } catch (_error) {
+    return {};
+  }
+}
+
+function writeWebhookSecretStore(store) {
+  try {
+    getWebhookSecretStorage().setItem(WEBHOOK_SECRET_STORAGE_KEY, JSON.stringify(store));
+  } catch (_error) {
+    // Ignore storage failures and keep the UI functional.
+  }
+}
+
+function webhookSecretKey(profileId, automationId) {
+  return `${String(profileId || "").trim()}:${String(automationId || "").trim()}`;
+}
+
+function rememberWebhookSecret(automation) {
+  if (
+    !automation
+    || automation.trigger_type !== "webhook"
+    || !automation.profile_id
+    || !automation.id
+    || !automation.webhook?.webhook_token
+  ) {
+    return automation;
+  }
+  const store = readWebhookSecretStore();
+  store[webhookSecretKey(automation.profile_id, automation.id)] = {
+    webhook_token: automation.webhook.webhook_token,
+    webhook_path: automation.webhook.webhook_path || "",
+    webhook_url: automation.webhook.webhook_url || "",
+    webhook_token_masked: automation.webhook.webhook_token_masked || "",
+    saved_at: new Date().toISOString(),
+  };
+  writeWebhookSecretStore(store);
+  return automation;
+}
+
+function forgetWebhookSecret(profileId, automationId) {
+  if (!profileId || !automationId) {
+    return;
+  }
+  const key = webhookSecretKey(profileId, automationId);
+  const store = readWebhookSecretStore();
+  if (!(key in store)) {
+    return;
+  }
+  delete store[key];
+  writeWebhookSecretStore(store);
+}
+
+function mergeWebhookSecret(automation) {
+  if (!automation || automation.trigger_type !== "webhook" || !automation.webhook) {
+    return automation;
+  }
+  const store = readWebhookSecretStore();
+  const cached = store[webhookSecretKey(automation.profile_id, automation.id)];
+  if (!cached?.webhook_token) {
+    return automation;
+  }
+  return {
+    ...automation,
+    webhook: {
+      ...automation.webhook,
+      webhook_token: automation.webhook.webhook_token || cached.webhook_token,
+      webhook_path: automation.webhook.webhook_path || cached.webhook_path || null,
+      webhook_url: automation.webhook.webhook_url || cached.webhook_url || null,
+      webhook_token_masked: automation.webhook.webhook_token_masked || cached.webhook_token_masked || "",
+    },
+  };
+}
+
+function hasVisibleWebhookSecret(webhook) {
+  return Boolean(webhook?.webhook_token || webhook?.webhook_path || webhook?.webhook_url);
+}
+
 export function createAutomationsController({
   api,
   root,
@@ -25,6 +139,7 @@ export function createAutomationsController({
       mode: "view",
       loading: false,
       saving: false,
+      rotatingToken: false,
       confirmDelete: false,
       error: "",
       automation: null,
@@ -94,6 +209,10 @@ export function createAutomationsController({
       state.panel.error = "";
       state.panel.confirmDelete = true;
       return render();
+    }
+    if (action === "rotate-webhook-token" && state.panel.automation?.trigger_type === "webhook") {
+      await rotateWebhookToken();
+      return;
     }
     if (action === "close-delete-modal") {
       state.panel.confirmDelete = false;
@@ -246,7 +365,7 @@ export function createAutomationsController({
       if (requestId !== listRequestId) {
         return;
       }
-      state.items = payload.automations || [];
+      state.items = (payload.automations || []).map(mergeWebhookSecret);
       state.summary = payload.summary || state.summary;
       state.filteredCount = payload.filtered_count || 0;
       state.loading = false;
@@ -293,11 +412,12 @@ export function createAutomationsController({
       if (requestId !== detailRequestId) {
         return;
       }
+      const automation = mergeWebhookSecret(payload.automation);
       state.panel = buildPanelState({
         open: true,
         mode,
-        automation: payload.automation,
-        draft: mode === "edit" ? buildDraftFromItem(payload.automation) : null,
+        automation,
+        draft: mode === "edit" ? buildDraftFromItem(automation) : null,
         createOpen: state.panel.createOpen,
         createSaving: state.panel.createSaving,
         createError: state.panel.createError,
@@ -317,7 +437,12 @@ export function createAutomationsController({
   function readDraft(form, options = {}) {
     const automationId = options.automationId ?? state.panel.automation?.id ?? null;
     const formData = new FormData(form);
-    const triggerType = String(formData.get("trigger_type") || "cron");
+    const fallbackTriggerType = options.triggerType
+      ?? state.panel.automation?.trigger_type
+      ?? state.panel.draft?.trigger_type
+      ?? state.panel.createDraft?.trigger_type
+      ?? "cron";
+    const triggerType = String(formData.get("trigger_type") || fallbackTriggerType);
     return {
       id: automationId,
       profile_id: getProfileId(),
@@ -375,10 +500,10 @@ export function createAutomationsController({
             timezone_name: draft.timezone_name,
           } : {})
         });
-        automation = created.automation;
+        automation = rememberWebhookSecret(created.automation);
         if (draft.status === "paused") {
           const paused = await api.updateAutomation(getProfileId(), automation.id, { status: "paused" });
-          automation = paused.automation;
+          automation = mergeWebhookSecret(paused.automation);
         }
         notify("Automation created.", "success");
       } else {
@@ -391,14 +516,14 @@ export function createAutomationsController({
             timezone_name: draft.timezone_name,
           } : {})
         });
-        automation = updated.automation;
+        automation = mergeWebhookSecret(updated.automation);
         notify("Automation updated.", "success");
       }
       await refresh({ silent: true });
       state.panel = buildPanelState({
         open: true,
         mode: "view",
-        automation,
+        automation: mergeWebhookSecret(automation),
       });
       render();
     } catch (error) {
@@ -418,11 +543,13 @@ export function createAutomationsController({
     if (!state.panel.automation) {
       return;
     }
+    const { id, profile_id: profileId } = state.panel.automation;
     state.panel.saving = true;
     state.panel.error = "";
     render();
     try {
-      await api.deleteAutomation(getProfileId(), state.panel.automation.id);
+      await api.deleteAutomation(getProfileId(), id);
+      forgetWebhookSecret(profileId, id);
       notify("Automation deleted.", "success");
       closePanel();
       await refresh({ silent: true });
@@ -439,6 +566,35 @@ export function createAutomationsController({
       notify("Copied to clipboard.", "success");
     } catch (_error) {
       notify("Clipboard write failed.", "danger");
+    }
+  }
+
+  async function rotateWebhookToken() {
+    if (!state.panel.automation || state.panel.automation.trigger_type !== "webhook") {
+      return;
+    }
+    state.panel.saving = true;
+    state.panel.rotatingToken = true;
+    state.panel.error = "";
+    renderPanel();
+    try {
+      const updated = await api.updateAutomation(getProfileId(), state.panel.automation.id, {
+        rotate_webhook_token: true,
+      });
+      const automation = rememberWebhookSecret(updated.automation);
+      state.panel = buildPanelState({
+        open: true,
+        mode: "view",
+        automation: mergeWebhookSecret(automation),
+      });
+      await refresh({ silent: true });
+      render();
+      notify("Webhook token rotated. Copy the new URL and token now.", "success");
+    } catch (error) {
+      state.panel.saving = false;
+      state.panel.rotatingToken = false;
+      state.panel.error = normalizeError(error);
+      renderPanel();
     }
   }
 
@@ -592,7 +748,7 @@ export function createAutomationsController({
             ${isCron ? `
               <label class="field"><span class="field__label">Cron</span><input class="input" name="cron_expr" type="text" maxlength="64" value="${escapeAttribute(draft.cron_expr)}" placeholder="0 9 * * *" /></label>
               <label class="field"><span class="field__label">Timezone</span><input class="input" name="timezone_name" type="text" maxlength="64" value="${escapeAttribute(draft.timezone_name)}" placeholder="Europe/Moscow…" /></label>
-            ` : '<div class="field field--full"><span class="field__label">Webhook</span><div class="support-note">Token and endpoint are generated after creation and stay read-only here.</div></div>'}
+            ` : '<div class="field field--full"><span class="field__label">Webhook</span><div class="support-note">Webhook trigger stays fixed. URL, path, and token are revealed after create or token rotation and cached in this browser for later viewing.</div></div>'}
           </div>
           <div class="button-row">
             <button class="button button--primary" type="submit" ${state.panel.saving ? "disabled" : ""}>${state.panel.saving ? "Saving…" : "Save Changes"}</button>
@@ -631,7 +787,7 @@ export function createAutomationsController({
             ${isCron ? `
               <label class="field"><span class="field__label">Cron</span><input class="input" name="cron_expr" type="text" maxlength="64" value="${escapeAttribute(draft.cron_expr)}" placeholder="0 9 * * *" /></label>
               <label class="field"><span class="field__label">Timezone</span><input class="input" name="timezone_name" type="text" maxlength="64" value="${escapeAttribute(draft.timezone_name)}" placeholder="Europe/Moscow…" /></label>
-            ` : '<div class="field field--full"><span class="field__label">Webhook</span><div class="support-note">Token and endpoint are generated after creation and stay read-only here.</div></div>'}
+            ` : '<div class="field field--full"><span class="field__label">Webhook</span><div class="support-note">After creation the UI opens the issued webhook URL, path, and token in the inspector and keeps them cached in this browser.</div></div>'}
           </div>
           <div class="button-row">
             <button class="button button--primary" type="submit" ${state.panel.createSaving ? "disabled" : ""}>${state.panel.createSaving ? "Saving…" : "Create Automation"}</button>
@@ -674,6 +830,8 @@ export function createAutomationsController({
       return "";
     }
     const runtime = describeRuntime(automation);
+    const webhook = automation.webhook;
+    const showWebhookSecretNotice = automation.trigger_type === "webhook" && !hasVisibleWebhookSecret(webhook);
     return `
       <div class="task-pane"><div class="task-pane__shell">
         <div class="task-pane__header">
@@ -682,20 +840,26 @@ export function createAutomationsController({
         </div>
         ${state.panel.error ? `<div class="inline-alert inline-alert--danger">${escapeHtml(state.panel.error)}</div>` : ""}
         <section class="panel-section"><div class="panel-section__header"><div class="panel-section__title">Prompt</div></div><div class="task-pane__description-copy">${escapeHtml(automation.prompt)}</div></section>
-        <section class="panel-section"><div class="panel-section__header"><div class="panel-section__title">${automation.trigger_type === "cron" ? "Schedule" : "Webhook diagnostics"}</div></div><div class="detail-grid">${automation.trigger_type === "cron" ? `
+        <section class="panel-section"><div class="panel-section__header"><div class="panel-section__title">${automation.trigger_type === "cron" ? "Schedule" : "Webhook diagnostics"}</div></div>${showWebhookSecretNotice ? '<div class="support-note">This automation does not have a recoverable plaintext webhook token anymore. Issue a new token to reveal and copy a fresh webhook URL, path, and token in this UI.</div>' : ""}<div class="detail-grid">${automation.trigger_type === "cron" ? `
           ${renderDetail("Cron", automation.cron?.cron_expr || "Unavailable")}
           ${renderDetail("Timezone", automation.cron?.timezone || "Unavailable")}
           ${renderDetail("Next run", formatDateTime(automation.cron?.next_run_at))}
           ${renderDetail("Last run", formatDateTime(automation.cron?.last_run_at))}
         ` : `
-          ${renderCopyDetail("Masked token", automation.webhook?.webhook_token_masked || "Unavailable", automation.webhook?.webhook_token_masked || "")}
-          ${renderCopyDetail("Webhook path", automation.webhook?.webhook_path || "Unavailable", automation.webhook?.webhook_path || "")}
-          ${renderCopyDetail("Webhook URL", automation.webhook?.webhook_url || "Unavailable", automation.webhook?.webhook_url || "")}
-          ${renderDetail("Last status", automation.webhook?.last_execution_status || "idle")}
-          ${renderDetail("Last received", formatDateTime(automation.webhook?.last_received_at))}
-          ${renderDetail("Last session", automation.webhook?.last_session_id || "Unavailable")}
+          ${renderCopyDetail("Webhook token", webhook?.webhook_token || "Unavailable", webhook?.webhook_token || "")}
+          ${renderCopyDetail("Masked token", webhook?.webhook_token_masked || "Unavailable", webhook?.webhook_token_masked || "")}
+          ${renderCopyDetail("Webhook path", webhook?.webhook_path || "Unavailable", webhook?.webhook_path || "")}
+          ${renderCopyDetail("Webhook URL", webhook?.webhook_url || "Unavailable", webhook?.webhook_url || "")}
+          ${renderDetail("Last status", webhook?.last_execution_status || "idle")}
+          ${renderDetail("Last received", formatDateTime(webhook?.last_received_at))}
+          ${renderDetail("Last started", formatDateTime(webhook?.last_started_at))}
+          ${renderDetail("Last succeeded", formatDateTime(webhook?.last_succeeded_at))}
+          ${renderDetail("Last failed", formatDateTime(webhook?.last_failed_at))}
+          ${renderDetail("Last session", webhook?.last_session_id || "Unavailable")}
+          ${renderCopyDetail("Resume command", webhook?.chat_resume_command || "Unavailable", webhook?.chat_resume_command || "")}
+          ${renderDetail("Last error", webhook?.last_error || "No errors")}
         `}</div></section>
-        <div class="button-row">${automation.status !== "deleted" ? '<button class="button button--primary" type="button" data-automation-action="panel-edit">Edit</button><button class="button button--danger" type="button" data-automation-action="delete">Delete</button>' : ""}</div>
+        <div class="button-row">${automation.status !== "deleted" ? `${automation.trigger_type === "webhook" ? `<button class="button button--ghost" type="button" data-automation-action="rotate-webhook-token" ${state.panel.saving ? "disabled" : ""}>${state.panel.rotatingToken ? "Issuing…" : "Issue New Token"}</button>` : ""}<button class="button button--primary" type="button" data-automation-action="panel-edit">Edit</button><button class="button button--danger" type="button" data-automation-action="delete">Delete</button>` : ""}</div>
       </div></div>
     `;
   }
@@ -705,7 +869,8 @@ export function createAutomationsController({
   }
 
   function renderCopyDetail(label, displayValue, rawValue) {
-    return `<div class="detail-item"><p class="detail-item__label">${escapeHtml(label)}</p><div class="copy-row"><p class="detail-item__value">${escapeHtml(displayValue)}</p><button class="button button--ghost button--compact" type="button" data-automation-action="copy" data-copy-value="${escapeAttribute(rawValue)}">Copy</button></div></div>`;
+    const normalizedValue = String(rawValue || "").trim();
+    return `<div class="detail-item"><p class="detail-item__label">${escapeHtml(label)}</p><div class="copy-row"><p class="detail-item__value">${escapeHtml(displayValue)}</p><button class="button button--ghost button--compact" type="button" data-automation-action="copy" data-copy-value="${escapeAttribute(normalizedValue)}" ${normalizedValue ? "" : "disabled"}>Copy</button></div></div>`;
   }
 
   return {

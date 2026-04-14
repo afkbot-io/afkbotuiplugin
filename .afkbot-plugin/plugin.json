@@ -5,7 +5,7 @@
   "afkbot_version": ">=1.0.7,<2.0.0",
   "kind": "embedded",
   "entrypoint": "afkbot_plugin_afkbotui.plugin:register",
-  "description": "Unified AFKBOT workspace for automations, Task Flow, and profile subagents.",
+  "description": "Unified AFKBOT workspace for automations, Task Flow, and profile-local subagents, skills, and bootstrap files.",
   "default_config": {
     "poll_interval_sec": 5,
     "default_profile_id": "default",

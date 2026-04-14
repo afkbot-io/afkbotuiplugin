@@ -2,21 +2,33 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
+from functools import lru_cache
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from sqlalchemy import func, select
 
+from afkbot_plugin_afkbotui.bootstrap_files import get_profile_bootstrap_files_service
+from afkbot.db.bootstrap import create_schema
+from afkbot.db.engine import create_engine
+from afkbot.db.session import create_session_factory, session_scope
+from afkbot.models.task_event import TaskEvent
 from afkbot.services.automations import AutomationsServiceError, get_automations_service
 from afkbot.services.automations.contracts import AutomationMetadata
 from afkbot.services.plugins.contracts import PluginServiceError
 from afkbot.services.plugins.runtime_registry import PluginRuntimeRegistry
 from afkbot.services.policy import ProfileFilesLockedError
 from afkbot.services.profile_runtime import ProfileServiceError, get_profile_service
+from afkbot.services.skills import get_profile_skill_service
 from afkbot.services.subagents.profile_service import get_profile_subagent_service
 from afkbot.services.task_flow import TaskFlowServiceError, get_task_flow_service
 from afkbot.settings import get_settings
+
+_TASK_COMMENT_PREVIEW_SCHEMA_READY = False
+_TASK_COMMENT_PREVIEW_SCHEMA_LOCK: asyncio.Lock | None = None
 
 
 class UiPluginConfig(BaseModel):
@@ -71,6 +83,7 @@ class AutomationPatchPayload(BaseModel):
     status: Literal["active", "paused"] | None = None
     cron_expr: str | None = Field(default=None, max_length=64)
     timezone_name: str | None = Field(default=None, max_length=64)
+    rotate_webhook_token: bool | None = None
 
 
 class TaskFlowCreatePayload(BaseModel):
@@ -176,6 +189,12 @@ class TaskBulkUpdatePayload(BaseModel):
     comment_type: str = Field(default="note", min_length=1, max_length=64)
 
 
+class TaskBulkDeletePayload(BaseModel):
+    """Request body for bulk task deletion from the Task Flow board."""
+
+    task_ids: tuple[str, ...] = Field(min_length=1)
+
+
 class SubagentCreatePayload(BaseModel):
     """Request body for profile subagent creation."""
 
@@ -192,6 +211,42 @@ class SubagentPatchPayload(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=128)
     markdown: str | None = Field(default=None, min_length=1, max_length=200000)
+
+
+class SkillCreatePayload(BaseModel):
+    """Request body for profile skill creation."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    name: str = Field(min_length=1, max_length=128)
+    markdown: str = Field(min_length=1, max_length=200000)
+
+
+class SkillPatchPayload(BaseModel):
+    """Request body for profile skill updates."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    markdown: str | None = Field(default=None, min_length=1, max_length=200000)
+
+
+class BootstrapFileCreatePayload(BaseModel):
+    """Request body for profile bootstrap file creation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    file_name: str = Field(min_length=1, max_length=128)
+    content: str = Field(default="", max_length=200000)
+
+
+class BootstrapFilePatchPayload(BaseModel):
+    """Request body for profile bootstrap file updates."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    file_name: str | None = Field(default=None, min_length=1, max_length=128)
+    content: str | None = Field(default=None, max_length=200000)
 
 
 def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRouter:
@@ -362,7 +417,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 status=payload.status,
                 cron_expr=payload.cron_expr,
                 timezone_name=payload.timezone_name,
-                rotate_webhook_token=False,
+                rotate_webhook_token=payload.rotate_webhook_token,
             )
         except AutomationsServiceError as exc:
             raise _automation_http_error(exc) from exc
@@ -444,7 +499,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             )
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
-        return {"board": payload.model_dump(mode="json")}
+        return {"board": await _serialize_board_payload(payload.model_dump(mode="json"))}
 
     @router.post("/task-flow/tasks")
     async def task_flow_task_create(
@@ -587,6 +642,38 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             "updated_count": len(updated_tasks),
             "error_count": len(errors),
             "updated_tasks": updated_tasks,
+            "errors": errors,
+        }
+
+    @router.post("/task-flow/tasks/bulk-delete")
+    async def task_flow_task_bulk_delete(
+        payload: TaskBulkDeletePayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_task_flow_service(get_settings())
+        deleted_task_ids: list[str] = []
+        errors: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for task_id in payload.task_ids:
+            normalized_task_id = str(task_id).strip()
+            if not normalized_task_id or normalized_task_id in seen:
+                continue
+            seen.add(normalized_task_id)
+            try:
+                await service.delete_task(profile_id=profile_id, task_id=normalized_task_id)
+                deleted_task_ids.append(normalized_task_id)
+            except TaskFlowServiceError as exc:
+                errors.append(
+                    {
+                        "task_id": normalized_task_id,
+                        "error_code": exc.error_code,
+                        "reason": exc.reason,
+                    }
+                )
+        return {
+            "deleted_count": len(deleted_task_ids),
+            "error_count": len(errors),
+            "deleted_task_ids": deleted_task_ids,
             "errors": errors,
         }
 
@@ -809,7 +896,273 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             raise _subagent_http_error(exc) from exc
         return {"deleted": True, "subagent": item.model_dump(mode="json", exclude_none=True)}
 
+    @router.get("/skills")
+    async def list_skills(profile_id: str = "default", q: str = "") -> dict[str, object]:
+        service = get_profile_skill_service(get_settings())
+        try:
+            items = await service.list(profile_id=profile_id, scope="profile", include_unavailable=True)
+        except ValueError as exc:
+            raise _skill_http_error(exc) from exc
+        query = q.strip().lower()
+        if query:
+            items = [
+                item
+                for item in items
+                if query in item.name.lower()
+                or query in item.summary.lower()
+                or query in item.path.lower()
+                or any(query in alias.lower() for alias in item.aliases)
+                or any(query in requirement.lower() for requirement in item.missing_requirements)
+                or any(query in error.lower() for error in item.manifest_errors)
+                or query in item.execution_mode.lower()
+            ]
+        items.sort(key=lambda item: item.name)
+        return {
+            "skills": [item.model_dump(mode="json", exclude_none=True) for item in items],
+            "filtered_count": len(items),
+        }
+
+    @router.get("/skills/{name}")
+    async def get_skill(name: str, profile_id: str = "default") -> dict[str, object]:
+        service = get_profile_skill_service(get_settings())
+        try:
+            payload = await service.get(profile_id=profile_id, name=name, scope="profile")
+        except (FileNotFoundError, ValueError) as exc:
+            raise _skill_http_error(exc) from exc
+        return {"skill": payload.model_dump(mode="json", exclude_none=True)}
+
+    @router.post("/skills")
+    async def create_skill(
+        payload: SkillCreatePayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_profile_skill_service(get_settings())
+        try:
+            await service.get(profile_id=profile_id, name=payload.name, scope="profile")
+        except FileNotFoundError:
+            pass
+        except ValueError as exc:
+            raise _skill_http_error(exc) from exc
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error_code": "profile_skill_exists",
+                    "reason": f"Profile skill already exists: {payload.name}",
+                },
+            )
+        try:
+            item = await service.upsert(profile_id=profile_id, name=payload.name, content=payload.markdown)
+        except (ProfileFilesLockedError, ValueError) as exc:
+            raise _skill_http_error(exc) from exc
+        return {"skill": item.model_dump(mode="json", exclude_none=True)}
+
+    @router.patch("/skills/{name}")
+    async def patch_skill(
+        name: str,
+        payload: SkillPatchPayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_profile_skill_service(get_settings())
+        try:
+            current = await service.get(profile_id=profile_id, name=name, scope="profile")
+        except (FileNotFoundError, ValueError) as exc:
+            raise _skill_http_error(exc) from exc
+        next_name = payload.name or current.name
+        next_markdown = payload.markdown or current.content or ""
+        try:
+            item = await service.upsert(profile_id=profile_id, name=next_name, content=next_markdown)
+            if item.name != current.name:
+                await service.delete(profile_id=profile_id, name=current.name)
+        except (ProfileFilesLockedError, ValueError) as exc:
+            raise _skill_http_error(exc) from exc
+        return {"skill": item.model_dump(mode="json", exclude_none=True)}
+
+    @router.delete("/skills/{name}")
+    async def delete_skill(name: str, profile_id: str = "default") -> dict[str, object]:
+        service = get_profile_skill_service(get_settings())
+        try:
+            item = await service.delete(profile_id=profile_id, name=name)
+        except (FileNotFoundError, ProfileFilesLockedError, ValueError) as exc:
+            raise _skill_http_error(exc) from exc
+        return {"deleted": True, "skill": item.model_dump(mode="json", exclude_none=True)}
+
+    @router.get("/bootstrap-files")
+    async def list_bootstrap_files(profile_id: str = "default", q: str = "") -> dict[str, object]:
+        service = get_profile_bootstrap_files_service(get_settings())
+        try:
+            items = await service.list(profile_id=profile_id)
+        except (ProfileServiceError, ValueError) as exc:
+            raise _bootstrap_file_http_error(exc) from exc
+        query = q.strip().lower()
+        if query:
+            items = [
+                item
+                for item in items
+                if query in item.file_name.lower()
+                or query in item.summary.lower()
+                or query in item.path.lower()
+            ]
+        return {
+            "bootstrap_files": [item.model_dump(mode="json", exclude_none=True) for item in items],
+            "filtered_count": len(items),
+        }
+
+    @router.get("/bootstrap-files/{file_name}")
+    async def get_bootstrap_file(file_name: str, profile_id: str = "default") -> dict[str, object]:
+        service = get_profile_bootstrap_files_service(get_settings())
+        try:
+            payload = await service.get(profile_id=profile_id, file_name=file_name)
+        except (FileNotFoundError, ProfileServiceError, ValueError) as exc:
+            raise _bootstrap_file_http_error(exc) from exc
+        return {"bootstrap_file": payload.model_dump(mode="json", exclude_none=True)}
+
+    @router.post("/bootstrap-files")
+    async def create_bootstrap_file(
+        payload: BootstrapFileCreatePayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_profile_bootstrap_files_service(get_settings())
+        try:
+            item = await service.create(
+                profile_id=profile_id,
+                file_name=payload.file_name,
+                content=payload.content,
+            )
+        except (FileExistsError, ProfileFilesLockedError, ProfileServiceError, ValueError) as exc:
+            raise _bootstrap_file_http_error(exc) from exc
+        return {"bootstrap_file": item.model_dump(mode="json", exclude_none=True)}
+
+    @router.patch("/bootstrap-files/{file_name}")
+    async def patch_bootstrap_file(
+        file_name: str,
+        payload: BootstrapFilePatchPayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_profile_bootstrap_files_service(get_settings())
+        try:
+            item = await service.update(
+                profile_id=profile_id,
+                current_name=file_name,
+                next_name=payload.file_name,
+                content=payload.content,
+            )
+        except (FileExistsError, FileNotFoundError, ProfileFilesLockedError, ProfileServiceError, ValueError) as exc:
+            raise _bootstrap_file_http_error(exc) from exc
+        return {"bootstrap_file": item.model_dump(mode="json", exclude_none=True)}
+
+    @router.delete("/bootstrap-files/{file_name}")
+    async def delete_bootstrap_file(file_name: str, profile_id: str = "default") -> dict[str, object]:
+        service = get_profile_bootstrap_files_service(get_settings())
+        try:
+            item = await service.delete(profile_id=profile_id, file_name=file_name)
+        except (FileNotFoundError, ProfileFilesLockedError, ProfileServiceError, ValueError) as exc:
+            raise _bootstrap_file_http_error(exc) from exc
+        return {"deleted": True, "bootstrap_file": item.model_dump(mode="json", exclude_none=True)}
+
     return router
+
+
+async def _serialize_board_payload(payload: dict[str, object]) -> dict[str, object]:
+    """Enrich board preview tasks with the latest comment metadata."""
+
+    columns = payload.get("columns")
+    if not isinstance(columns, list):
+        return payload
+    task_ids: list[str] = []
+    for column in columns:
+        if not isinstance(column, dict):
+            continue
+        for task in column.get("tasks", []):
+            if isinstance(task, dict):
+                task_id = str(task.get("id") or "").strip()
+                if task_id:
+                    task_ids.append(task_id)
+    previews = await _load_latest_task_comment_previews(task_ids)
+    if not previews:
+        return payload
+    for column in columns:
+        if not isinstance(column, dict):
+            continue
+        for task in column.get("tasks", []):
+            if not isinstance(task, dict):
+                continue
+            preview = previews.get(str(task.get("id") or "").strip())
+            if preview is None:
+                continue
+            task.update(preview)
+    return payload
+
+
+async def _load_latest_task_comment_previews(task_ids: list[str]) -> dict[str, dict[str, str | None]]:
+    """Load the latest comment preview for each visible task id."""
+
+    normalized_ids = tuple(dict.fromkeys(task_id.strip() for task_id in task_ids if task_id.strip()))
+    if not normalized_ids:
+        return {}
+    _, session_factory = await _get_task_comment_preview_resources()
+    async with session_scope(session_factory) as session:
+        ranked_comments = (
+            select(
+                TaskEvent.task_id.label("task_id"),
+                TaskEvent.message.label("message"),
+                TaskEvent.actor_type.label("actor_type"),
+                TaskEvent.actor_ref.label("actor_ref"),
+                TaskEvent.created_at.label("created_at"),
+                func.row_number().over(
+                    partition_by=TaskEvent.task_id,
+                    order_by=(TaskEvent.created_at.desc(), TaskEvent.id.desc()),
+                ).label("row_num"),
+            )
+            .where(
+                TaskEvent.task_id.in_(normalized_ids),
+                TaskEvent.event_type == "comment_added",
+            )
+            .subquery()
+        )
+        rows = await session.execute(
+            select(
+                ranked_comments.c.task_id,
+                ranked_comments.c.message,
+                ranked_comments.c.actor_type,
+                ranked_comments.c.actor_ref,
+                ranked_comments.c.created_at,
+            ).where(ranked_comments.c.row_num == 1)
+        )
+        return {
+            str(task_id): {
+                "last_comment_message": str(message or "").strip() or None,
+                "last_comment_actor_type": str(actor_type or "").strip() or None,
+                "last_comment_actor_ref": str(actor_ref or "").strip() or None,
+                "last_comment_created_at": created_at.isoformat() if created_at is not None else None,
+            }
+            for task_id, message, actor_type, actor_ref, created_at in rows.all()
+        }
+
+
+async def _get_task_comment_preview_resources():
+    """Return cached DB resources for task comment preview enrichment."""
+
+    global _TASK_COMMENT_PREVIEW_SCHEMA_LOCK, _TASK_COMMENT_PREVIEW_SCHEMA_READY
+    engine, session_factory = _task_comment_preview_resources()
+    if _TASK_COMMENT_PREVIEW_SCHEMA_READY:
+        return engine, session_factory
+    if _TASK_COMMENT_PREVIEW_SCHEMA_LOCK is None:
+        _TASK_COMMENT_PREVIEW_SCHEMA_LOCK = asyncio.Lock()
+    async with _TASK_COMMENT_PREVIEW_SCHEMA_LOCK:
+        if not _TASK_COMMENT_PREVIEW_SCHEMA_READY:
+            await create_schema(engine)
+            _TASK_COMMENT_PREVIEW_SCHEMA_READY = True
+    return engine, session_factory
+
+
+@lru_cache(maxsize=1)
+def _task_comment_preview_resources():
+    """Create the DB engine/session factory once for board comment preview queries."""
+
+    settings = get_settings()
+    engine = create_engine(settings)
+    return engine, create_session_factory(engine)
 
 
 def _serialize_automation(item: AutomationMetadata) -> dict[str, object]:
@@ -954,6 +1307,53 @@ def _subagent_http_error(exc: FileNotFoundError | ProfileFilesLockedError | Valu
     return HTTPException(
         status_code=404,
         detail={"error_code": "profile_subagent_not_found", "reason": str(exc)},
+    )
+
+
+def _skill_http_error(exc: FileNotFoundError | ProfileFilesLockedError | ValueError) -> HTTPException:
+    """Map profile skill CRUD errors to HTTP responses."""
+
+    if isinstance(exc, ProfileFilesLockedError):
+        return HTTPException(
+            status_code=409,
+            detail={"error_code": exc.error_code, "reason": exc.reason},
+        )
+    if isinstance(exc, ValueError):
+        return HTTPException(
+            status_code=400,
+            detail={"error_code": "invalid_skill_name", "reason": str(exc)},
+        )
+    return HTTPException(
+        status_code=404,
+        detail={"error_code": "profile_skill_not_found", "reason": str(exc)},
+    )
+
+
+def _bootstrap_file_http_error(
+    exc: FileExistsError | FileNotFoundError | ProfileFilesLockedError | ProfileServiceError | ValueError,
+) -> HTTPException:
+    """Map profile bootstrap file CRUD errors to HTTP responses."""
+
+    if isinstance(exc, ProfileFilesLockedError):
+        return HTTPException(
+            status_code=409,
+            detail={"error_code": exc.error_code, "reason": exc.reason},
+        )
+    if isinstance(exc, ProfileServiceError):
+        return _profile_http_error(exc)
+    if isinstance(exc, FileExistsError):
+        return HTTPException(
+            status_code=409,
+            detail={"error_code": "profile_bootstrap_file_exists", "reason": str(exc)},
+        )
+    if isinstance(exc, ValueError):
+        return HTTPException(
+            status_code=400,
+            detail={"error_code": "invalid_bootstrap_file_name", "reason": str(exc)},
+        )
+    return HTTPException(
+        status_code=404,
+        detail={"error_code": "profile_bootstrap_file_not_found", "reason": str(exc)},
     )
 
 

@@ -124,11 +124,21 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
         render();
         return;
       }
+      if (action === "open-delete-selected") {
+        if (!state.selectedTaskIds.size) {
+          return;
+        }
+        setModal("delete-selected");
+        render();
+        return;
+      }
       if (action === "select-visible") {
-        for (const task of state.board?.columns?.flatMap((column) => column.tasks || []) || []) {
-          if (!isActiveRuntimeStatus(task.status)) {
-            state.selectedTaskIds.add(task.id);
-          }
+        const visibleIds = getVisibleBoardTaskIds(root);
+        for (const taskId of visibleIds) {
+          state.selectedTaskIds.add(taskId);
+        }
+        if (!visibleIds.length) {
+          notify("No visible tasks in the current board viewport.", "info");
         }
         render();
         return;
@@ -149,9 +159,15 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       }
     }
 
-    const cardNode = event.target.closest("[data-task-id]");
-    if (cardNode && !event.target.closest("input, button, textarea, select, label")) {
-      await selectTask(cardNode.dataset.taskId || "");
+    const taskOpen = event.target.closest("[data-task-open]");
+    if (taskOpen) {
+      await selectTask(taskOpen.dataset.taskOpen || "");
+      return;
+    }
+
+    const taskCard = event.target.closest("[data-task-id]");
+    if (taskCard && !event.target.closest("input, label, button, textarea, select, a")) {
+      await selectTask(taskCard.dataset.taskId || "");
       return;
     }
 
@@ -171,6 +187,9 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     if (target.matches('[name="flow_filter"]')) {
       state.flowFilter = target.value;
       state.selectedTaskId = "";
+      state.selectedTaskIds.clear();
+      state.dragTaskId = "";
+      setModal("");
       commitSelectedTaskData(null);
       await refreshAll();
       return;
@@ -222,6 +241,10 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       await deleteTask();
       return;
     }
+    if (form.dataset.role === "taskflow-delete-selected") {
+      await deleteSelectedTasks();
+      return;
+    }
     if (form.dataset.role === "taskflow-bulk") {
       await applyBulk(form);
       return;
@@ -268,8 +291,17 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     }
     event.preventDefault();
     const ids = state.selectedTaskIds.has(state.dragTaskId) ? [...state.selectedTaskIds] : [state.dragTaskId];
+    const nextStatus = columnNode.dataset.columnId;
+    const changedIds = ids.filter((taskId) => {
+      const task = findBoardTask(state.board, taskId);
+      return task && task.status !== nextStatus;
+    });
+    if (!changedIds.length) {
+      state.dragTaskId = "";
+      return;
+    }
     await api.bulkUpdateTasks(currentProfileId(), {
-      task_ids: ids,
+      task_ids: changedIds,
       status: columnNode.dataset.columnId,
       actor_type: currentConfig().task_flow_actor_type,
       actor_ref: currentConfig().task_flow_actor_ref,
@@ -495,7 +527,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       return;
     }
     const formData = new FormData(form);
-    await api.bulkUpdateTasks(profileId, {
+    const response = await api.bulkUpdateTasks(profileId, {
       task_ids: ids,
       status: String(formData.get("status") || "") || null,
       owner_type: String(formData.get("owner_type") || "") || null,
@@ -509,7 +541,17 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       actor_ref: currentConfig().task_flow_actor_ref,
     });
     state.selectedTaskIds.clear();
-    notify("Bulk update applied.", "success");
+    if (response.error_count) {
+      const kind = response.updated_count ? "info" : "danger";
+      notify(
+        response.updated_count
+          ? `Updated ${response.updated_count} tasks. ${response.error_count} skipped.`
+          : (response.errors?.[0]?.reason || "Bulk update failed."),
+        kind,
+      );
+    } else {
+      notify(`Updated ${response.updated_count} tasks.`, "success");
+    }
     await refreshAll({ force: true });
   }
 
@@ -563,6 +605,41 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       commitSelectedTaskData(null);
       setModal("");
       notify("Task deleted.", "success");
+      await refreshAll({ force: true });
+    } catch (error) {
+      state.modalBusy = false;
+      state.modalError = normalizeError(error);
+      render();
+    }
+  }
+
+  async function deleteSelectedTasks() {
+    const profileId = currentProfileId();
+    const taskIds = [...state.selectedTaskIds];
+    if (!profileId || !taskIds.length) {
+      return;
+    }
+    state.modalBusy = true;
+    state.modalError = "";
+    render();
+    try {
+      const response = await api.bulkDeleteTasks(profileId, { task_ids: taskIds });
+      for (const taskId of response.deleted_task_ids || []) {
+        state.selectedTaskIds.delete(taskId);
+      }
+      if (state.selectedTaskId && (response.deleted_task_ids || []).includes(state.selectedTaskId)) {
+        state.selectedTaskId = "";
+        commitSelectedTaskData(null);
+      }
+      if (response.error_count) {
+        state.modalBusy = false;
+        state.modalError = response.errors?.[0]?.reason || "Some tasks could not be deleted.";
+        render();
+        await refreshAll({ force: true });
+        return;
+      }
+      setModal("");
+      notify(`Deleted ${response.deleted_count} tasks.`, "success");
       await refreshAll({ force: true });
     } catch (error) {
       state.modalBusy = false;
@@ -667,12 +744,22 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
         ${state.error ? `<div class="inline-alert inline-alert--danger">${escapeHtml(state.error)}</div>` : ""}
 
         <section class="glass-panel bulk-panel">
-          <form class="bulk-form" data-role="taskflow-bulk">
-            <div class="bulk-panel__meta">
+          <div class="bulk-panel__meta">
+            <div class="bulk-panel__summary">
               <span class="pill">${state.selectedTaskIds.size} selected</span>
-              <button class="button button--tiny button--ghost" data-taskflow-action="select-visible" type="button">Select Visible</button>
-              <button class="button button--tiny button--ghost" data-taskflow-action="clear-selection" type="button">Clear</button>
+              <span class="muted-copy">Quick select only adds cards that are visible in the current board viewport.</span>
             </div>
+            <div class="bulk-panel__actions">
+              <div class="bulk-panel__action-group">
+                <button class="button button--ghost" data-taskflow-action="select-visible" type="button">Select Visible</button>
+                <button class="button button--ghost" data-taskflow-action="clear-selection" type="button">Clear</button>
+              </div>
+              <div class="bulk-panel__action-group bulk-panel__action-group--danger">
+                <button class="button button--danger" data-taskflow-action="open-delete-selected" type="button" ${state.selectedTaskIds.size ? "" : "disabled"}>Delete Selected</button>
+              </div>
+            </div>
+          </div>
+          <form class="bulk-form" data-role="taskflow-bulk">
             <label class="field field--compact">
               <span class="field__label">Status</span>
               <select name="status">
@@ -699,9 +786,9 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
             })}
             <label class="field field--compact bulk-form__comment">
               <span class="field__label">Comment</span>
-              <input name="comment_message" placeholder="Optional comment…" />
+              <input name="comment_message" placeholder="Optional note for the selected tasks…" />
             </label>
-            <button class="button button--primary" type="submit">Apply</button>
+            <button class="button button--primary" type="submit" ${state.selectedTaskIds.size ? "" : "disabled"}>Apply Changes</button>
           </form>
         </section>
 
@@ -743,7 +830,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     async mount(container) {
       root = container;
       mounted = true;
-      root.className = "view-surface view-surface--taskflow";
+      root.classList.add("route-view", "view-surface", "view-surface--taskflow");
       root.addEventListener("click", handleClick);
       root.addEventListener("change", handleChange);
       root.addEventListener("submit", handleSubmit);
@@ -758,9 +845,6 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       state.profileId = context.profileId || state.profileId;
       state.profiles = context.profiles || state.profiles;
       state.config = context.config || state.config;
-      if (root) {
-        root.hidden = false;
-      }
       if (!state.board && !state.loading) {
         render();
       }
@@ -769,9 +853,6 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     },
     deactivate() {
       state.active = false;
-      if (root) {
-        root.hidden = true;
-      }
       stopRefreshLoop();
     },
     async setProfile(profileId) {
@@ -940,20 +1021,33 @@ function renderBoard(board, selectedTaskId, selectedTaskIds) {
 
 function renderCard(task, selectedTaskId, selectedTaskIds) {
   const isSelected = task.id === selectedTaskId || selectedTaskIds.has(task.id);
+  const previewCopy = task.last_comment_message || task.prompt || "No prompt yet.";
+  const previewLabel = task.last_comment_message ? "Latest comment" : "Prompt";
   return `
     <article class="task-card ${isSelected ? "task-card--selected" : ""}" data-task-id="${escapeAttribute(task.id)}" draggable="${isActiveRuntimeStatus(task.status) ? "false" : "true"}">
       <div class="task-card__head">
-        <h4 class="task-card__title">${escapeHtml(task.title)}</h4>
-        <input type="checkbox" data-task-checkbox="${escapeAttribute(task.id)}" ${selectedTaskIds.has(task.id) ? "checked" : ""} aria-label="Select ${escapeAttribute(task.title)}" ${isActiveRuntimeStatus(task.status) ? "disabled" : ""} />
+        <button class="task-card__open task-card__open--title" type="button" data-task-open="${escapeAttribute(task.id)}">
+          <div class="task-card__title-wrap">
+            <h4 class="task-card__title">${escapeHtml(task.title)}</h4>
+            <p class="surface-page__eyebrow task-card__eyebrow">${escapeHtml(previewLabel)}</p>
+          </div>
+        </button>
+        <label class="checkbox checkbox--inline task-card__check">
+          <input type="checkbox" data-task-checkbox="${escapeAttribute(task.id)}" ${selectedTaskIds.has(task.id) ? "checked" : ""} aria-label="Select ${escapeAttribute(task.title)}" ${isActiveRuntimeStatus(task.status) ? "disabled" : ""} />
+          <span class="task-card__check-copy">Select</span>
+        </label>
       </div>
-      <p class="task-card__copy">${escapeHtml(truncate(task.prompt || "No prompt yet.", 140))}</p>
-      <div class="task-card__badges">
-        <span class="badge badge--violet">${escapeHtml(task.id)}</span>
-        <span class="badge badge--cyan">p${escapeHtml(String(task.priority ?? 50))}</span>
-        ${task.flow_id ? `<span class="badge">${escapeHtml(task.flow_id)}</span>` : ""}
-        ${task.requires_review ? '<span class="badge badge--warning">review</span>' : ""}
-        ${task.due_at ? `<span class="badge ${isOverdue(task) ? "badge--danger" : ""}">${escapeHtml(formatDateTime(task.due_at))}</span>` : ""}
-      </div>
+      <button class="task-card__open task-card__open--body" type="button" data-task-open="${escapeAttribute(task.id)}">
+        <p class="task-card__copy">${escapeHtml(truncate(previewCopy, 140))}</p>
+        <div class="task-card__badges">
+          <span class="badge badge--violet">${escapeHtml(task.id)}</span>
+          <span class="badge badge--accent">p${escapeHtml(String(task.priority ?? 50))}</span>
+          ${task.flow_id ? `<span class="badge">${escapeHtml(task.flow_id)}</span>` : ""}
+          ${task.requires_review ? '<span class="badge badge--warning">review</span>' : ""}
+          ${task.last_comment_created_at ? `<span class="badge badge--muted">${escapeHtml(formatDateTime(task.last_comment_created_at))}</span>` : ""}
+          ${task.due_at ? `<span class="badge ${isOverdue(task) ? "badge--danger" : ""}">${escapeHtml(formatDateTime(task.due_at))}</span>` : ""}
+        </div>
+      </button>
     </article>
   `;
 }
@@ -1379,6 +1473,25 @@ function renderModal(state, config, profiles) {
       </form>
     `;
   }
+  if (state.activeModal === "delete-selected") {
+    content = `
+      <form class="modal-card" data-role="taskflow-delete-selected">
+        <div class="modal-card__head">
+          <div>
+            <p class="surface-page__eyebrow">Delete Selected Tasks</p>
+            <h3>Delete ${escapeHtml(String(state.selectedTaskIds.size))} selected tasks</h3>
+            <p class="muted">This removes the selected tasks, including their runs, comments, events, and dependency edges.</p>
+          </div>
+          <button class="icon-button" data-taskflow-action="close-modal" type="button" aria-label="Close delete selected modal">×</button>
+        </div>
+        ${state.modalError ? `<div class="inline-alert inline-alert--danger">${escapeHtml(state.modalError)}</div>` : ""}
+        <div class="button-row">
+          <button class="button button--danger" type="submit" ${state.modalBusy ? "disabled" : ""}>${state.modalBusy ? "Deleting…" : "Delete Selected"}</button>
+          <button class="button button--ghost" data-taskflow-action="close-modal" type="button">Cancel</button>
+        </div>
+      </form>
+    `;
+  }
   return `
     <div class="modal-root modal-root--open">
       <div class="modal-overlay" data-taskflow-action="close-modal"></div>
@@ -1536,6 +1649,8 @@ function boardSignature(board) {
         id: task.id,
         title: task.title,
         prompt: task.prompt,
+        last_comment_message: task.last_comment_message,
+        last_comment_created_at: task.last_comment_created_at,
         status: task.status,
         priority: task.priority,
         due_at: task.due_at,
@@ -1583,6 +1698,53 @@ function normalizeError(error) {
     return error.message;
   }
   return "Unexpected error";
+}
+
+function findBoardTask(board, taskId) {
+  for (const column of board?.columns || []) {
+    const match = (column.tasks || []).find((task) => task.id === taskId);
+    if (match) {
+      return match;
+    }
+  }
+  return null;
+}
+
+function getVisibleBoardTaskIds(container) {
+  if (!(container instanceof HTMLElement)) {
+    return [];
+  }
+  const viewport = container.querySelector(".board-viewport");
+  if (!(viewport instanceof HTMLElement)) {
+    return [];
+  }
+  const viewportRect = viewport.getBoundingClientRect();
+  const visibleIds = new Set();
+  for (const card of container.querySelectorAll(".task-column__body [data-task-id]")) {
+    if (!(card instanceof HTMLElement)) {
+      continue;
+    }
+    const checkbox = card.querySelector("[data-task-checkbox]");
+    if (checkbox instanceof HTMLInputElement && checkbox.disabled) {
+      continue;
+    }
+    const columnBody = card.closest(".task-column__body");
+    if (!(columnBody instanceof HTMLElement)) {
+      continue;
+    }
+    const cardRect = card.getBoundingClientRect();
+    const bodyRect = columnBody.getBoundingClientRect();
+    const isVisible = (
+      cardRect.bottom > bodyRect.top
+      && cardRect.top < bodyRect.bottom
+      && cardRect.right > viewportRect.left
+      && cardRect.left < viewportRect.right
+    );
+    if (isVisible) {
+      visibleIds.add(card.dataset.taskId || "");
+    }
+  }
+  return [...visibleIds].filter(Boolean);
 }
 
 function escapeHtml(value) {

@@ -176,6 +176,14 @@ export class ApiClient {
     });
   }
 
+  async bulkDeleteTasks(profileId, payload) {
+    return this.request("/task-flow/tasks/bulk-delete", {
+      method: "POST",
+      params: { profile_id: profileId },
+      body: payload,
+    });
+  }
+
   async listTaskComments(profileId, taskId) {
     return this.request(`/task-flow/tasks/${encodeURIComponent(taskId)}/comments`, {
       params: { profile_id: profileId },
@@ -228,9 +236,9 @@ export class ApiClient {
     return this.requestTaskChanges(profileId, taskId, payload);
   }
 
-  async listSubagents(profileId) {
+  async listSubagents(profileId, params = {}) {
     return this.request("/subagents", {
-      params: { profile_id: profileId },
+      params: { profile_id: profileId, ...params },
     });
   }
 
@@ -264,6 +272,88 @@ export class ApiClient {
 
   async deleteSubagent(profileId, name) {
     return this.request(`/subagents/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      params: { profile_id: profileId },
+    });
+  }
+
+  async listSkills(profileId, params = {}) {
+    return this.request("/skills", {
+      params: { profile_id: profileId, ...params },
+    });
+  }
+
+  async getSkill(profileId, name) {
+    return this.request(`/skills/${encodeURIComponent(name)}`, {
+      params: { profile_id: profileId },
+    });
+  }
+
+  async createSkill(profileId, payload) {
+    return this.request("/skills", {
+      method: "POST",
+      params: { profile_id: profileId },
+      body: {
+        name: payload.name,
+        markdown: payload.markdown ?? payload.content ?? "",
+      },
+    });
+  }
+
+  async updateSkill(profileId, name, payload) {
+    return this.request(`/skills/${encodeURIComponent(name)}`, {
+      method: "PATCH",
+      params: { profile_id: profileId },
+      body: {
+        ...(payload.name ? { name: payload.name } : {}),
+        ...(payload.markdown || payload.content ? { markdown: payload.markdown ?? payload.content } : {}),
+      },
+    });
+  }
+
+  async deleteSkill(profileId, name) {
+    return this.request(`/skills/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      params: { profile_id: profileId },
+    });
+  }
+
+  async listBootstrapFiles(profileId, params = {}) {
+    return this.request("/bootstrap-files", {
+      params: { profile_id: profileId, ...params },
+    });
+  }
+
+  async getBootstrapFile(profileId, fileName) {
+    return this.request(`/bootstrap-files/${encodeURIComponent(fileName)}`, {
+      params: { profile_id: profileId },
+    });
+  }
+
+  async createBootstrapFile(profileId, payload) {
+    return this.request("/bootstrap-files", {
+      method: "POST",
+      params: { profile_id: profileId },
+      body: {
+        file_name: payload.file_name ?? payload.name ?? "",
+        content: payload.content ?? "",
+      },
+    });
+  }
+
+  async updateBootstrapFile(profileId, fileName, payload) {
+    return this.request(`/bootstrap-files/${encodeURIComponent(fileName)}`, {
+      method: "PATCH",
+      params: { profile_id: profileId },
+      body: {
+        ...(payload.file_name || payload.name ? { file_name: payload.file_name ?? payload.name } : {}),
+        ...(payload.content !== undefined ? { content: payload.content } : {}),
+      },
+    });
+  }
+
+  async deleteBootstrapFile(profileId, fileName) {
+    return this.request(`/bootstrap-files/${encodeURIComponent(fileName)}`, {
       method: "DELETE",
       params: { profile_id: profileId },
     });
