@@ -277,6 +277,47 @@ export class ApiClient {
     });
   }
 
+  async listSkills(profileId, params = {}) {
+    return this.request("/skills", {
+      params: { profile_id: profileId, ...params },
+    });
+  }
+
+  async getSkill(profileId, name) {
+    return this.request(`/skills/${encodeURIComponent(name)}`, {
+      params: { profile_id: profileId },
+    });
+  }
+
+  async createSkill(profileId, payload) {
+    return this.request("/skills", {
+      method: "POST",
+      params: { profile_id: profileId },
+      body: {
+        name: payload.name,
+        markdown: payload.markdown ?? payload.content ?? "",
+      },
+    });
+  }
+
+  async updateSkill(profileId, name, payload) {
+    return this.request(`/skills/${encodeURIComponent(name)}`, {
+      method: "PATCH",
+      params: { profile_id: profileId },
+      body: {
+        ...(payload.name ? { name: payload.name } : {}),
+        ...(payload.markdown || payload.content ? { markdown: payload.markdown ?? payload.content } : {}),
+      },
+    });
+  }
+
+  async deleteSkill(profileId, name) {
+    return this.request(`/skills/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      params: { profile_id: profileId },
+    });
+  }
+
   async listBootstrapFiles(profileId, params = {}) {
     return this.request("/bootstrap-files", {
       params: { profile_id: profileId, ...params },

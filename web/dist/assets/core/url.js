@@ -1,4 +1,4 @@
-export const ROUTES = ["automations", "task-flow", "subagents", "bootstrap"];
+export const ROUTES = ["automations", "task-flow", "subagents", "skills", "bootstrap"];
 
 function normalizeRoute(route) {
   return ROUTES.includes(route) ? route : "automations";

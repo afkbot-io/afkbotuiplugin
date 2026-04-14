@@ -3,6 +3,7 @@ import { escapeAttribute, escapeHtml } from "./core/dom.js";
 import { readUrlState, ROUTES, updateUrlState } from "./core/url.js";
 import { createAutomationsController } from "./features/automations.js";
 import { createBootstrapFilesController } from "./features/bootstrap-files.js";
+import { createSkillsController } from "./features/skills.js";
 import { createTaskFlowController } from "./features/task-flow.js";
 import { createSubagentsController } from "./features/subagents.js";
 
@@ -94,12 +95,13 @@ function buildShell() {
         <section id="workspace-boot" class="boot-panel glass-panel" hidden>
           <div class="empty-state">
             <h3>Loading Workspace…</h3>
-            <p>Resolving profiles, config, automations, Task Flow, and subagent surfaces.</p>
+            <p>Resolving profiles, config, automations, Task Flow, subagents, skills, and bootstrap surfaces.</p>
           </div>
         </section>
         <section id="route-automations" class="route-view"></section>
         <section id="route-task-flow" class="route-view"></section>
         <section id="route-subagents" class="route-view"></section>
+        <section id="route-skills" class="route-view"></section>
         <section id="route-bootstrap" class="route-view"></section>
       </main>
 
@@ -116,6 +118,7 @@ function buildShell() {
     automations: root.querySelector("#route-automations"),
     "task-flow": root.querySelector("#route-task-flow"),
     subagents: root.querySelector("#route-subagents"),
+    skills: root.querySelector("#route-skills"),
     bootstrap: root.querySelector("#route-bootstrap"),
   };
 }
@@ -170,6 +173,7 @@ function mountViews() {
     getProfiles: () => state.profiles,
   });
   views.subagents = createSubagentsController({ ...shared, root: refs.routeNodes.subagents });
+  views.skills = createSkillsController({ ...shared, root: refs.routeNodes.skills });
   views.bootstrap = createBootstrapFilesController({ ...shared, root: refs.routeNodes.bootstrap });
 }
 
@@ -326,6 +330,9 @@ function routeLabel(route) {
   }
   if (route === "subagents") {
     return "Subagents";
+  }
+  if (route === "skills") {
+    return "Skills";
   }
   if (route === "bootstrap") {
     return "Bootstrap";

@@ -22,6 +22,7 @@ from afkbot.services.plugins.contracts import PluginServiceError
 from afkbot.services.plugins.runtime_registry import PluginRuntimeRegistry
 from afkbot.services.policy import ProfileFilesLockedError
 from afkbot.services.profile_runtime import ProfileServiceError, get_profile_service
+from afkbot.services.skills import get_profile_skill_service
 from afkbot.services.subagents.profile_service import get_profile_subagent_service
 from afkbot.services.task_flow import TaskFlowServiceError, get_task_flow_service
 from afkbot.settings import get_settings
@@ -204,6 +205,24 @@ class SubagentCreatePayload(BaseModel):
 
 class SubagentPatchPayload(BaseModel):
     """Request body for profile subagent updates."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    markdown: str | None = Field(default=None, min_length=1, max_length=200000)
+
+
+class SkillCreatePayload(BaseModel):
+    """Request body for profile skill creation."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    name: str = Field(min_length=1, max_length=128)
+    markdown: str = Field(min_length=1, max_length=200000)
+
+
+class SkillPatchPayload(BaseModel):
+    """Request body for profile skill updates."""
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -876,6 +895,97 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             raise _subagent_http_error(exc) from exc
         return {"deleted": True, "subagent": item.model_dump(mode="json", exclude_none=True)}
 
+    @router.get("/skills")
+    async def list_skills(profile_id: str = "default", q: str = "") -> dict[str, object]:
+        service = get_profile_skill_service(get_settings())
+        try:
+            items = await service.list(profile_id=profile_id, scope="profile", include_unavailable=True)
+        except ValueError as exc:
+            raise _skill_http_error(exc) from exc
+        query = q.strip().lower()
+        if query:
+            items = [
+                item
+                for item in items
+                if query in item.name.lower()
+                or query in item.summary.lower()
+                or query in item.path.lower()
+                or any(query in alias.lower() for alias in item.aliases)
+                or any(query in requirement.lower() for requirement in item.missing_requirements)
+                or any(query in error.lower() for error in item.manifest_errors)
+                or query in item.execution_mode.lower()
+            ]
+        items.sort(key=lambda item: item.name)
+        return {
+            "skills": [item.model_dump(mode="json", exclude_none=True) for item in items],
+            "filtered_count": len(items),
+        }
+
+    @router.get("/skills/{name}")
+    async def get_skill(name: str, profile_id: str = "default") -> dict[str, object]:
+        service = get_profile_skill_service(get_settings())
+        try:
+            payload = await service.get(profile_id=profile_id, name=name, scope="profile")
+        except (FileNotFoundError, ValueError) as exc:
+            raise _skill_http_error(exc) from exc
+        return {"skill": payload.model_dump(mode="json", exclude_none=True)}
+
+    @router.post("/skills")
+    async def create_skill(
+        payload: SkillCreatePayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_profile_skill_service(get_settings())
+        try:
+            await service.get(profile_id=profile_id, name=payload.name, scope="profile")
+        except FileNotFoundError:
+            pass
+        except ValueError as exc:
+            raise _skill_http_error(exc) from exc
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error_code": "profile_skill_exists",
+                    "reason": f"Profile skill already exists: {payload.name}",
+                },
+            )
+        try:
+            item = await service.upsert(profile_id=profile_id, name=payload.name, content=payload.markdown)
+        except (ProfileFilesLockedError, ValueError) as exc:
+            raise _skill_http_error(exc) from exc
+        return {"skill": item.model_dump(mode="json", exclude_none=True)}
+
+    @router.patch("/skills/{name}")
+    async def patch_skill(
+        name: str,
+        payload: SkillPatchPayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_profile_skill_service(get_settings())
+        try:
+            current = await service.get(profile_id=profile_id, name=name, scope="profile")
+        except (FileNotFoundError, ValueError) as exc:
+            raise _skill_http_error(exc) from exc
+        next_name = payload.name or current.name
+        next_markdown = payload.markdown or current.content or ""
+        try:
+            item = await service.upsert(profile_id=profile_id, name=next_name, content=next_markdown)
+            if item.name != current.name:
+                await service.delete(profile_id=profile_id, name=current.name)
+        except (ProfileFilesLockedError, ValueError) as exc:
+            raise _skill_http_error(exc) from exc
+        return {"skill": item.model_dump(mode="json", exclude_none=True)}
+
+    @router.delete("/skills/{name}")
+    async def delete_skill(name: str, profile_id: str = "default") -> dict[str, object]:
+        service = get_profile_skill_service(get_settings())
+        try:
+            item = await service.delete(profile_id=profile_id, name=name)
+        except (FileNotFoundError, ProfileFilesLockedError, ValueError) as exc:
+            raise _skill_http_error(exc) from exc
+        return {"deleted": True, "skill": item.model_dump(mode="json", exclude_none=True)}
+
     @router.get("/bootstrap-files")
     async def list_bootstrap_files(profile_id: str = "default", q: str = "") -> dict[str, object]:
         service = get_profile_bootstrap_files_service(get_settings())
@@ -1196,6 +1306,25 @@ def _subagent_http_error(exc: FileNotFoundError | ProfileFilesLockedError | Valu
     return HTTPException(
         status_code=404,
         detail={"error_code": "profile_subagent_not_found", "reason": str(exc)},
+    )
+
+
+def _skill_http_error(exc: FileNotFoundError | ProfileFilesLockedError | ValueError) -> HTTPException:
+    """Map profile skill CRUD errors to HTTP responses."""
+
+    if isinstance(exc, ProfileFilesLockedError):
+        return HTTPException(
+            status_code=409,
+            detail={"error_code": exc.error_code, "reason": exc.reason},
+        )
+    if isinstance(exc, ValueError):
+        return HTTPException(
+            status_code=400,
+            detail={"error_code": "invalid_skill_name", "reason": str(exc)},
+        )
+    return HTTPException(
+        status_code=404,
+        detail={"error_code": "profile_skill_not_found", "reason": str(exc)},
     )
 
 
