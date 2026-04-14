@@ -117,6 +117,7 @@ export function createSkillsController({
         loadingItemLabel: "Loading skill…",
         emptyTitle: "No Custom Skills",
         emptyDescription: "Add profile-local skills to keep reusable workflows and routing instructions attached to the selected profile.",
+        profileMissingDescription: (profileId) => `Skills are unavailable because the profile "${profileId}" is not available in the current runtime.`,
         inspectorEmptyTitle: "Skill Inspector",
         inspectorEmptyDescription: "Open a skill to inspect or edit its profile-local SKILL.md definition.",
         editEyebrow: "Edit skill",

@@ -2,6 +2,15 @@
 
 All notable changes to this plugin are tracked here.
 
+## 0.3.1 - 2026-04-14
+
+- polish Task Flow card selection so compact checkboxes no longer waste space with a visible `Select` label
+- normalize task preview copy to avoid showing literal `\n` sequences in kanban cards and review queue cards
+- restore inspector and side-panel scrolling across Task Flow, Automations, and Subagents, and keep close actions visually circular
+- improve checkbox row alignment so `Require review` stays inside the grid without breaking the form layout
+- shorten webhook secret messaging in Automations and keep profile-missing states for Skills and Bootstrap inside the workspace UI instead of surfacing a raw 404-style failure
+- refine shared workspace scroll handling and hide Task Flow column scrollbars for a cleaner board presentation
+
 ## 0.3.0 - 2026-04-14
 
 - release the unified AFKBOT workspace shell across Automations, Task Flow, Subagents, Skills, and Bootstrap

@@ -840,7 +840,7 @@ export function createAutomationsController({
         </div>
         ${state.panel.error ? `<div class="inline-alert inline-alert--danger">${escapeHtml(state.panel.error)}</div>` : ""}
         <section class="panel-section"><div class="panel-section__header"><div class="panel-section__title">Prompt</div></div><div class="task-pane__description-copy">${escapeHtml(automation.prompt)}</div></section>
-        <section class="panel-section"><div class="panel-section__header"><div class="panel-section__title">${automation.trigger_type === "cron" ? "Schedule" : "Webhook diagnostics"}</div></div>${showWebhookSecretNotice ? '<div class="support-note">This automation does not have a recoverable plaintext webhook token anymore. Issue a new token to reveal and copy a fresh webhook URL, path, and token in this UI.</div>' : ""}<div class="detail-grid">${automation.trigger_type === "cron" ? `
+        <section class="panel-section"><div class="panel-section__header"><div class="panel-section__title">${automation.trigger_type === "cron" ? "Schedule" : "Webhook diagnostics"}</div></div>${showWebhookSecretNotice ? '<div class="support-note">Current plaintext webhook token is hidden. Issue a new token to reveal a fresh URL, path, and token here.</div>' : ""}<div class="detail-grid">${automation.trigger_type === "cron" ? `
           ${renderDetail("Cron", automation.cron?.cron_expr || "Unavailable")}
           ${renderDetail("Timezone", automation.cron?.timezone || "Unavailable")}
           ${renderDetail("Next run", formatDateTime(automation.cron?.next_run_at))}
