@@ -1547,7 +1547,14 @@ a {
 }
 
 .modal-card .button-row {
-  padding-top: 0.15rem;
+  padding-top: 0.6rem;
+}
+
+.task-pane .button-row,
+.panel-form .button-row,
+.editor-form .button-row {
+  margin-top: 0.3rem;
+  padding-top: 0.6rem;
 }
 
 .bulk-panel {
