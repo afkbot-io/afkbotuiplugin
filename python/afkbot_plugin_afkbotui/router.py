@@ -83,6 +83,7 @@ class AutomationPatchPayload(BaseModel):
     status: Literal["active", "paused"] | None = None
     cron_expr: str | None = Field(default=None, max_length=64)
     timezone_name: str | None = Field(default=None, max_length=64)
+    rotate_webhook_token: bool | None = None
 
 
 class TaskFlowCreatePayload(BaseModel):
@@ -416,7 +417,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 status=payload.status,
                 cron_expr=payload.cron_expr,
                 timezone_name=payload.timezone_name,
-                rotate_webhook_token=False,
+                rotate_webhook_token=payload.rotate_webhook_token,
             )
         except AutomationsServiceError as exc:
             raise _automation_http_error(exc) from exc
