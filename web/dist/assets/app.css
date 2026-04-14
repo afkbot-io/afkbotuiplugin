@@ -76,6 +76,10 @@ a {
   touch-action: manipulation;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 ::selection {
   background: rgba(0, 217, 255, 0.22);
   color: var(--text-primary);
@@ -309,6 +313,8 @@ a {
 .workspace-main,
 .app-main {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   overflow: auto;
   padding: 0 1rem 1rem;
@@ -317,12 +323,15 @@ a {
 .route-view,
 .route-panel {
   display: none;
-  min-height: 100%;
+  min-height: 0;
 }
 
 .route-view--active,
 .route-panel:not([hidden]) {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .glass-panel,
@@ -490,6 +499,7 @@ a {
   position: relative;
   flex: 1;
   min-height: 0;
+  height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   cursor: grab;
@@ -518,6 +528,7 @@ a {
 
 .automation-grid,
 .subagent-grid,
+.bootstrap-grid,
 .cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
@@ -586,6 +597,13 @@ a {
 
 .card {
   cursor: pointer;
+}
+
+.card--button {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
 }
 
 .card:hover,
@@ -1018,6 +1036,10 @@ a {
   align-items: start;
 }
 
+.board-toolbar__fields--single {
+  grid-template-columns: minmax(16rem, 1fr);
+}
+
 .automation-filters .board-toolbar__actions {
   display: flex;
   align-items: center;
@@ -1090,6 +1112,17 @@ a {
   flex-direction: column;
   gap: 1rem;
   min-height: 100%;
+  height: 100%;
+}
+
+.view-surface--taskflow {
+  display: flex;
+  min-height: 100%;
+}
+
+.view-surface--taskflow > .taskflow-page {
+  flex: 1;
+  min-height: 0;
 }
 
 .taskflow-toolbar,
@@ -1110,7 +1143,6 @@ a {
 
 .taskflow-toolbar__left,
 .taskflow-toolbar__actions,
-.bulk-form,
 .bulk-panel__meta,
 .editor-form,
 .timeline-list,
@@ -1126,7 +1158,6 @@ a {
 }
 
 .taskflow-toolbar__actions,
-.bulk-form,
 .bulk-panel__meta {
   align-items: center;
   flex-wrap: wrap;
@@ -1149,10 +1180,6 @@ a {
   line-height: 1.05;
 }
 
-.bulk-form {
-  justify-content: space-between;
-}
-
 .bulk-form__comment {
   flex: 1 1 16rem;
 }
@@ -1162,6 +1189,7 @@ a {
   grid-template-columns: minmax(0, 1fr) 0;
   gap: 1rem;
   min-height: 0;
+  flex: 1;
 }
 
 .taskflow-layout--open {
@@ -1169,6 +1197,8 @@ a {
 }
 
 .board-shell {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -1180,21 +1210,24 @@ a {
   grid-auto-flow: column;
   grid-auto-columns: minmax(18rem, 21rem);
   gap: 1rem;
-  align-items: start;
+  align-items: stretch;
   min-height: 100%;
+  height: 100%;
 }
 
 .task-column {
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
-  min-height: 28rem;
+  min-height: 0;
+  height: 100%;
   padding: 0.95rem;
   border: 1px solid var(--stroke);
   border-radius: 1.1rem;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.012)),
     rgba(10, 15, 23, 0.66);
+  overflow: hidden;
 }
 
 .task-column__head {
@@ -1231,12 +1264,12 @@ a {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
-  padding-right: 0.12rem;
-  scrollbar-width: none;
+  padding-right: 0.2rem;
+  scrollbar-width: thin;
 }
 
 .task-column__body::-webkit-scrollbar {
-  display: none;
+  width: 6px;
 }
 
 .task-card {
@@ -1273,6 +1306,60 @@ a {
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.task-card__title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.task-card__eyebrow {
+  margin-top: 0;
+}
+
+.task-card__open {
+  display: flex;
+  flex-direction: column;
+  gap: 0.72rem;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-card__open--title {
+  flex: 1;
+  min-width: 0;
+  gap: 0.22rem;
+  align-items: flex-start;
+}
+
+.task-card__open:focus-visible {
+  outline: none;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 3px rgba(0, 217, 255, 0.14);
+}
+
+.task-card__check {
+  flex-shrink: 0;
+  min-height: 2.75rem;
+  padding: 0.72rem 0.82rem;
+}
+
+.task-card__check input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.task-card__check-copy {
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .task-card__copy {
@@ -1411,6 +1498,43 @@ a {
   padding-top: 0.15rem;
 }
 
+.bulk-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.bulk-panel__meta {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.bulk-panel__summary,
+.bulk-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.bulk-panel__action-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.bulk-panel__action-group--danger {
+  margin-left: auto;
+}
+
+.bulk-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(14rem, 1.35fr) auto;
+  gap: 1rem;
+  align-items: end;
+}
+
 .support-note {
   padding: 0.82rem 0.92rem;
   border: 1px solid var(--stroke);
@@ -1543,10 +1667,6 @@ a {
 }
 
 @media (max-width: 1024px) {
-  body {
-    overflow: auto;
-  }
-
   .topbar {
     padding: 0.75rem;
   }
@@ -1595,6 +1715,19 @@ a {
   .bulk-form {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .bulk-form {
+    grid-template-columns: 1fr;
+  }
+
+  .bulk-panel__actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .bulk-panel__action-group--danger {
+    margin-left: 0;
   }
 
   .taskflow-layout,
@@ -1655,6 +1788,12 @@ a {
 
   .topbar__tabs .tab-button {
     width: 100%;
+  }
+
+  .bulk-panel__actions,
+  .bulk-panel__action-group {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .tab-button,
