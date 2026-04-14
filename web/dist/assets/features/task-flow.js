@@ -751,7 +751,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
             </div>
             <div class="bulk-panel__actions">
               <div class="bulk-panel__action-group">
-                <button class="button button--ghost" data-taskflow-action="select-visible" type="button">Select Visible</button>
+                <button class="button button--ghost" data-taskflow-action="select-visible" type="button">Visible</button>
                 <button class="button button--ghost" data-taskflow-action="clear-selection" type="button">Clear</button>
               </div>
               <div class="bulk-panel__action-group bulk-panel__action-group--danger">
@@ -1034,7 +1034,6 @@ function renderCard(task, selectedTaskId, selectedTaskIds) {
         </button>
         <label class="checkbox checkbox--inline task-card__check">
           <input type="checkbox" data-task-checkbox="${escapeAttribute(task.id)}" ${selectedTaskIds.has(task.id) ? "checked" : ""} aria-label="Select ${escapeAttribute(task.title)}" ${isActiveRuntimeStatus(task.status) ? "disabled" : ""} />
-          <span class="task-card__check-copy">Select</span>
         </label>
       </div>
       <button class="task-card__open task-card__open--body" type="button" data-task-open="${escapeAttribute(task.id)}">
@@ -1426,7 +1425,7 @@ function renderModal(state, config, profiles) {
           ${state.reviewTasks.length ? state.reviewTasks.map((task) => `
             <article class="review-card" data-review-select="${escapeAttribute(task.id)}">
               <h4>${escapeHtml(task.title)}</h4>
-              <p>${escapeHtml(truncate(task.prompt || "", 120))}</p>
+              <p>${escapeHtml(truncate(task.last_comment_message || task.prompt || "", 120))}</p>
               <span class="badge badge--warning">${escapeHtml(task.id)}</span>
             </article>
           `).join("") : '<div class="empty-state empty-state--compact"><h3>Queue clear</h3><p>No tasks waiting for review.</p></div>'}
@@ -1761,11 +1760,20 @@ function escapeAttribute(value) {
 }
 
 function truncate(value, maxLength) {
-  const normalized = String(value || "").trim().replace(/\s+/g, " ");
+  const normalized = normalizeInlineText(value);
   if (normalized.length <= maxLength) {
     return normalized;
   }
   return `${normalized.slice(0, maxLength - 1)}…`;
+}
+
+function normalizeInlineText(value) {
+  return String(value || "")
+    .replaceAll("\\r\\n", "\n")
+    .replaceAll("\\n", "\n")
+    .replaceAll("\\t", " ")
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 function toDateTimeLocal(value) {

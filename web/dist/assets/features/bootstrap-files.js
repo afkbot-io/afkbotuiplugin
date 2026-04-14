@@ -103,6 +103,7 @@ export function createBootstrapFilesController({
         loadingItemLabel: "Loading bootstrap file…",
         emptyTitle: "No Bootstrap Files",
         emptyDescription: "Add profile-level bootstrap context like role, tooling, or workspace rules for the selected profile.",
+        profileMissingDescription: (profileId) => `Bootstrap files are unavailable because the profile "${profileId}" is not available in the current runtime.`,
         inspectorEmptyTitle: "Bootstrap Inspector",
         inspectorEmptyDescription: "Open a bootstrap file to inspect or edit profile-specific runtime instructions.",
         editEyebrow: "Edit bootstrap file",

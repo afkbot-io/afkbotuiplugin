@@ -168,7 +168,8 @@ export function createTextLibraryController({
         return;
       }
       state.loading = false;
-      state.error = normalizeError(error);
+      state.items = [];
+      state.error = resolveErrorMessage(error, config.ui.profileMissingDescription?.(profileId));
       render();
     }
   }
@@ -210,7 +211,7 @@ export function createTextLibraryController({
         return;
       }
       state.panel.loading = false;
-      state.panel.error = normalizeError(error);
+      state.panel.error = resolveErrorMessage(error, config.ui.profileMissingDescription?.(profileId));
       renderPanel();
     }
   }
@@ -256,7 +257,7 @@ export function createTextLibraryController({
       render();
     } catch (error) {
       state.panel.saving = false;
-      state.panel.error = normalizeError(error);
+      state.panel.error = resolveErrorMessage(error, config.ui.profileMissingDescription?.(profileId));
       renderPanel();
     }
   }
@@ -302,7 +303,7 @@ export function createTextLibraryController({
       render();
     } catch (error) {
       state.modal.saving = false;
-      state.modal.error = normalizeError(error);
+      state.modal.error = resolveErrorMessage(error, config.ui.profileMissingDescription?.(profileId));
       render();
     }
   }
@@ -332,7 +333,7 @@ export function createTextLibraryController({
       await refresh();
     } catch (error) {
       state.modal.saving = false;
-      state.modal.error = normalizeError(error);
+      state.modal.error = resolveErrorMessage(error, config.ui.profileMissingDescription?.(profileId));
       render();
     }
   }
@@ -599,4 +600,11 @@ function renderBadges(badges) {
 
 function normalizeError(error) {
   return error instanceof Error && error.message ? error.message : "Unexpected error";
+}
+
+function resolveErrorMessage(error, profileFallbackMessage = "") {
+  if (error?.code === "profile_not_found") {
+    return profileFallbackMessage || "Selected profile is not available in this workspace yet.";
+  }
+  return normalizeError(error);
 }

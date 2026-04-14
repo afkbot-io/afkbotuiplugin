@@ -16,7 +16,12 @@ export function renderMultiline(value) {
 }
 
 export function truncateText(value, maxLength = 120) {
-  const normalized = String(value || "").trim().replaceAll(/\s+/g, " ");
+  const normalized = String(value || "")
+    .replaceAll("\\r\\n", "\n")
+    .replaceAll("\\n", "\n")
+    .replaceAll("\\t", " ")
+    .trim()
+    .replace(/\s+/g, " ");
   if (normalized.length <= maxLength) {
     return normalized;
   }
