@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are tracked here.
 
+## 0.3.3 - 2026-04-15
+
+- polish Task Flow layout so it matches the shared workspace header and toolbar pattern
+- widen kanban columns, add drag-to-pan horizontal scrolling, and refine task card states and spacing
+- unify fixed card widths across Automations, Subagents, Skills, and Bootstrap
+- sync release metadata to version `0.3.3`
+
 ## 0.3.2 - 2026-04-15
 
 - remove bulk edit fields from the Task Flow quick-action bar and keep only visible selection, clear, and delete actions
