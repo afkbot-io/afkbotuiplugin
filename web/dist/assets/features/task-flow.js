@@ -1,6 +1,7 @@
 import { formatDateTime } from "../core/time.js";
 
 const STATUS_OPTIONS = ["todo", "blocked", "review", "completed", "failed", "cancelled"];
+const TONE_STATUS_OPTIONS = new Set(["todo", "blocked", "running", "review", "completed", "failed", "cancelled"]);
 const AI_PROFILE_TYPE = "ai_profile";
 const HUMAN_ACTOR_TYPE = "human";
 
@@ -33,6 +34,9 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     modalBusy: false,
     modalError: "",
     refreshInFlight: false,
+    boardPanActive: false,
+    boardPanStartX: 0,
+    boardPanScrollLeft: 0,
     signatures: {
       flows: "",
       board: "",
@@ -264,6 +268,52 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
 
   function handleDragEnd() {
     state.dragTaskId = "";
+  }
+
+  function handleMouseDown(event) {
+    if (!(event.target instanceof HTMLElement) || event.button !== 0 || !root) {
+      return;
+    }
+    if (event.target.closest(".task-card, button, input, label, textarea, select, a")) {
+      return;
+    }
+    if (!event.target.closest(".board-viewport, .task-column, .task-column__body, .task-column__head")) {
+      return;
+    }
+    const viewport = root.querySelector(".board-viewport");
+    if (!(viewport instanceof HTMLElement) || viewport.scrollWidth <= viewport.clientWidth + 8) {
+      return;
+    }
+    state.boardPanActive = true;
+    state.boardPanStartX = event.clientX;
+    state.boardPanScrollLeft = viewport.scrollLeft;
+    viewport.classList.add("board-viewport--panning");
+    root.classList.add("taskflow-page--panning");
+    event.preventDefault();
+  }
+
+  function handleMouseMove(event) {
+    if (!state.boardPanActive || !root) {
+      return;
+    }
+    const viewport = root.querySelector(".board-viewport");
+    if (!(viewport instanceof HTMLElement)) {
+      clearBoardPan();
+      return;
+    }
+    const deltaX = event.clientX - state.boardPanStartX;
+    viewport.scrollLeft = state.boardPanScrollLeft - deltaX;
+  }
+
+  function clearBoardPan() {
+    state.boardPanActive = false;
+    state.boardPanStartX = 0;
+    state.boardPanScrollLeft = 0;
+    if (!root) {
+      return;
+    }
+    root.classList.remove("taskflow-page--panning");
+    root.querySelector(".board-viewport")?.classList.remove("board-viewport--panning");
   }
 
   function handleDragOver(event) {
@@ -676,44 +726,47 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     }
     const activeFlow = state.flows.find((flow) => flow.id === state.flowFilter) || null;
     root.innerHTML = `
-      <section class="taskflow-page">
-        <header class="taskflow-toolbar glass-panel">
-          <div class="taskflow-toolbar__left">
-            <div>
-              <p class="surface-page__eyebrow">Task Flow</p>
-              <h2 class="surface-page__title">Task Flow Board</h2>
-            </div>
-            <label class="field field--compact">
-              <span class="field__label">Flow</span>
-              <select name="flow_filter">
-                <option value="">All Flows</option>
-                ${state.flows.map((flow) => `<option value="${escapeAttribute(flow.id)}" ${flow.id === state.flowFilter ? "selected" : ""}>${escapeHtml(flow.title)}</option>`).join("")}
-              </select>
-            </label>
+      <section class="route-page route-page--taskflow taskflow-page">
+        <div class="section-head">
+          <div>
+            <div class="task-pane__eyebrow">Workspace / Task Flow</div>
+            <h2 class="section-title">Task Flow</h2>
+            <p class="section-copy">Reactive kanban board for profile-scoped work, review loops, and live execution context in the same workspace shell.</p>
           </div>
-          <div class="taskflow-toolbar__actions">
-            <button class="button button--ghost" data-taskflow-action="open-review" type="button">Review <span class="button__count">${state.reviewTasks.length}</span></button>
+          <div class="section-actions">
+            <button class="button button--ghost" data-taskflow-action="refresh" type="button">Refresh</button>
             <button class="button button--ghost" data-taskflow-action="open-flow" type="button">New Flow</button>
             ${activeFlow ? '<button class="button button--danger" data-taskflow-action="open-delete-flow" type="button">Delete Flow</button>' : ""}
             <button class="button button--primary" data-taskflow-action="open-task" type="button">New Task</button>
-            <button class="button button--ghost" data-taskflow-action="open-settings" type="button">Settings</button>
-            <button class="button" data-taskflow-action="refresh" type="button">Refresh</button>
           </div>
-        </header>
+        </div>
 
         ${state.error ? `<div class="inline-alert inline-alert--danger">${escapeHtml(state.error)}</div>` : ""}
 
-        <section class="glass-panel bulk-panel">
-          <div class="bulk-panel__meta">
-            <div class="bulk-panel__summary">
-              <span class="pill">${state.selectedTaskIds.size} selected</span>
+        <section class="board-toolbar board-toolbar--visible automation-filters taskflow-filters">
+          <div class="board-toolbar__summary">
+            <span class="badge">${escapeHtml(String(state.board?.total_count || 0))} tasks</span>
+            <span class="badge">${escapeHtml(String(state.selectedTaskIds.size))} selected</span>
+            ${activeFlow ? `<span class="badge">${escapeHtml(activeFlow.title)}</span>` : '<span class="board-toolbar__hint">All flows</span>'}
+          </div>
+          <div class="board-toolbar__controls">
+            <div class="board-toolbar__fields board-toolbar__fields--single">
+              <label class="field field--compact">
+                <span class="field__label">Flow</span>
+                <select name="flow_filter">
+                  <option value="">All Flows</option>
+                  ${state.flows.map((flow) => `<option value="${escapeAttribute(flow.id)}" ${flow.id === state.flowFilter ? "selected" : ""}>${escapeHtml(flow.title)}</option>`).join("")}
+                </select>
+              </label>
             </div>
-            <div class="bulk-panel__actions">
-              <div class="bulk-panel__action-group">
+            <div class="board-toolbar__actions taskflow-filters__actions">
+              <div class="taskflow-filters__action-group">
+                <button class="button button--ghost" data-taskflow-action="open-review" type="button">Review <span class="button__count">${state.reviewTasks.length}</span></button>
+                <button class="button button--ghost" data-taskflow-action="open-settings" type="button">Settings</button>
                 <button class="button button--ghost" data-taskflow-action="select-visible" type="button">Visible</button>
                 <button class="button button--ghost" data-taskflow-action="clear-selection" type="button">Clear</button>
               </div>
-              <div class="bulk-panel__action-group bulk-panel__action-group--danger">
+              <div class="taskflow-filters__action-group taskflow-filters__action-group--danger">
                 <button class="button button--danger" data-taskflow-action="open-delete-selected" type="button" ${state.selectedTaskIds.size ? "" : "disabled"}>Delete</button>
               </div>
             </div>
@@ -762,10 +815,13 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       root.addEventListener("click", handleClick);
       root.addEventListener("change", handleChange);
       root.addEventListener("submit", handleSubmit);
+      root.addEventListener("mousedown", handleMouseDown);
       root.addEventListener("dragstart", handleDragStart);
       root.addEventListener("dragend", handleDragEnd);
       root.addEventListener("dragover", handleDragOver);
       root.addEventListener("drop", handleDrop);
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", clearBoardPan);
       render();
     },
     async activate(context = {}) {
@@ -782,6 +838,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     deactivate() {
       state.active = false;
       stopRefreshLoop();
+      clearBoardPan();
     },
     async setProfile(profileId) {
       if (!profileId || state.profileId === profileId) {
@@ -808,16 +865,20 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     },
     destroy() {
       stopRefreshLoop();
+      clearBoardPan();
       if (!mounted || !root) {
         return;
       }
       root.removeEventListener("click", handleClick);
       root.removeEventListener("change", handleChange);
       root.removeEventListener("submit", handleSubmit);
+      root.removeEventListener("mousedown", handleMouseDown);
       root.removeEventListener("dragstart", handleDragStart);
       root.removeEventListener("dragend", handleDragEnd);
       root.removeEventListener("dragover", handleDragOver);
       root.removeEventListener("drop", handleDrop);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", clearBoardPan);
       root.innerHTML = "";
       mounted = false;
     },
@@ -932,7 +993,7 @@ function renderBoard(board, selectedTaskId, selectedTaskIds) {
     <div class="board-viewport">
       <div class="board-grid">
         ${board.columns.map((column) => `
-          <section class="task-column" data-column-id="${escapeAttribute(column.id)}">
+          <section class="task-column ${statusToneClass("task-column", column.id)}" data-column-id="${escapeAttribute(column.id)}">
             <header class="task-column__head">
               <h3 class="task-column__title">${escapeHtml(column.title)}</h3>
               <span class="task-column__count">${escapeHtml(String(column.count))}</span>
@@ -953,15 +1014,17 @@ function renderCard(task, selectedTaskId, selectedTaskIds) {
   const previewCopy = task.last_comment_message || task.prompt || "No prompt yet.";
   const ownerSummary = formatTaskOwnerSummary(task);
   return `
-    <article class="task-card ${isSelected ? "task-card--selected" : ""}" data-task-id="${escapeAttribute(task.id)}" draggable="${isActiveRuntimeStatus(task.status) ? "false" : "true"}">
+    <article class="task-card ${statusToneClass("task-card", task.status)} ${isSelected ? "task-card--selected" : ""}" data-task-id="${escapeAttribute(task.id)}" draggable="${isActiveRuntimeStatus(task.status) ? "false" : "true"}">
       <div class="task-card__head">
         <button class="task-card__open task-card__open--title" type="button" data-task-open="${escapeAttribute(task.id)}">
           <div class="task-card__title-wrap">
             <h4 class="task-card__title">
               <span>${escapeHtml(task.title)}</span>
-              ${activeSession ? '<span class="task-session-indicator task-session-indicator--card" aria-hidden="true"></span>' : ""}
             </h4>
-            <p class="task-card__meta">${escapeHtml(ownerSummary)}</p>
+            <div class="task-card__meta-row">
+              <p class="task-card__meta">${escapeHtml(ownerSummary)}</p>
+              ${activeSession ? '<span class="badge badge--live">Active</span>' : ""}
+            </div>
           </div>
         </button>
         <label class="checkbox checkbox--inline task-card__check">
@@ -971,9 +1034,9 @@ function renderCard(task, selectedTaskId, selectedTaskIds) {
       <button class="task-card__open task-card__open--body" type="button" data-task-open="${escapeAttribute(task.id)}">
         <p class="task-card__copy">${escapeHtml(truncate(previewCopy, 140))}</p>
         <div class="task-card__badges">
+          <span class="badge ${taskStatusBadgeClass(task.status)}">${escapeHtml(formatStatusLabel(task.status))}</span>
           <span class="badge badge--violet">${escapeHtml(task.id)}</span>
           <span class="badge badge--accent">p${escapeHtml(String(task.priority ?? 50))}</span>
-          ${activeSession ? `<span class="badge badge--live" title="${escapeAttribute(formatTaskSessionTooltip(activeSession))}">${escapeHtml(formatTaskSessionBadge(activeSession))}</span>` : ""}
           ${task.flow_id ? `<span class="badge">${escapeHtml(task.flow_id)}</span>` : ""}
           ${task.requires_review ? '<span class="badge badge--warning">review</span>' : ""}
           ${task.last_comment_created_at ? `<span class="badge badge--muted">${escapeHtml(formatDateTime(task.last_comment_created_at))}</span>` : ""}
@@ -1803,12 +1866,37 @@ function formatTaskOwnerSummary(task) {
   return "Owner: Unassigned";
 }
 
-function formatTaskSessionBadge(activity) {
-  if (Number(activity?.running_turn_count || 0) > 0) {
-    return "active";
+function statusToneClass(prefix, status) {
+  const normalized = String(status || "").trim();
+  return TONE_STATUS_OPTIONS.has(normalized) ? `${prefix}--${normalized}` : "";
+}
+
+function taskStatusBadgeClass(status) {
+  const normalized = String(status || "").trim();
+  if (normalized === "running") {
+    return "badge--running";
   }
-  const queuedTurns = Number(activity?.queued_turn_count || 0);
-  return queuedTurns > 1 ? `queued x${queuedTurns}` : "queued";
+  if (normalized === "blocked") {
+    return "badge--warning";
+  }
+  if (normalized === "review") {
+    return "badge--review";
+  }
+  if (normalized === "completed") {
+    return "badge--success";
+  }
+  if (normalized === "failed") {
+    return "badge--failed";
+  }
+  return "badge--muted";
+}
+
+function formatStatusLabel(status) {
+  const normalized = String(status || "").trim();
+  if (!normalized) {
+    return "Unknown";
+  }
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
 function formatTaskSessionCounts(activity) {
@@ -1822,11 +1910,4 @@ function formatTaskSessionCounts(activity) {
     parts.push(`${queuedTurns} queued`);
   }
   return parts.join(", ") || "idle";
-}
-
-function formatTaskSessionTooltip(activity) {
-  const sessionId = String(activity?.session_id || "").trim();
-  const profileId = String(activity?.session_profile_id || "").trim();
-  const counts = formatTaskSessionCounts(activity);
-  return `Session ${sessionId} (${profileId}) ${counts}`;
 }
