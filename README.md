@@ -2,18 +2,18 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, subagents, skills, and bootstrap files.
 
-Current release: `0.3.1`
+Current release: `0.3.2`
 
-## What is in 0.3.1
+## What is in 0.3.2
 
 - single shell workspace at `/plugins/afkbotui`
 - profile-aware sections for `Automations`, `Task Flow`, `Subagents`, `Skills`, and `Bootstrap`
 - reactive Task Flow board without full page refreshes
 - unified modal-driven CRUD flows across the workspace
-- kanban-style Task Flow with inspector, comments, review actions, bulk actions, and mobile behavior
+- kanban-style Task Flow with inspector, comments, review actions, quick selection, delete actions, and mobile behavior
 - profile-local text libraries for subagents, skills, and bootstrap files
 - webhook automation inspector with diagnostics, copy actions, and token rotation from the UI
-- UI polish pass for card previews, scroll behavior, inspector layout, webhook copy, and profile-missing states
+- UI polish pass for card previews, owner visibility, tighter bulk actions, card-based automation layout, and cleaner spacing below the workspace header
 
 ## Highlights
 
@@ -28,7 +28,7 @@ Current release: `0.3.1`
 
 - embedded kanban board in the same shell
 - task inspector, comments, dependency and run visibility
-- bulk update and bulk delete actions
+- quick visible-selection and bulk delete actions
 - responsive column behavior and per-column scrolling
 
 ### Profile libraries

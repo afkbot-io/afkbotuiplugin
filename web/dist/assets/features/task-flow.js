@@ -211,7 +211,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       target instanceof HTMLSelectElement
       && ["default_owner_type", "owner_type", "reviewer_type", "review_owner_type"].includes(target.name)
     ) {
-      syncConditionalFields(target.closest("form, .task-inspector, .modal-card, .bulk-panel, .detail-section") || root);
+      syncConditionalFields(target.closest("form, .task-inspector, .modal-card, .detail-section") || root);
     }
   }
 
@@ -243,10 +243,6 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     }
     if (form.dataset.role === "taskflow-delete-selected") {
       await deleteSelectedTasks();
-      return;
-    }
-    if (form.dataset.role === "taskflow-bulk") {
-      await applyBulk(form);
       return;
     }
     if (form.dataset.role === "taskflow-task-edit") {
@@ -519,42 +515,6 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     }
   }
 
-  async function applyBulk(form) {
-    const profileId = currentProfileId();
-    const ids = [...state.selectedTaskIds];
-    if (!ids.length) {
-      notify("Select at least one task first.", "danger");
-      return;
-    }
-    const formData = new FormData(form);
-    const response = await api.bulkUpdateTasks(profileId, {
-      task_ids: ids,
-      status: String(formData.get("status") || "") || null,
-      owner_type: String(formData.get("owner_type") || "") || null,
-      owner_ref: normalizeActorRef(
-        String(formData.get("owner_type") || "") || null,
-        String(formData.get("owner_ref") || ""),
-        currentConfig(),
-      ),
-      comment_message: String(formData.get("comment_message") || "").trim() || null,
-      actor_type: currentConfig().task_flow_actor_type,
-      actor_ref: currentConfig().task_flow_actor_ref,
-    });
-    state.selectedTaskIds.clear();
-    if (response.error_count) {
-      const kind = response.updated_count ? "info" : "danger";
-      notify(
-        response.updated_count
-          ? `Updated ${response.updated_count} tasks. ${response.error_count} skipped.`
-          : (response.errors?.[0]?.reason || "Bulk update failed."),
-        kind,
-      );
-    } else {
-      notify(`Updated ${response.updated_count} tasks.`, "success");
-    }
-    await refreshAll({ force: true });
-  }
-
   async function saveTask(form) {
     const profileId = currentProfileId();
     if (!profileId || !state.selectedTaskId) {
@@ -747,7 +707,6 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
           <div class="bulk-panel__meta">
             <div class="bulk-panel__summary">
               <span class="pill">${state.selectedTaskIds.size} selected</span>
-              <span class="muted-copy">Quick select only adds cards that are visible in the current board viewport.</span>
             </div>
             <div class="bulk-panel__actions">
               <div class="bulk-panel__action-group">
@@ -755,41 +714,10 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
                 <button class="button button--ghost" data-taskflow-action="clear-selection" type="button">Clear</button>
               </div>
               <div class="bulk-panel__action-group bulk-panel__action-group--danger">
-                <button class="button button--danger" data-taskflow-action="open-delete-selected" type="button" ${state.selectedTaskIds.size ? "" : "disabled"}>Delete Selected</button>
+                <button class="button button--danger" data-taskflow-action="open-delete-selected" type="button" ${state.selectedTaskIds.size ? "" : "disabled"}>Delete</button>
               </div>
             </div>
           </div>
-          <form class="bulk-form" data-role="taskflow-bulk">
-            <label class="field field--compact">
-              <span class="field__label">Status</span>
-              <select name="status">
-                <option value="">No change</option>
-                ${STATUS_OPTIONS.map((status) => `<option value="${status}">${status}</option>`).join("")}
-              </select>
-            </label>
-            <label class="field field--compact">
-              <span class="field__label">Owner Type</span>
-              <select name="owner_type">
-                <option value="">No change</option>
-                <option value="ai_profile">ai_profile</option>
-                <option value="human">human</option>
-              </select>
-            </label>
-            ${renderProfileRefField({
-              label: "Owner Ref",
-              fieldName: "owner_ref",
-              typeValue: "",
-              value: "",
-              profiles: currentProfiles(),
-              allowBlank: true,
-              config: currentConfig(),
-            })}
-            <label class="field field--compact bulk-form__comment">
-              <span class="field__label">Comment</span>
-              <input name="comment_message" placeholder="Optional note for the selected tasks…" />
-            </label>
-            <button class="button button--primary" type="submit" ${state.selectedTaskIds.size ? "" : "disabled"}>Apply Changes</button>
-          </form>
         </section>
 
         <div class="taskflow-layout ${state.selectedTaskData ? "taskflow-layout--open" : ""}">
@@ -1023,7 +951,7 @@ function renderCard(task, selectedTaskId, selectedTaskIds) {
   const isSelected = task.id === selectedTaskId || selectedTaskIds.has(task.id);
   const activeSession = getTaskActiveSession(task);
   const previewCopy = task.last_comment_message || task.prompt || "No prompt yet.";
-  const previewLabel = task.last_comment_message ? "Latest comment" : "Prompt";
+  const ownerSummary = formatTaskOwnerSummary(task);
   return `
     <article class="task-card ${isSelected ? "task-card--selected" : ""}" data-task-id="${escapeAttribute(task.id)}" draggable="${isActiveRuntimeStatus(task.status) ? "false" : "true"}">
       <div class="task-card__head">
@@ -1033,7 +961,7 @@ function renderCard(task, selectedTaskId, selectedTaskIds) {
               <span>${escapeHtml(task.title)}</span>
               ${activeSession ? '<span class="task-session-indicator task-session-indicator--card" aria-hidden="true"></span>' : ""}
             </h4>
-            <p class="surface-page__eyebrow task-card__eyebrow">${escapeHtml(previewLabel)}</p>
+            <p class="task-card__meta">${escapeHtml(ownerSummary)}</p>
           </div>
         </button>
         <label class="checkbox checkbox--inline task-card__check">
@@ -1568,7 +1496,6 @@ function syncConditionalFields(container) {
     : [
       ...container.querySelectorAll('[data-role="taskflow-create-flow"]'),
       ...container.querySelectorAll('[data-role="taskflow-create-task"]'),
-      ...container.querySelectorAll('[data-role="taskflow-bulk"]'),
       ...container.querySelectorAll('[data-role="taskflow-task-edit"]'),
       ...container.querySelectorAll(".task-inspector"),
       ...container.querySelectorAll(".detail-section"),
@@ -1862,6 +1789,18 @@ function inferTaskSessionProfileId(task) {
     return String(task.owner_ref).trim();
   }
   return String(task?.profile_id || "").trim() || "default";
+}
+
+function formatTaskOwnerSummary(task) {
+  const ownerType = String(task?.owner_type || "").trim();
+  const ownerRef = String(task?.owner_ref || "").trim();
+  if (ownerType === AI_PROFILE_TYPE) {
+    return ownerRef ? `Owner: AI ${ownerRef}` : "Owner: AI";
+  }
+  if (ownerType === HUMAN_ACTOR_TYPE) {
+    return ownerRef ? `Owner: ${ownerRef}` : "Owner: Human";
+  }
+  return "Owner: Unassigned";
 }
 
 function formatTaskSessionBadge(activity) {

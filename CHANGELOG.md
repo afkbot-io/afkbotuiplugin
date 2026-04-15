@@ -2,6 +2,14 @@
 
 All notable changes to this plugin are tracked here.
 
+## 0.3.2 - 2026-04-15
+
+- remove bulk edit fields from the Task Flow quick-action bar and keep only visible selection, clear, and delete actions
+- simplify kanban cards by removing the preview label line, showing the current owner directly on each card, and tightening checkbox sizing
+- switch Automations to a denser fixed-width card grid so entries no longer stretch like long planks
+- add more breathing room below the top workspace menu and tighten shared spacing around the Task Flow selection bar
+- sync release metadata to version `0.3.2`
+
 ## 0.3.1 - 2026-04-14
 
 - polish Task Flow card selection so compact checkboxes no longer waste space with a visible `Select` label
