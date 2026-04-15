@@ -2,9 +2,9 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, subagents, skills, and bootstrap files.
 
-Current release: `0.3.2`
+Current release: `0.3.3`
 
-## What is in 0.3.2
+## What is in 0.3.3
 
 - single shell workspace at `/plugins/afkbotui`
 - profile-aware sections for `Automations`, `Task Flow`, `Subagents`, `Skills`, and `Bootstrap`
