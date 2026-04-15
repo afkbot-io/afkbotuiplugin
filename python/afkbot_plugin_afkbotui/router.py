@@ -143,6 +143,8 @@ class TaskPatchPayload(BaseModel):
     reviewer_ref: str | None = None
     requires_review: bool | None = None
     labels: tuple[str, ...] | None = None
+    session_id: str | None = Field(default=None, min_length=1, max_length=128)
+    session_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
     blocked_reason_code: str | None = None
     blocked_reason_text: str | None = None
     actor_type: str | None = None
@@ -501,6 +503,31 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             raise _task_http_error(exc) from exc
         return {"board": await _serialize_board_payload(payload.model_dump(mode="json"))}
 
+    @router.get("/task-flow/sessions/activity")
+    async def task_flow_session_activity(
+        profile_id: str = "default",
+        task_ids: str = "",
+    ) -> dict[str, object]:
+        service = get_task_flow_service(get_settings())
+        requested_task_ids = tuple(item.strip() for item in task_ids.split(",") if item.strip())
+        try:
+            payload = await service.list_task_session_activity(
+                profile_id=profile_id,
+                task_ids=requested_task_ids,
+            )
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+        return {
+            "task_sessions": {
+                task_id: (
+                    payload[task_id].model_dump(mode="json")
+                    if task_id in payload
+                    else None
+                )
+                for task_id in requested_task_ids
+            }
+        }
+
     @router.post("/task-flow/tasks")
     async def task_flow_task_create(
         payload: TaskCreatePayload,
@@ -548,25 +575,30 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
         try:
-            item = await service.update_task(
-                profile_id=profile_id,
-                task_id=task_id,
-                title=payload.title,
-                prompt=payload.prompt,
-                status=payload.status,
-                priority=payload.priority,
-                due_at=payload.due_at,
-                owner_type=payload.owner_type,
-                owner_ref=payload.owner_ref,
-                reviewer_type=payload.reviewer_type,
-                reviewer_ref=payload.reviewer_ref,
-                requires_review=payload.requires_review,
-                labels=payload.labels,
-                blocked_reason_code=payload.blocked_reason_code,
-                blocked_reason_text=payload.blocked_reason_text,
-                actor_type=payload.actor_type,
-                actor_ref=payload.actor_ref,
-            )
+            update_kwargs: dict[str, object] = {
+                "profile_id": profile_id,
+                "task_id": task_id,
+                "title": payload.title,
+                "prompt": payload.prompt,
+                "status": payload.status,
+                "priority": payload.priority,
+                "due_at": payload.due_at,
+                "owner_type": payload.owner_type,
+                "owner_ref": payload.owner_ref,
+                "reviewer_type": payload.reviewer_type,
+                "reviewer_ref": payload.reviewer_ref,
+                "requires_review": payload.requires_review,
+                "labels": payload.labels,
+                "blocked_reason_code": payload.blocked_reason_code,
+                "blocked_reason_text": payload.blocked_reason_text,
+                "actor_type": payload.actor_type,
+                "actor_ref": payload.actor_ref,
+            }
+            if "session_id" in payload.model_fields_set:
+                update_kwargs["session_id"] = payload.session_id
+            if "session_profile_id" in payload.model_fields_set:
+                update_kwargs["session_profile_id"] = payload.session_profile_id
+            item = await service.update_task(**update_kwargs)
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
         return {"task": item.model_dump(mode="json")}

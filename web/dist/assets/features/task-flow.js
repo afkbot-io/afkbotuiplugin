@@ -1021,6 +1021,7 @@ function renderBoard(board, selectedTaskId, selectedTaskIds) {
 
 function renderCard(task, selectedTaskId, selectedTaskIds) {
   const isSelected = task.id === selectedTaskId || selectedTaskIds.has(task.id);
+  const activeSession = getTaskActiveSession(task);
   const previewCopy = task.last_comment_message || task.prompt || "No prompt yet.";
   const previewLabel = task.last_comment_message ? "Latest comment" : "Prompt";
   return `
@@ -1028,7 +1029,10 @@ function renderCard(task, selectedTaskId, selectedTaskIds) {
       <div class="task-card__head">
         <button class="task-card__open task-card__open--title" type="button" data-task-open="${escapeAttribute(task.id)}">
           <div class="task-card__title-wrap">
-            <h4 class="task-card__title">${escapeHtml(task.title)}</h4>
+            <h4 class="task-card__title">
+              <span>${escapeHtml(task.title)}</span>
+              ${activeSession ? '<span class="task-session-indicator task-session-indicator--card" aria-hidden="true"></span>' : ""}
+            </h4>
             <p class="surface-page__eyebrow task-card__eyebrow">${escapeHtml(previewLabel)}</p>
           </div>
         </button>
@@ -1041,6 +1045,7 @@ function renderCard(task, selectedTaskId, selectedTaskIds) {
         <div class="task-card__badges">
           <span class="badge badge--violet">${escapeHtml(task.id)}</span>
           <span class="badge badge--accent">p${escapeHtml(String(task.priority ?? 50))}</span>
+          ${activeSession ? `<span class="badge badge--live" title="${escapeAttribute(formatTaskSessionTooltip(activeSession))}">${escapeHtml(formatTaskSessionBadge(activeSession))}</span>` : ""}
           ${task.flow_id ? `<span class="badge">${escapeHtml(task.flow_id)}</span>` : ""}
           ${task.requires_review ? '<span class="badge badge--warning">review</span>' : ""}
           ${task.last_comment_created_at ? `<span class="badge badge--muted">${escapeHtml(formatDateTime(task.last_comment_created_at))}</span>` : ""}
@@ -1146,6 +1151,8 @@ function renderTaskPanel(data, profiles, config) {
           </div>
         </form>
 
+        ${renderTaskSessionPanel(task)}
+
         ${task.status === "review" ? `
           <section class="detail-section">
             <div class="panel-head panel-head--compact">
@@ -1219,6 +1226,37 @@ function renderTaskPanel(data, profiles, config) {
         </section>
       </div>
     </aside>
+  `;
+}
+
+function renderTaskSessionPanel(task) {
+  const activeSession = getTaskActiveSession(task);
+  const sessionId = activeSession?.session_id || task.last_session_id;
+  if (!sessionId) {
+    return "";
+  }
+  const sessionProfileId = activeSession?.session_profile_id || inferTaskSessionProfileId(task);
+  return `
+    <section class="detail-section">
+      <div class="panel-head panel-head--compact">
+        <div>
+          <p class="panel-head__eyebrow">Session</p>
+          <h4 class="panel-head__title">Task Session</h4>
+        </div>
+      </div>
+      <article class="task-session-card ${activeSession ? "task-session-card--active" : ""}">
+        <div class="task-session-card__status">
+          <span class="task-session-indicator ${activeSession ? "" : "task-session-indicator--idle"}" aria-hidden="true"></span>
+          <span class="badge ${activeSession ? "badge--live" : "badge--muted"}">${escapeHtml(activeSession ? "dialog active" : "last bound session")}</span>
+        </div>
+        <p class="task-session-card__code">${escapeHtml(sessionId)}</p>
+        <div class="task-session-card__meta">
+          <span>profile: ${escapeHtml(sessionProfileId)}</span>
+          ${activeSession ? `<span>${escapeHtml(formatTaskSessionCounts(activeSession))}</span>` : '<span>No live dialog detected.</span>'}
+          ${activeSession?.latest_activity_at ? `<span>last activity: ${escapeHtml(formatDateTime(activeSession.latest_activity_at))}</span>` : ""}
+        </div>
+      </article>
+    </section>
   `;
 }
 
@@ -1659,6 +1697,13 @@ function boardSignature(board) {
         reviewer_ref: task.reviewer_ref,
         requires_review: Boolean(task.requires_review),
         flow_id: task.flow_id,
+        active_session: task.active_session ? {
+          session_id: task.active_session.session_id,
+          session_profile_id: task.active_session.session_profile_id,
+          queued_turn_count: task.active_session.queued_turn_count,
+          running_turn_count: task.active_session.running_turn_count,
+          latest_activity_at: task.active_session.latest_activity_at,
+        } : null,
       })),
     })),
   );
@@ -1798,4 +1843,51 @@ function isOverdue(task) {
 
 function getProfileIdFallback(profiles) {
   return profiles.find((item) => item.is_default)?.id || profiles[0]?.id || "default";
+}
+
+function getTaskActiveSession(task) {
+  const activity = task?.active_session;
+  if (!activity || activity.dialog_active !== true) {
+    return null;
+  }
+  return activity;
+}
+
+function inferTaskSessionProfileId(task) {
+  const boundProfileId = String(task?.last_session_profile_id || "").trim();
+  if (boundProfileId) {
+    return boundProfileId;
+  }
+  if (String(task?.owner_type || "").trim() === AI_PROFILE_TYPE && String(task?.owner_ref || "").trim()) {
+    return String(task.owner_ref).trim();
+  }
+  return String(task?.profile_id || "").trim() || "default";
+}
+
+function formatTaskSessionBadge(activity) {
+  if (Number(activity?.running_turn_count || 0) > 0) {
+    return "active";
+  }
+  const queuedTurns = Number(activity?.queued_turn_count || 0);
+  return queuedTurns > 1 ? `queued x${queuedTurns}` : "queued";
+}
+
+function formatTaskSessionCounts(activity) {
+  const runningTurns = Number(activity?.running_turn_count || 0);
+  const queuedTurns = Number(activity?.queued_turn_count || 0);
+  const parts = [];
+  if (runningTurns > 0) {
+    parts.push(`${runningTurns} running`);
+  }
+  if (queuedTurns > 0) {
+    parts.push(`${queuedTurns} queued`);
+  }
+  return parts.join(", ") || "idle";
+}
+
+function formatTaskSessionTooltip(activity) {
+  const sessionId = String(activity?.session_id || "").trim();
+  const profileId = String(activity?.session_profile_id || "").trim();
+  const counts = formatTaskSessionCounts(activity);
+  return `Session ${sessionId} (${profileId}) ${counts}`;
 }

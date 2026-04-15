@@ -133,6 +133,13 @@ export class ApiClient {
     });
   }
 
+  async listTaskSessionActivity(profileId, taskIds = []) {
+    const ids = Array.isArray(taskIds) ? taskIds.join(",") : taskIds;
+    return this.request("/task-flow/sessions/activity", {
+      params: { profile_id: profileId, task_ids: ids },
+    });
+  }
+
   async listReviewTasks(profileId, params = {}) {
     return this.request("/task-flow/review", {
       params: { profile_id: profileId, ...params },

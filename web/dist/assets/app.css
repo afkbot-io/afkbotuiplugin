@@ -716,6 +716,12 @@ a {
   background: rgba(78, 255, 177, 0.08);
 }
 
+.badge--live {
+  color: var(--success);
+  border-color: rgba(78, 255, 177, 0.28);
+  background: rgba(78, 255, 177, 0.12);
+}
+
 .badge--muted {
   color: var(--text-dim);
   border-color: rgba(255, 255, 255, 0.12);
@@ -1354,6 +1360,12 @@ a {
   flex: 1;
 }
 
+.task-card__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
 .task-card__eyebrow {
   margin-top: 0;
 }
@@ -1411,6 +1423,62 @@ a {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
+}
+
+.task-session-indicator {
+  display: inline-flex;
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.92), rgba(78, 255, 177, 0.9) 35%, rgba(78, 255, 177, 0.12) 100%);
+  box-shadow: 0 0 0 0.18rem rgba(78, 255, 177, 0.14), 0 0 1.1rem rgba(78, 255, 177, 0.42);
+}
+
+.task-session-indicator--card {
+  flex: 0 0 auto;
+}
+
+.task-session-indicator--idle {
+  background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.74), rgba(237, 244, 255, 0.32) 35%, rgba(237, 244, 255, 0.08) 100%);
+  box-shadow: 0 0 0 0.18rem rgba(255, 255, 255, 0.08);
+}
+
+.task-session-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.95rem;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.task-session-card--active {
+  border-color: rgba(78, 255, 177, 0.26);
+  background:
+    linear-gradient(180deg, rgba(78, 255, 177, 0.09), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.03);
+}
+
+.task-session-card__status {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.task-session-card__code {
+  margin: 0;
+  font-family: "JetBrains Mono", monospace;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.task-session-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: var(--text-dim);
+  font-size: 0.86rem;
 }
 
 .task-inspector {
