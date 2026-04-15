@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are tracked here.
 
+## 0.3.4 - 2026-04-15
+
+- add a task session feed inside the Task Flow inspector so operators can review recent user and assistant turns for the active task session
+- surface live session activity events with incremental polling instead of forcing a full inspector rerender
+- preserve inspector and board scroll position during manual and automatic refreshes while a task card stays open
+- sync release metadata to version `0.3.4`
+
 ## 0.3.3 - 2026-04-15
 
 - polish Task Flow layout so it matches the shared workspace header and toolbar pattern

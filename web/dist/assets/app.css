@@ -1630,6 +1630,82 @@ a {
   font-size: 0.86rem;
 }
 
+.task-session-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.task-session-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.task-session-feed__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.task-session-feed__title {
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.task-session-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.session-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.session-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+  padding: 0.9rem 0.95rem;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.session-bubble--user {
+  border-color: rgba(0, 217, 255, 0.18);
+  background:
+    linear-gradient(180deg, rgba(0, 217, 255, 0.07), rgba(255, 255, 255, 0.012)),
+    rgba(255, 255, 255, 0.03);
+}
+
+.session-bubble--assistant {
+  border-color: rgba(78, 255, 177, 0.18);
+  background:
+    linear-gradient(180deg, rgba(78, 255, 177, 0.08), rgba(255, 255, 255, 0.012)),
+    rgba(255, 255, 255, 0.03);
+}
+
+.session-bubble__label {
+  margin: 0;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  font-family: "JetBrains Mono", monospace;
+}
+
+.session-bubble p {
+  margin: 0;
+  color: var(--text-primary);
+  line-height: 1.58;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .task-inspector {
   min-width: 0;
   min-height: 0;
@@ -1693,6 +1769,29 @@ a {
   border: 1px solid var(--stroke);
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.03);
+}
+
+.timeline-list--session {
+  gap: 0.65rem;
+}
+
+.timeline-item--session {
+  gap: 0.45rem;
+}
+
+.timeline-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.timeline-item__copy {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .timeline-item p,

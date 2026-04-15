@@ -16,6 +16,10 @@ from afkbot.db.bootstrap import create_schema
 from afkbot.db.engine import create_engine
 from afkbot.db.session import create_session_factory, session_scope
 from afkbot.models.task_event import TaskEvent
+from afkbot.repositories.chat_turn_repo import ChatTurnRepository
+from afkbot.services.agent_loop.api_runtime import get_api_session_factory, poll_chat_progress
+from afkbot.services.agent_loop.api_runtime_support import dispose_owned_engine, resolve_session_resources
+from afkbot.services.agent_loop.progress_stream import ProgressCursor
 from afkbot.services.automations import AutomationsServiceError, get_automations_service
 from afkbot.services.automations.contracts import AutomationMetadata
 from afkbot.services.plugins.contracts import PluginServiceError
@@ -566,6 +570,81 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
         return {"task": payload.model_dump(mode="json")}
+
+    @router.get("/task-flow/tasks/{task_id}/session")
+    async def task_flow_task_session_insights(
+        task_id: str,
+        profile_id: str = "default",
+        history_limit: int = 6,
+        progress_limit: int = 18,
+        run_id: int | None = None,
+        after_event_id: int = 0,
+    ) -> dict[str, object]:
+        service = get_task_flow_service(get_settings())
+        settings = get_settings()
+        try:
+            task = await service.get_task(profile_id=profile_id, task_id=task_id)
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+
+        session_payload = _build_task_session_payload(task.model_dump(mode="json"))
+        session_id = str(session_payload.get("session_id") or "").strip() if session_payload is not None else ""
+        session_profile_id = (
+            str(session_payload.get("session_profile_id") or "").strip()
+            if session_payload is not None
+            else ""
+        )
+        normalized_history_limit = max(1, min(int(history_limit or 6), 12))
+        normalized_progress_limit = max(1, min(int(progress_limit or 18), 40))
+
+        if not session_id or not session_profile_id:
+            return {
+                "session": session_payload,
+                "turns": [],
+                "progress": {
+                    "events": [],
+                    "cursor": ProgressCursor(run_id=run_id, last_event_id=after_event_id).model_dump(mode="json"),
+                },
+            }
+
+        resources = await resolve_session_resources(
+            shared_session_factory=get_api_session_factory(),
+            settings=settings,
+        )
+        try:
+            async with session_scope(resources.session_factory) as db:
+                turns = await ChatTurnRepository(db).list_recent(
+                    profile_id=session_profile_id,
+                    session_id=session_id,
+                    limit=normalized_history_limit,
+                )
+        finally:
+            await dispose_owned_engine(resources)
+
+        progress = await poll_chat_progress(
+            profile_id=session_profile_id,
+            session_id=session_id,
+            cursor=ProgressCursor(run_id=run_id, last_event_id=after_event_id),
+        )
+        serialized_events = [item.model_dump(mode="json") for item in progress.events[-normalized_progress_limit:]]
+        serialized_turns = [
+            {
+                "id": item.id,
+                "session_id": item.session_id,
+                "profile_id": item.profile_id,
+                "user_message": item.user_message,
+                "assistant_message": item.assistant_message,
+            }
+            for item in turns
+        ]
+        return {
+            "session": session_payload,
+            "turns": serialized_turns,
+            "progress": {
+                "events": serialized_events,
+                "cursor": progress.cursor.model_dump(mode="json"),
+            },
+        }
 
     @router.patch("/task-flow/tasks/{task_id}")
     async def task_flow_task_patch(
@@ -1299,6 +1378,51 @@ def _last_activity_datetime(item: AutomationMetadata) -> datetime | None:
             if dt is not None
         )
     return max(candidates) if candidates else None
+
+
+def _build_task_session_payload(task_payload: dict[str, object]) -> dict[str, object] | None:
+    """Build one session payload for UI consumption from serialized task metadata."""
+
+    active_session = task_payload.get("active_session")
+    if isinstance(active_session, dict) and str(active_session.get("session_id") or "").strip():
+        return {
+            "session_id": str(active_session.get("session_id") or "").strip(),
+            "session_profile_id": str(
+                active_session.get("session_profile_id")
+                or task_payload.get("last_session_profile_id")
+                or task_payload.get("profile_id")
+                or "default"
+            ).strip(),
+            "dialog_active": bool(active_session.get("dialog_active")),
+            "queued_turn_count": int(active_session.get("queued_turn_count") or 0),
+            "running_turn_count": int(active_session.get("running_turn_count") or 0),
+            "latest_activity_at": active_session.get("latest_activity_at"),
+        }
+
+    session_id = str(task_payload.get("last_session_id") or "").strip()
+    if not session_id:
+        return None
+    return {
+        "session_id": session_id,
+        "session_profile_id": _infer_task_session_profile_id(task_payload),
+        "dialog_active": False,
+        "queued_turn_count": 0,
+        "running_turn_count": 0,
+        "latest_activity_at": None,
+    }
+
+
+def _infer_task_session_profile_id(task_payload: dict[str, object]) -> str:
+    """Infer one task session profile id when live session metadata is absent."""
+
+    last_session_profile_id = str(task_payload.get("last_session_profile_id") or "").strip()
+    if last_session_profile_id:
+        return last_session_profile_id
+    owner_type = str(task_payload.get("owner_type") or "").strip().lower()
+    owner_ref = str(task_payload.get("owner_ref") or "").strip()
+    if owner_type == "ai_profile" and owner_ref:
+        return owner_ref
+    return str(task_payload.get("profile_id") or "").strip() or "default"
 
 
 def _automation_http_error(exc: AutomationsServiceError) -> HTTPException:

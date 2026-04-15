@@ -140,6 +140,12 @@ export class ApiClient {
     });
   }
 
+  async getTaskSessionInsights(profileId, taskId, params = {}) {
+    return this.request(`/task-flow/tasks/${encodeURIComponent(taskId)}/session`, {
+      params: { profile_id: profileId, ...params },
+    });
+  }
+
   async listReviewTasks(profileId, params = {}) {
     return this.request("/task-flow/review", {
       params: { profile_id: profileId, ...params },

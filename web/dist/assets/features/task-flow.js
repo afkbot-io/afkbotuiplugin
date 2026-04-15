@@ -8,6 +8,7 @@ const HUMAN_ACTOR_TYPE = "human";
 export function createTaskFlowView({ api, notify, commitConfig }) {
   let root = null;
   let refreshTimer = null;
+  let sessionRefreshTimer = null;
   let mounted = false;
 
   const state = {
@@ -25,6 +26,8 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     reviewTasks: [],
     selectedTaskId: "",
     selectedTaskData: null,
+    sessionInsights: null,
+    sessionFeedOpen: false,
     selectedTaskIds: new Set(),
     loading: false,
     error: "",
@@ -34,6 +37,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     modalBusy: false,
     modalError: "",
     refreshInFlight: false,
+    sessionRefreshInFlight: false,
     boardPanActive: false,
     boardPanStartX: 0,
     boardPanScrollLeft: 0,
@@ -42,6 +46,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       board: "",
       review: "",
       selectedTask: "",
+      sessionInsights: "",
     },
   };
 
@@ -65,6 +70,24 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     return changed;
   }
 
+  function commitSessionInsights(sessionInsights) {
+    const nextSignature = sessionInsightsSignature(sessionInsights);
+    const changed = state.signatures.sessionInsights !== nextSignature;
+    state.sessionInsights = sessionInsights;
+    state.signatures.sessionInsights = nextSignature;
+    return changed;
+  }
+
+  function clearSessionInsights({ closeFeed = true } = {}) {
+    const hadInsights = Boolean(state.sessionInsights) || Boolean(state.signatures.sessionInsights);
+    state.sessionInsights = null;
+    state.signatures.sessionInsights = "";
+    if (closeFeed) {
+      state.sessionFeedOpen = false;
+    }
+    return hadInsights;
+  }
+
   function setModal(nextModal) {
     state.activeModal = nextModal;
     state.modalBusy = false;
@@ -80,6 +103,18 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       const action = actionNode.dataset.taskflowAction;
       if (action === "refresh") {
         await refreshAll({ force: true });
+        return;
+      }
+      if (action === "toggle-session-feed") {
+        if (!state.sessionInsights?.session?.session_id) {
+          return;
+        }
+        state.sessionFeedOpen = !state.sessionFeedOpen;
+        patchSessionRegion();
+        return;
+      }
+      if (action === "refresh-session-feed") {
+        await refreshSelectedTaskSession({ forceRender: false, incremental: false });
         return;
       }
       if (action === "open-flow") {
@@ -150,6 +185,8 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       if (action === "close-task-panel") {
         state.selectedTaskId = "";
         commitSelectedTaskData(null);
+        clearSessionInsights();
+        stopSessionRefreshLoop();
         render();
         return;
       }
@@ -356,6 +393,145 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     await refreshAll({ force: true });
   }
 
+  function stopSessionRefreshLoop() {
+    if (sessionRefreshTimer !== null) {
+      window.clearInterval(sessionRefreshTimer);
+      sessionRefreshTimer = null;
+    }
+  }
+
+  function syncSessionRefreshLoop() {
+    stopSessionRefreshLoop();
+    if (!state.active || !state.selectedTaskData?.task) {
+      return;
+    }
+    const sessionKey = getTaskSessionKey(state.selectedTaskData.task);
+    if (!sessionKey) {
+      return;
+    }
+    const activeSession = state.sessionInsights?.session?.dialog_active
+      || Boolean(getTaskActiveSession(state.selectedTaskData.task));
+    const intervalMs = activeSession ? 2000 : 4000;
+    sessionRefreshTimer = window.setInterval(() => {
+      if (document.hidden || state.activeModal || document.activeElement?.matches("input, textarea, select")) {
+        return;
+      }
+      void refreshSelectedTaskSession({ incremental: true });
+    }, intervalMs);
+  }
+
+  function captureRenderSnapshot() {
+    if (!root) {
+      return null;
+    }
+    const boardViewport = root.querySelector(".board-viewport");
+    const inspectorBody = root.querySelector(".task-inspector__body");
+    return {
+      boardScrollLeft: boardViewport instanceof HTMLElement ? boardViewport.scrollLeft : 0,
+      inspectorScrollTop: inspectorBody instanceof HTMLElement ? inspectorBody.scrollTop : 0,
+    };
+  }
+
+  function restoreRenderSnapshot(snapshot) {
+    if (!root || !snapshot) {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      const boardViewport = root.querySelector(".board-viewport");
+      const inspectorBody = root.querySelector(".task-inspector__body");
+      if (boardViewport instanceof HTMLElement) {
+        boardViewport.scrollLeft = snapshot.boardScrollLeft;
+      }
+      if (inspectorBody instanceof HTMLElement) {
+        inspectorBody.scrollTop = snapshot.inspectorScrollTop;
+      }
+    });
+  }
+
+  function patchSessionRegion() {
+    if (!root || !state.selectedTaskData?.task) {
+      return;
+    }
+    const region = root.querySelector("[data-task-session-region]");
+    if (!(region instanceof HTMLElement)) {
+      return;
+    }
+    const inspectorBody = root.querySelector(".task-inspector__body");
+    const inspectorScrollTop = inspectorBody instanceof HTMLElement ? inspectorBody.scrollTop : 0;
+    region.innerHTML = renderTaskSessionSection(
+      state.selectedTaskData.task,
+      state.sessionInsights,
+      state.sessionFeedOpen,
+    );
+    if (inspectorBody instanceof HTMLElement) {
+      inspectorBody.scrollTop = inspectorScrollTop;
+    }
+  }
+
+  async function refreshSelectedTaskSession({ forceRender = false, incremental = false } = {}) {
+    const profileId = currentProfileId();
+    const task = state.selectedTaskData?.task;
+    const sessionKey = getTaskSessionKey(task);
+    if (!profileId || !task || state.sessionRefreshInFlight) {
+      return false;
+    }
+    if (!sessionKey) {
+      stopSessionRefreshLoop();
+      const cleared = clearSessionInsights();
+      if (cleared) {
+        if (forceRender) {
+          render();
+        } else {
+          patchSessionRegion();
+        }
+      }
+      return cleared;
+    }
+    state.sessionRefreshInFlight = true;
+    try {
+      const sameSession = isSameSessionKey(state.sessionInsights, task.id, sessionKey);
+      const response = await api.getTaskSessionInsights(profileId, task.id, {
+        history_limit: 5,
+        progress_limit: 18,
+        ...(sameSession && incremental ? {
+          run_id: state.sessionInsights?.progress?.cursor?.run_id || undefined,
+          after_event_id: state.sessionInsights?.progress?.cursor?.last_event_id || 0,
+        } : {}),
+      });
+      const nextInsights = buildTaskSessionInsights({
+        taskId: task.id,
+        task,
+        payload: response,
+        previous: sameSession ? state.sessionInsights : null,
+        incremental,
+      });
+      const changed = commitSessionInsights(nextInsights);
+      if (!sameSession) {
+        state.sessionFeedOpen = Boolean(nextInsights?.session?.dialog_active || nextInsights?.turns?.length);
+      }
+      syncSessionRefreshLoop();
+      if (changed && sameSession && incremental) {
+        patchSessionRegion();
+        return false;
+      }
+      if (changed && !forceRender) {
+        patchSessionRegion();
+      }
+      if (!nextInsights?.session?.session_id) {
+        stopSessionRefreshLoop();
+      }
+      return changed;
+    } catch (error) {
+      state.error = normalizeError(error);
+      if (forceRender) {
+        render();
+      }
+      return true;
+    } finally {
+      state.sessionRefreshInFlight = false;
+    }
+  }
+
   async function refreshAll({ silent = false, force = false } = {}) {
     const profileId = currentProfileId();
     if (!profileId || state.refreshInFlight) {
@@ -406,13 +582,10 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       state.signatures.review = nextReviewSignature;
 
       if (state.selectedTaskId) {
-        const selectedTaskChanged = await loadSelectedTask({
+        await loadSelectedTask({
           silent,
           forceRender: force || !silent || structureChanged,
         });
-        if (!selectedTaskChanged && (force || !silent || structureChanged)) {
-          render();
-        }
       } else if (force || !silent || structureChanged) {
         render();
       }
@@ -450,10 +623,14 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
         task_dependencies: dependenciesPayload.task_dependencies || [],
       };
       const changed = commitSelectedTaskData(nextTaskData);
-      if (changed || !silent || forceRender) {
+      const sessionChanged = await refreshSelectedTaskSession({
+        forceRender: false,
+        incremental: silent && !forceRender,
+      });
+      if (changed || sessionChanged || !silent || forceRender) {
         render();
       }
-      return changed;
+      return changed || sessionChanged;
     } catch (error) {
       state.error = normalizeError(error);
       render();
@@ -467,6 +644,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     }
     state.selectedTaskId = taskId;
     state.signatures.selectedTask = "";
+    clearSessionInsights();
     render();
     await loadSelectedTask({ forceRender: true });
   }
@@ -555,6 +733,8 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       state.selectedTaskId = "";
       state.selectedTaskIds.clear();
       commitSelectedTaskData(null);
+      clearSessionInsights();
+      stopSessionRefreshLoop();
       setModal("");
       notify("Task Flow deleted.", "success");
       await refreshAll({ force: true });
@@ -613,6 +793,8 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       state.selectedTaskIds.delete(taskId);
       state.selectedTaskId = "";
       commitSelectedTaskData(null);
+      clearSessionInsights();
+      stopSessionRefreshLoop();
       setModal("");
       notify("Task deleted.", "success");
       await refreshAll({ force: true });
@@ -640,6 +822,8 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       if (state.selectedTaskId && (response.deleted_task_ids || []).includes(state.selectedTaskId)) {
         state.selectedTaskId = "";
         commitSelectedTaskData(null);
+        clearSessionInsights();
+        stopSessionRefreshLoop();
       }
       if (response.error_count) {
         state.modalBusy = false;
@@ -724,6 +908,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     if (!root) {
       return;
     }
+    const snapshot = captureRenderSnapshot();
     const activeFlow = state.flows.find((flow) => flow.id === state.flowFilter) || null;
     root.innerHTML = `
       <section class="route-page route-page--taskflow taskflow-page">
@@ -777,13 +962,15 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
           <section class="board-shell glass-panel">
             ${state.loading ? '<div class="empty-state empty-state--compact"><h3>Loading…</h3><p>Refreshing Task Flow data.</p></div>' : renderBoard(state.board, state.selectedTaskId, state.selectedTaskIds)}
           </section>
-          ${renderTaskPanel(state.selectedTaskData, currentProfiles(), currentConfig())}
+          ${renderTaskPanel(state.selectedTaskData, currentProfiles(), currentConfig(), state.sessionInsights, state.sessionFeedOpen)}
         </div>
 
         ${renderModal(state, currentConfig(), currentProfiles())}
       </section>
     `;
     syncConditionalFields(root);
+    restoreRenderSnapshot(snapshot);
+    syncSessionRefreshLoop();
   }
 
   function stopRefreshLoop() {
@@ -838,6 +1025,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     deactivate() {
       state.active = false;
       stopRefreshLoop();
+      stopSessionRefreshLoop();
       clearBoardPan();
     },
     async setProfile(profileId) {
@@ -850,8 +1038,10 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       state.reviewTasks = [];
       state.selectedTaskId = "";
       state.selectedTaskIds.clear();
-      state.signatures = { flows: "", board: "", review: "", selectedTask: "" };
+      state.signatures = { flows: "", board: "", review: "", selectedTask: "", sessionInsights: "" };
       commitSelectedTaskData(null);
+      clearSessionInsights();
+      stopSessionRefreshLoop();
       if (state.active) {
         await refreshAll({ force: true });
       }
@@ -865,6 +1055,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     },
     destroy() {
       stopRefreshLoop();
+      stopSessionRefreshLoop();
       clearBoardPan();
       if (!mounted || !root) {
         return;
@@ -1047,7 +1238,7 @@ function renderCard(task, selectedTaskId, selectedTaskIds) {
   `;
 }
 
-function renderTaskPanel(data, profiles, config) {
+function renderTaskPanel(data, profiles, config, sessionInsights, sessionFeedOpen) {
   if (!data?.task) {
     return "";
   }
@@ -1142,7 +1333,9 @@ function renderTaskPanel(data, profiles, config) {
           </div>
         </form>
 
-        ${renderTaskSessionPanel(task)}
+        <div data-task-session-region>
+          ${renderTaskSessionSection(task, sessionInsights, sessionFeedOpen)}
+        </div>
 
         ${task.status === "review" ? `
           <section class="detail-section">
@@ -1220,33 +1413,66 @@ function renderTaskPanel(data, profiles, config) {
   `;
 }
 
-function renderTaskSessionPanel(task) {
-  const activeSession = getTaskActiveSession(task);
-  const sessionId = activeSession?.session_id || task.last_session_id;
+function renderTaskSessionSection(task, sessionInsights, sessionFeedOpen) {
+  const session = getRenderedTaskSession(task, sessionInsights);
+  const sessionId = session?.session_id || "";
   if (!sessionId) {
     return "";
   }
-  const sessionProfileId = activeSession?.session_profile_id || inferTaskSessionProfileId(task);
+  const sessionProfileId = session?.session_profile_id || inferTaskSessionProfileId(task);
+  const progressEvents = sessionInsights?.progress?.events || [];
+  const turns = sessionInsights?.turns || [];
   return `
-    <section class="detail-section">
+    <section class="detail-section task-session-section">
       <div class="panel-head panel-head--compact">
         <div>
           <p class="panel-head__eyebrow">Session</p>
-          <h4 class="panel-head__title">Task Session</h4>
+          <h4 class="panel-head__title">Agent Session</h4>
         </div>
       </div>
-      <article class="task-session-card ${activeSession ? "task-session-card--active" : ""}">
+      <article class="task-session-card ${session?.dialog_active ? "task-session-card--active" : ""}">
         <div class="task-session-card__status">
-          <span class="task-session-indicator ${activeSession ? "" : "task-session-indicator--idle"}" aria-hidden="true"></span>
-          <span class="badge ${activeSession ? "badge--live" : "badge--muted"}">${escapeHtml(activeSession ? "dialog active" : "last bound session")}</span>
+          <span class="task-session-indicator ${session?.dialog_active ? "" : "task-session-indicator--idle"}" aria-hidden="true"></span>
+          <span class="badge ${session?.dialog_active ? "badge--live" : "badge--muted"}">${escapeHtml(session?.dialog_active ? "dialog active" : "last bound session")}</span>
         </div>
         <p class="task-session-card__code">${escapeHtml(sessionId)}</p>
         <div class="task-session-card__meta">
           <span>profile: ${escapeHtml(sessionProfileId)}</span>
-          ${activeSession ? `<span>${escapeHtml(formatTaskSessionCounts(activeSession))}</span>` : '<span>No live dialog detected.</span>'}
-          ${activeSession?.latest_activity_at ? `<span>last activity: ${escapeHtml(formatDateTime(activeSession.latest_activity_at))}</span>` : ""}
+          ${session?.dialog_active ? `<span>${escapeHtml(formatTaskSessionCounts(session))}</span>` : '<span>No live dialog detected.</span>'}
+          ${session?.latest_activity_at ? `<span>last activity: ${escapeHtml(formatDateTime(session.latest_activity_at))}</span>` : ""}
+        </div>
+        <div class="task-session-card__actions">
+          <button class="button button--ghost button--tiny" data-taskflow-action="toggle-session-feed" type="button">${sessionFeedOpen ? "Hide Session Feed" : "Open Session Feed"}</button>
+          <button class="button button--ghost button--tiny" data-taskflow-action="refresh-session-feed" type="button">Refresh Feed</button>
         </div>
       </article>
+      ${sessionFeedOpen ? `
+        <section class="task-session-feed">
+          <div class="task-session-feed__group">
+            <div class="panel-head panel-head--compact">
+              <div>
+                <p class="panel-head__eyebrow">Live Feed</p>
+                <h4 class="panel-head__title task-session-feed__title">What the agent is doing</h4>
+              </div>
+              <span class="badge ${session?.dialog_active ? "badge--live" : "badge--muted"}">${escapeHtml(session?.dialog_active ? "live" : "history")}</span>
+            </div>
+            <div class="task-session-stream">
+              ${turns.length ? turns.map((turn) => renderSessionTurn(turn)).join("") : '<p class="muted-copy">No persisted chat turns yet.</p>'}
+            </div>
+          </div>
+          <div class="task-session-feed__group">
+            <div class="panel-head panel-head--compact">
+              <div>
+                <p class="panel-head__eyebrow">Runlog</p>
+                <h4 class="panel-head__title task-session-feed__title">Live activity</h4>
+              </div>
+            </div>
+            <div class="timeline-list timeline-list--session">
+              ${progressEvents.length ? progressEvents.map((event) => renderSessionProgressEvent(event)).join("") : '<p class="muted-copy">No live activity yet.</p>'}
+            </div>
+          </div>
+        </section>
+      ` : ""}
     </section>
   `;
 }
@@ -1687,13 +1913,7 @@ function boardSignature(board) {
         reviewer_ref: task.reviewer_ref,
         requires_review: Boolean(task.requires_review),
         flow_id: task.flow_id,
-        active_session: task.active_session ? {
-          session_id: task.active_session.session_id,
-          session_profile_id: task.active_session.session_profile_id,
-          queued_turn_count: task.active_session.queued_turn_count,
-          running_turn_count: task.active_session.running_turn_count,
-          latest_activity_at: task.active_session.latest_activity_at,
-        } : null,
+        active_session: normalizeSessionSignature(task.active_session),
       })),
     })),
   );
@@ -1719,12 +1939,232 @@ function taskDataSignature(data) {
     return "";
   }
   return JSON.stringify({
-    task: data.task,
+    task: {
+      ...data.task,
+      active_session: normalizeSessionSignature(data.task.active_session),
+    },
     task_comments: data.task_comments || [],
     task_events: data.task_events || [],
     task_runs: data.task_runs || [],
     task_dependencies: data.task_dependencies || [],
   });
+}
+
+function sessionInsightsSignature(insights) {
+  if (!insights?.session?.session_id) {
+    return "";
+  }
+  return JSON.stringify({
+    task_id: insights.taskId,
+    session: normalizeSessionSignature(insights.session),
+    turns: (insights.turns || []).map((item) => ({
+      id: item.id,
+      user_message: item.user_message,
+      assistant_message: item.assistant_message,
+    })),
+    progress: {
+      cursor: insights.progress?.cursor || { run_id: null, last_event_id: 0 },
+      events: (insights.progress?.events || []).map((item) => ({
+        event_id: item.event_id,
+        run_id: item.run_id,
+        stage: item.stage,
+        event_type: item.event_type,
+        tool_name: item.tool_name,
+        payload: item.payload || {},
+      })),
+    },
+  });
+}
+
+function normalizeSessionSignature(session) {
+  if (!session?.session_id) {
+    return null;
+  }
+  return {
+    session_id: String(session.session_id || "").trim(),
+    session_profile_id: String(session.session_profile_id || "").trim(),
+    dialog_active: Boolean(session.dialog_active),
+  };
+}
+
+function buildFallbackSessionFromTask(task) {
+  const sessionId = String(task?.last_session_id || "").trim();
+  if (!sessionId) {
+    return null;
+  }
+  return {
+    session_id: sessionId,
+    session_profile_id: inferTaskSessionProfileId(task),
+    dialog_active: false,
+    queued_turn_count: 0,
+    running_turn_count: 0,
+    latest_activity_at: null,
+  };
+}
+
+function getTaskSessionKey(task) {
+  const session = getTaskActiveSession(task) || buildFallbackSessionFromTask(task);
+  if (!session?.session_id) {
+    return null;
+  }
+  return {
+    taskId: String(task?.id || "").trim(),
+    sessionId: String(session.session_id || "").trim(),
+    sessionProfileId: String(session.session_profile_id || "").trim() || inferTaskSessionProfileId(task),
+  };
+}
+
+function isSameSessionKey(sessionInsights, taskId, sessionKey) {
+  return Boolean(
+    sessionInsights?.session?.session_id
+    && sessionInsights.taskId === taskId
+    && String(sessionInsights.session.session_id || "").trim() === sessionKey.sessionId
+    && String(sessionInsights.session.session_profile_id || "").trim() === sessionKey.sessionProfileId
+  );
+}
+
+function getRenderedTaskSession(task, sessionInsights) {
+  const sessionKey = getTaskSessionKey(task);
+  if (
+    sessionKey
+    && isSameSessionKey(sessionInsights, sessionKey.taskId, sessionKey)
+    && sessionInsights?.session?.session_id
+  ) {
+    return sessionInsights.session;
+  }
+  return getTaskActiveSession(task) || buildFallbackSessionFromTask(task);
+}
+
+function buildTaskSessionInsights({ taskId, task, payload, previous, incremental }) {
+  const session = payload?.session || getTaskActiveSession(task) || buildFallbackSessionFromTask(task);
+  const turns = (payload?.turns || []).map((item) => ({
+    id: Number(item?.id || 0),
+    user_message: String(item?.user_message || ""),
+    assistant_message: String(item?.assistant_message || ""),
+  }));
+  const nextEvents = incremental && previous
+    ? mergeSessionProgressEvents(previous.progress?.events || [], payload?.progress?.events || [])
+    : (payload?.progress?.events || []).map((item) => ({ ...item }));
+  return {
+    taskId,
+    session,
+    turns,
+    progress: {
+      cursor: payload?.progress?.cursor || previous?.progress?.cursor || { run_id: null, last_event_id: 0 },
+      events: nextEvents.slice(-18),
+    },
+  };
+}
+
+function mergeSessionProgressEvents(existingEvents, incomingEvents) {
+  const merged = [];
+  const seen = new Set();
+  for (const item of [...existingEvents, ...incomingEvents]) {
+    const eventId = Number(item?.event_id || 0);
+    const key = eventId > 0 ? `event:${eventId}` : `${item?.run_id || "run"}:${item?.event_type || "event"}:${JSON.stringify(item?.payload || {})}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push({ ...item });
+  }
+  return merged;
+}
+
+function renderSessionTurn(turn) {
+  const userMessage = String(turn?.user_message || "").trim();
+  const assistantMessage = String(turn?.assistant_message || "").trim();
+  return `
+    <article class="session-turn">
+      ${userMessage ? `
+        <div class="session-bubble session-bubble--user">
+          <span class="session-bubble__label">Prompt</span>
+          <p>${escapeHtml(userMessage)}</p>
+        </div>
+      ` : ""}
+      ${assistantMessage ? `
+        <div class="session-bubble session-bubble--assistant">
+          <span class="session-bubble__label">Assistant</span>
+          <p>${escapeHtml(assistantMessage)}</p>
+        </div>
+      ` : ""}
+    </article>
+  `;
+}
+
+function renderSessionProgressEvent(event) {
+  const stage = String(event?.stage || "").trim();
+  const timestamp = event?.payload?.created_at || event?.created_at || null;
+  return `
+    <article class="timeline-item timeline-item--session">
+      <div class="timeline-item__head">
+        <p>${escapeHtml(formatSessionEventTitle(event))}</p>
+        ${stage ? `<span class="badge badge--muted">${escapeHtml(formatStatusLabel(stage))}</span>` : ""}
+      </div>
+      <p class="timeline-item__copy">${escapeHtml(formatSessionEventCopy(event))}</p>
+      <span>${escapeHtml(timestamp ? formatDateTime(timestamp) : `run ${event?.run_id || "?"} • ${event?.event_type || "event"}`)}</span>
+    </article>
+  `;
+}
+
+function formatSessionEventTitle(event) {
+  const eventType = String(event?.event_type || "").trim();
+  if (eventType === "tool.call") {
+    return event?.tool_name ? `Calling ${event.tool_name}` : "Calling tool";
+  }
+  if (eventType === "tool.progress") {
+    return event?.tool_name ? `${event.tool_name} in progress` : "Tool in progress";
+  }
+  if (eventType === "tool.result") {
+    return event?.tool_name ? `${event.tool_name} returned` : "Tool returned";
+  }
+  if (eventType === "turn.think") {
+    return "Thinking";
+  }
+  if (eventType === "turn.plan") {
+    return "Planning";
+  }
+  if (eventType === "turn.finalize") {
+    return "Turn finished";
+  }
+  if (eventType === "turn.cancel") {
+    return "Turn cancelled";
+  }
+  if (eventType === "llm.call.start") {
+    return "LLM call started";
+  }
+  if (eventType === "llm.call.done") {
+    return "LLM call finished";
+  }
+  if (eventType === "llm.call.error") {
+    return "LLM call failed";
+  }
+  if (eventType === "llm.call.timeout") {
+    return "LLM call timed out";
+  }
+  return eventType || "Session event";
+}
+
+function formatSessionEventCopy(event) {
+  const payload = event?.payload && typeof event.payload === "object" ? event.payload : {};
+  const candidates = [
+    payload.message,
+    payload.summary,
+    payload.status,
+    payload.reason,
+    payload.error,
+    payload.error_text,
+    payload.result,
+    payload.stage,
+  ];
+  const textCandidate = candidates.find((item) => typeof item === "string" && item.trim());
+  if (typeof textCandidate === "string" && textCandidate.trim()) {
+    return textCandidate.trim();
+  }
+  if (event?.tool_name) {
+    return `tool: ${event.tool_name}`;
+  }
+  return "Waiting for the next visible session event.";
 }
 
 function normalizeError(error) {
@@ -1896,7 +2336,9 @@ function formatStatusLabel(status) {
   if (!normalized) {
     return "Unknown";
   }
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  return normalized
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function formatTaskSessionCounts(activity) {
