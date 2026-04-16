@@ -6,9 +6,10 @@ import asyncio
 from datetime import datetime
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from fastapi import APIRouter, HTTPException, Response
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy import func, select
 
 from afkbot_plugin_afkbotui.bootstrap_files import get_profile_bootstrap_files_service
@@ -33,6 +34,21 @@ from afkbot.settings import get_settings
 
 _TASK_COMMENT_PREVIEW_SCHEMA_READY = False
 _TASK_COMMENT_PREVIEW_SCHEMA_LOCK: asyncio.Lock | None = None
+_TASK_PLAN_STATUS = "plan"
+_PUBLIC_TASK_STATUSES = frozenset(
+    {
+        _TASK_PLAN_STATUS,
+        "todo",
+        "claimed",
+        "running",
+        "blocked",
+        "review",
+        "completed",
+        "failed",
+        "cancelled",
+    }
+)
+_TASK_ATTACHMENT_DEFAULT_TYPE = "application/octet-stream"
 
 
 class UiPluginConfig(BaseModel):
@@ -106,7 +122,8 @@ class TaskCreatePayload(BaseModel):
     """Request body for one task create action."""
 
     title: str = Field(min_length=1, max_length=240)
-    prompt: str = Field(min_length=1, max_length=12000)
+    description: str = Field(min_length=1, max_length=12000)
+    status: str = Field(default="plan", min_length=1, max_length=64)
     created_by_type: str = Field(default="human", min_length=1)
     created_by_ref: str = Field(default="web-user", min_length=1)
     flow_id: str | None = None
@@ -121,6 +138,7 @@ class TaskCreatePayload(BaseModel):
     labels: tuple[str, ...] = ()
     requires_review: bool = False
     depends_on_task_ids: tuple[str, ...] = ()
+    attachments: tuple["TaskAttachmentPayload", ...] = ()
 
 
 class TaskCommentCreatePayload(BaseModel):
@@ -137,7 +155,7 @@ class TaskPatchPayload(BaseModel):
     """Request body for one task update."""
 
     title: str | None = None
-    prompt: str | None = None
+    description: str | None = Field(default=None, max_length=12000)
     status: str | None = None
     priority: int | None = None
     due_at: datetime | None = None
@@ -153,6 +171,7 @@ class TaskPatchPayload(BaseModel):
     blocked_reason_text: str | None = None
     actor_type: str | None = None
     actor_ref: str | None = None
+    attachments: tuple["TaskAttachmentPayload", ...] | None = None
 
 
 class ReviewApprovePayload(BaseModel):
@@ -193,6 +212,28 @@ class TaskBulkUpdatePayload(BaseModel):
     skip_active: bool = True
     comment_message: str | None = Field(default=None, max_length=4000)
     comment_type: str = Field(default="note", min_length=1, max_length=64)
+
+
+class TaskAttachmentPayload(BaseModel):
+    """JSON-friendly attachment payload used by the UI and router."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str | None = Field(default=None, min_length=1, max_length=120)
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    content_type: str | None = Field(default=None, max_length=255)
+    content_base64: str | None = Field(default=None, min_length=1)
+    kind: Literal["file", "image", "text"] | None = None
+
+    @model_validator(mode="after")
+    def validate_attachment(self) -> "TaskAttachmentPayload":
+        has_reference = bool(str(self.id or "").strip())
+        has_content = bool(str(self.content_base64 or "").strip())
+        if not has_reference and not has_content:
+            raise ValueError("attachment requires either id or content_base64")
+        if has_content and not str(self.name or "").strip():
+            raise ValueError("new attachments require name")
+        return self
 
 
 class TaskBulkDeletePayload(BaseModel):
@@ -505,7 +546,13 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             )
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
-        return {"board": await _serialize_board_payload(payload.model_dump(mode="json"))}
+        return {
+            "board": await _serialize_board_payload(
+                payload.model_dump(mode="json"),
+                profile_id=profile_id,
+                api_prefix=api_prefix,
+            )
+        }
 
     @router.get("/task-flow/sessions/activity")
     async def task_flow_session_activity(
@@ -538,29 +585,46 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         profile_id: str = "default",
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
+        requested_status = _normalize_public_task_status(payload.status)
         try:
-            item = await service.create_task(
-                profile_id=profile_id,
-                title=payload.title,
-                prompt=payload.prompt,
-                created_by_type=payload.created_by_type,
-                created_by_ref=payload.created_by_ref,
-                flow_id=payload.flow_id,
-                priority=payload.priority,
-                due_at=payload.due_at,
-                owner_type=payload.owner_type,
-                owner_ref=payload.owner_ref,
-                reviewer_type=payload.reviewer_type,
-                reviewer_ref=payload.reviewer_ref,
-                source_type=payload.source_type,
-                source_ref=payload.source_ref,
-                labels=payload.labels,
-                requires_review=payload.requires_review,
-                depends_on_task_ids=payload.depends_on_task_ids,
-            )
+            create_kwargs: dict[str, object] = {
+                "profile_id": profile_id,
+                "title": payload.title,
+                "description": _require_task_description(payload.description),
+                "status": requested_status,
+                "created_by_type": payload.created_by_type,
+                "created_by_ref": payload.created_by_ref,
+                "flow_id": payload.flow_id,
+                "priority": payload.priority,
+                "due_at": payload.due_at,
+                "owner_type": payload.owner_type,
+                "owner_ref": payload.owner_ref,
+                "reviewer_type": payload.reviewer_type,
+                "reviewer_ref": payload.reviewer_ref,
+                "source_type": payload.source_type,
+                "source_ref": payload.source_ref,
+                "labels": payload.labels,
+                "requires_review": payload.requires_review,
+                "depends_on_task_ids": payload.depends_on_task_ids,
+                "attachments": _serialize_native_attachment_payloads(payload.attachments),
+            }
+            item = await service.create_task(**create_kwargs)
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
-        return {"task": item.model_dump(mode="json")}
+        attachments = await _load_task_attachment_summaries_from_service(
+            service=service,
+            profile_id=profile_id,
+            task_id=item.id,
+            api_prefix=api_prefix,
+        )
+        return {
+            "task": _serialize_task_payload(
+                item.model_dump(mode="json"),
+                profile_id=profile_id,
+                api_prefix=api_prefix,
+                attachments=attachments,
+            )
+        }
 
     @router.get("/task-flow/tasks/{task_id}")
     async def task_flow_task_get(task_id: str, profile_id: str = "default") -> dict[str, object]:
@@ -569,7 +633,59 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             payload = await service.get_task(profile_id=profile_id, task_id=task_id)
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
-        return {"task": payload.model_dump(mode="json")}
+        attachments = await _load_task_attachment_summaries_from_service(
+            service=service,
+            profile_id=profile_id,
+            task_id=payload.id,
+            api_prefix=api_prefix,
+        )
+        return {
+            "task": _serialize_task_payload(
+                payload.model_dump(mode="json"),
+                profile_id=profile_id,
+                api_prefix=api_prefix,
+                attachments=attachments,
+            )
+        }
+
+    @router.get("/task-flow/tasks/{task_id}/attachments")
+    async def task_flow_task_attachments(
+        task_id: str,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_task_flow_service(get_settings())
+        try:
+            attachments = await _load_task_attachment_summaries_from_service(
+                service=service,
+                profile_id=profile_id,
+                task_id=task_id,
+                api_prefix=api_prefix,
+            )
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+        return {"attachments": attachments}
+
+    @router.get("/task-flow/tasks/{task_id}/attachments/{attachment_id}")
+    async def task_flow_task_attachment_download(
+        task_id: str,
+        attachment_id: str,
+        profile_id: str = "default",
+    ) -> Response:
+        service = get_task_flow_service(get_settings())
+        try:
+            payload = await service.get_task_attachment_content(
+                profile_id=profile_id,
+                task_id=task_id,
+                attachment_id=attachment_id,
+            )
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+        filename = str(payload.attachment.name or attachment_id)
+        return Response(
+            content=payload.content_bytes,
+            media_type=str(payload.attachment.content_type or _TASK_ATTACHMENT_DEFAULT_TYPE),
+            headers={"Content-Disposition": f'attachment; filename="{quote(filename)}"'},
+        )
 
     @router.get("/task-flow/tasks/{task_id}/session")
     async def task_flow_task_session_insights(
@@ -658,8 +774,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 "profile_id": profile_id,
                 "task_id": task_id,
                 "title": payload.title,
-                "prompt": payload.prompt,
-                "status": payload.status,
+                "description": _normalize_optional_task_description(payload.description),
                 "priority": payload.priority,
                 "due_at": payload.due_at,
                 "owner_type": payload.owner_type,
@@ -668,19 +783,47 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 "reviewer_ref": payload.reviewer_ref,
                 "requires_review": payload.requires_review,
                 "labels": payload.labels,
-                "blocked_reason_code": payload.blocked_reason_code,
-                "blocked_reason_text": payload.blocked_reason_text,
                 "actor_type": payload.actor_type,
                 "actor_ref": payload.actor_ref,
             }
+            update_kwargs.update(
+                _build_public_status_update_kwargs(
+                    status=payload.status,
+                    blocked_reason_code=payload.blocked_reason_code,
+                    blocked_reason_text=payload.blocked_reason_text,
+                )
+            )
             if "session_id" in payload.model_fields_set:
                 update_kwargs["session_id"] = payload.session_id
             if "session_profile_id" in payload.model_fields_set:
                 update_kwargs["session_profile_id"] = payload.session_profile_id
             item = await service.update_task(**update_kwargs)
+            if payload.attachments is not None:
+                await _sync_task_attachments(
+                    service=service,
+                    profile_id=profile_id,
+                    task_id=task_id,
+                    actor_type=str(payload.actor_type or "human"),
+                    actor_ref=str(payload.actor_ref or "web-user"),
+                    attachments=payload.attachments,
+                )
+                item = await service.get_task(profile_id=profile_id, task_id=task_id)
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
-        return {"task": item.model_dump(mode="json")}
+        attachments = await _load_task_attachment_summaries_from_service(
+            service=service,
+            profile_id=profile_id,
+            task_id=item.id,
+            api_prefix=api_prefix,
+        )
+        return {
+            "task": _serialize_task_payload(
+                item.model_dump(mode="json"),
+                profile_id=profile_id,
+                api_prefix=api_prefix,
+                attachments=attachments,
+            )
+        }
 
     @router.delete("/task-flow/tasks/{task_id}")
     async def task_flow_task_delete(
@@ -714,10 +857,14 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                         }
                     )
                     continue
+                public_status_kwargs = _build_public_status_update_kwargs(
+                    status=payload.status,
+                    blocked_reason_code=payload.blocked_reason_code,
+                    blocked_reason_text=payload.blocked_reason_text,
+                )
                 updated = await service.update_task(
                     profile_id=profile_id,
                     task_id=task_id,
-                    status=payload.status,
                     priority=payload.priority,
                     due_at=payload.due_at,
                     owner_type=payload.owner_type,
@@ -726,10 +873,9 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                     reviewer_ref=payload.reviewer_ref,
                     requires_review=payload.requires_review,
                     labels=payload.labels,
-                    blocked_reason_code=payload.blocked_reason_code,
-                    blocked_reason_text=payload.blocked_reason_text,
                     actor_type=payload.actor_type,
                     actor_ref=payload.actor_ref,
+                    **public_status_kwargs,
                 )
                 if payload.comment_message:
                     await service.add_task_comment(
@@ -740,7 +886,13 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                         message=payload.comment_message,
                         comment_type=payload.comment_type,
                     )
-                updated_tasks.append(updated.model_dump(mode="json"))
+                updated_tasks.append(
+                    _serialize_task_payload(
+                        updated.model_dump(mode="json"),
+                        profile_id=profile_id,
+                        api_prefix=api_prefix,
+                    )
+                )
             except TaskFlowServiceError as exc:
                 errors.append(
                     {
@@ -881,7 +1033,16 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             )
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
-        return {"review_tasks": [item.model_dump(mode="json") for item in payload]}
+        return {
+            "review_tasks": [
+                _serialize_task_payload(
+                    item.model_dump(mode="json"),
+                    profile_id=profile_id,
+                    api_prefix=api_prefix,
+                )
+                for item in payload
+            ]
+        }
 
     @router.post("/task-flow/tasks/{task_id}/review/approve")
     async def task_flow_review_approve(
@@ -899,7 +1060,20 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             )
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
-        return {"task": item.model_dump(mode="json")}
+        attachments = await _load_task_attachment_summaries_from_service(
+            service=service,
+            profile_id=profile_id,
+            task_id=item.id,
+            api_prefix=api_prefix,
+        )
+        return {
+            "task": _serialize_task_payload(
+                item.model_dump(mode="json"),
+                profile_id=profile_id,
+                api_prefix=api_prefix,
+                attachments=attachments,
+            )
+        }
 
     @router.post("/task-flow/tasks/{task_id}/review/request-changes")
     async def task_flow_review_request_changes(
@@ -921,7 +1095,20 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             )
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
-        return {"task": item.model_dump(mode="json")}
+        attachments = await _load_task_attachment_summaries_from_service(
+            service=service,
+            profile_id=profile_id,
+            task_id=item.id,
+            api_prefix=api_prefix,
+        )
+        return {
+            "task": _serialize_task_payload(
+                item.model_dump(mode="json"),
+                profile_id=profile_id,
+                api_prefix=api_prefix,
+                attachments=attachments,
+            )
+        }
 
     @router.get("/subagents")
     async def list_subagents(profile_id: str = "default", q: str = "") -> dict[str, object]:
@@ -1174,8 +1361,13 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
     return router
 
 
-async def _serialize_board_payload(payload: dict[str, object]) -> dict[str, object]:
-    """Enrich board preview tasks with the latest comment metadata."""
+async def _serialize_board_payload(
+    payload: dict[str, object],
+    *,
+    profile_id: str,
+    api_prefix: str,
+) -> dict[str, object]:
+    """Enrich board preview tasks with public task fields and latest comment previews."""
 
     columns = payload.get("columns")
     if not isinstance(columns, list):
@@ -1185,24 +1377,53 @@ async def _serialize_board_payload(payload: dict[str, object]) -> dict[str, obje
         if not isinstance(column, dict):
             continue
         for task in column.get("tasks", []):
-            if isinstance(task, dict):
-                task_id = str(task.get("id") or "").strip()
-                if task_id:
-                    task_ids.append(task_id)
+            if not isinstance(task, dict):
+                continue
+            task_id = str(task.get("id") or "").strip()
+            if task_id:
+                task_ids.append(task_id)
     previews = await _load_latest_task_comment_previews(task_ids)
-    if not previews:
-        return payload
+    next_payload = dict(payload)
+    serialized_columns: list[dict[str, object]] = []
     for column in columns:
         if not isinstance(column, dict):
             continue
+        serialized_tasks: list[dict[str, object]] = []
         for task in column.get("tasks", []):
             if not isinstance(task, dict):
                 continue
-            preview = previews.get(str(task.get("id") or "").strip())
-            if preview is None:
-                continue
-            task.update(preview)
-    return payload
+            task_id = str(task.get("id") or "").strip()
+            enriched_task = dict(task)
+            preview = previews.get(task_id)
+            if preview is not None:
+                enriched_task.update(preview)
+            serialized_task = _serialize_task_payload(
+                enriched_task,
+                profile_id=profile_id,
+                api_prefix=api_prefix,
+            )
+            serialized_tasks.append(serialized_task)
+        next_column = dict(column)
+        next_column["tasks"] = serialized_tasks
+        serialized_columns.append(next_column)
+
+    if not any(str(column.get("id") or "").strip().lower() == _TASK_PLAN_STATUS for column in serialized_columns):
+        serialized_columns.insert(
+            0,
+            {"id": _TASK_PLAN_STATUS, "title": "PLAN", "statuses": (_TASK_PLAN_STATUS,), "count": 0, "tasks": []},
+        )
+    serialized_columns.sort(key=lambda column: 0 if str(column.get("id") or "").strip().lower() == _TASK_PLAN_STATUS else 1)
+    plan_count = next(
+        (
+            int(column.get("count") or len(column.get("tasks") or []))
+            for column in serialized_columns
+            if str(column.get("id") or "").strip().lower() == _TASK_PLAN_STATUS
+        ),
+        0,
+    )
+    next_payload["columns"] = serialized_columns
+    next_payload["plan_count"] = plan_count
+    return next_payload
 
 
 async def _load_latest_task_comment_previews(task_ids: list[str]) -> dict[str, dict[str, str | None]]:
@@ -1249,6 +1470,199 @@ async def _load_latest_task_comment_previews(task_ids: list[str]) -> dict[str, d
             }
             for task_id, message, actor_type, actor_ref, created_at in rows.all()
         }
+
+
+def _require_task_description(description: str | None) -> str:
+    """Resolve one required public task description."""
+
+    value = str(description or "").strip()
+    if not value:
+        raise HTTPException(
+            status_code=400,
+            detail={"error_code": "task_description_required", "reason": "description is required"},
+        )
+    return value
+
+
+def _normalize_optional_task_description(description: str | None) -> str | None:
+    """Normalize an optional task description override for patch requests."""
+
+    if description is None:
+        return None
+    value = str(description or "").strip()
+    return value or None
+
+
+def _normalize_public_task_status(status: str | None) -> str:
+    """Normalize the UI/API task status."""
+
+    normalized = str(status or "").strip().lower() or "todo"
+    if normalized not in _PUBLIC_TASK_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail={"error_code": "invalid_status", "reason": f"Unsupported task status: {status}"},
+        )
+    return normalized
+
+
+def _build_public_status_update_kwargs(
+    *,
+    status: str | None = None,
+    blocked_reason_code: str | None = None,
+    blocked_reason_text: str | None = None,
+) -> dict[str, object]:
+    """Map public task status semantics onto backend task update kwargs."""
+
+    update_kwargs: dict[str, object] = {}
+    if status is not None:
+        normalized_status = _normalize_public_task_status(status)
+        update_kwargs["status"] = normalized_status
+        if normalized_status == "blocked":
+            update_kwargs["blocked_reason_code"] = blocked_reason_code
+            update_kwargs["blocked_reason_text"] = blocked_reason_text
+            return update_kwargs
+        update_kwargs["blocked_reason_code"] = None
+        update_kwargs["blocked_reason_text"] = None
+        return update_kwargs
+    if blocked_reason_code is not None:
+        update_kwargs["blocked_reason_code"] = blocked_reason_code
+    if blocked_reason_text is not None:
+        update_kwargs["blocked_reason_text"] = blocked_reason_text
+    return update_kwargs
+
+
+def _serialize_task_payload(
+    payload: dict[str, object],
+    *,
+    profile_id: str,
+    api_prefix: str,
+    attachments: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    """Serialize one task for the public plugin API surface."""
+
+    task_payload = dict(payload)
+    description = str(task_payload.pop("description", "") or "").strip()
+    task_payload["description"] = description
+    del profile_id, api_prefix
+    task_payload["attachments"] = list(attachments or [])
+    if attachments is not None:
+        task_payload["attachment_count"] = len(attachments)
+    else:
+        task_payload["attachment_count"] = max(
+            int(task_payload.get("attachment_count") or 0),
+            len(task_payload["attachments"]),
+        )
+    return task_payload
+
+
+def _serialize_task_attachment_payload(
+    *,
+    profile_id: str,
+    task_id: str,
+    api_prefix: str,
+    attachment: object,
+) -> dict[str, object]:
+    """Serialize one backend task attachment for the plugin API."""
+
+    attachment_id = str(getattr(attachment, "id", "") or "").strip()
+    return {
+        "id": attachment_id,
+        "name": str(getattr(attachment, "name", "") or attachment_id),
+        "content_type": str(getattr(attachment, "content_type", "") or _TASK_ATTACHMENT_DEFAULT_TYPE),
+        "kind": str(getattr(attachment, "kind", "") or "file"),
+        "size": int(getattr(attachment, "byte_size", 0) or 0),
+        "created_at": getattr(attachment, "created_at", None),
+        "download_url": (
+            f"{api_prefix.rstrip('/')}/task-flow/tasks/{quote(task_id, safe='')}/attachments/{quote(attachment_id, safe='')}"
+            f"?profile_id={quote(profile_id, safe='')}"
+        ),
+    }
+
+
+async def _load_task_attachment_summaries_from_service(
+    *,
+    service: object,
+    profile_id: str,
+    task_id: str,
+    api_prefix: str,
+) -> list[dict[str, object]]:
+    """Load task attachment metadata directly from the backend service."""
+
+    rows = await service.list_task_attachments(profile_id=profile_id, task_id=task_id)
+    return [
+        _serialize_task_attachment_payload(
+            profile_id=profile_id,
+            task_id=task_id,
+            api_prefix=api_prefix,
+            attachment=row,
+        )
+        for row in rows
+    ]
+
+
+def _serialize_native_attachment_payloads(
+    attachments: tuple[TaskAttachmentPayload, ...] | None,
+) -> list[dict[str, object]]:
+    """Serialize attachment payloads for an attachment-aware backend."""
+
+    if not attachments:
+        return []
+    return [item.model_dump(mode="json", exclude_none=True) for item in attachments]
+
+
+async def _sync_task_attachments(
+    *,
+    service: object,
+    profile_id: str,
+    task_id: str,
+    actor_type: str,
+    actor_ref: str,
+    attachments: tuple[TaskAttachmentPayload, ...],
+) -> None:
+    """Replace one task attachment set through backend add/remove operations."""
+
+    existing_rows = await service.list_task_attachments(profile_id=profile_id, task_id=task_id)
+    keep_ids = {
+        str(item.id or "").strip()
+        for item in attachments
+        if str(item.id or "").strip() and not str(item.content_base64 or "").strip()
+    }
+    added_attachment_ids: list[str] = []
+    try:
+        for item in attachments:
+            if str(item.id or "").strip() and not str(item.content_base64 or "").strip():
+                continue
+            created = await service.add_task_attachment(
+                profile_id=profile_id,
+                task_id=task_id,
+                actor_type=actor_type,
+                actor_ref=actor_ref,
+                attachment=item.model_dump(mode="json", exclude_none=True),
+            )
+            added_attachment_ids.append(created.id)
+        for row in existing_rows:
+            if row.id in keep_ids:
+                continue
+            await service.remove_task_attachment(
+                profile_id=profile_id,
+                task_id=task_id,
+                attachment_id=row.id,
+                actor_type=actor_type,
+                actor_ref=actor_ref,
+            )
+    except Exception:
+        for attachment_id in added_attachment_ids:
+            try:
+                await service.remove_task_attachment(
+                    profile_id=profile_id,
+                    task_id=task_id,
+                    attachment_id=attachment_id,
+                    actor_type=actor_type,
+                    actor_ref=actor_ref,
+                )
+            except TaskFlowServiceError:
+                pass
+        raise
 
 
 async def _get_task_comment_preview_resources():

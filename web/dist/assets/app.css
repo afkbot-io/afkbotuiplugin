@@ -747,6 +747,12 @@ a {
   background: rgba(0, 217, 255, 0.1);
 }
 
+.badge--plan {
+  color: #ffd37f;
+  border-color: rgba(255, 211, 127, 0.24);
+  background: rgba(255, 211, 127, 0.1);
+}
+
 .badge--human,
 .badge--warning {
   color: var(--warning);
@@ -1330,6 +1336,13 @@ a {
     rgba(10, 15, 23, 0.66);
 }
 
+.task-column--plan {
+  border-color: rgba(255, 211, 127, 0.22);
+  background:
+    linear-gradient(180deg, rgba(255, 211, 127, 0.06), rgba(255, 255, 255, 0.012)),
+    rgba(10, 15, 23, 0.66);
+}
+
 .task-column--review {
   border-color: rgba(176, 108, 255, 0.2);
   background:
@@ -1356,6 +1369,20 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.task-column__title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.task-column__note {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  line-height: 1.35;
 }
 
 .task-column__title,
@@ -1426,6 +1453,13 @@ a {
   border-color: rgba(0, 217, 255, 0.22);
   background:
     linear-gradient(180deg, rgba(0, 217, 255, 0.06), rgba(255, 255, 255, 0.012)),
+    rgba(255, 255, 255, 0.03);
+}
+
+.task-card--plan {
+  border-color: rgba(255, 211, 127, 0.22);
+  background:
+    linear-gradient(180deg, rgba(255, 211, 127, 0.08), rgba(255, 255, 255, 0.012)),
     rgba(255, 255, 255, 0.03);
 }
 
@@ -1757,6 +1791,11 @@ a {
   border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 
+.detail-section--embedded {
+  padding-top: 0;
+  border-top: 0;
+}
+
 .editor-form--compact {
   gap: 0.65rem;
 }
@@ -1864,6 +1903,77 @@ a {
 
 .modal-card .button-row {
   padding-top: 0.6rem;
+}
+
+.attachment-editor,
+.attachment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.attachment-editor__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.attachment-editor__hint {
+  margin: 0;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+.attachment-editor__picker {
+  position: relative;
+  overflow: hidden;
+}
+
+.attachment-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem 0.95rem;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.attachment-card__meta,
+.attachment-card__actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.attachment-card__actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.attachment-card__name,
+.attachment-card__copy {
+  margin: 0;
+}
+
+.attachment-card__name {
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.attachment-card__copy {
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+.attachment-card__preview {
+  width: 100%;
+  max-height: 16rem;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .task-pane .button-row,
