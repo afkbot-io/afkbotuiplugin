@@ -1,9 +1,10 @@
 import { formatDateTime } from "../core/time.js";
 
-const STATUS_OPTIONS = ["todo", "blocked", "review", "completed", "failed", "cancelled"];
-const TONE_STATUS_OPTIONS = new Set(["todo", "blocked", "running", "review", "completed", "failed", "cancelled"]);
+const STATUS_OPTIONS = ["plan", "todo", "blocked", "review", "completed", "failed", "cancelled"];
+const TONE_STATUS_OPTIONS = new Set(["plan", "todo", "blocked", "running", "review", "completed", "failed", "cancelled"]);
 const AI_PROFILE_TYPE = "ai_profile";
 const HUMAN_ACTOR_TYPE = "human";
+const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
 
 export function createTaskFlowView({ api, notify, commitConfig }) {
   let root = null;
@@ -36,6 +37,8 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     activeModal: "",
     modalBusy: false,
     modalError: "",
+    createTaskAttachments: [],
+    taskAttachmentDrafts: {},
     refreshInFlight: false,
     sessionRefreshInFlight: false,
     boardPanActive: false,
@@ -66,6 +69,22 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     const nextSignature = taskDataSignature(taskData);
     const changed = state.signatures.selectedTask !== nextSignature;
     state.selectedTaskData = taskData;
+    if (taskData?.task?.id) {
+      const taskId = taskData.task.id;
+      const existingDrafts = state.taskAttachmentDrafts[taskId] || [];
+      const previousServerDrafts = cloneAttachmentDrafts(
+        state.selectedTaskData?.task?.id === taskId
+          ? (state.selectedTaskData.task.attachments || [])
+          : [],
+      );
+      const nextServerDrafts = cloneAttachmentDrafts(taskData.task.attachments || []);
+      if (
+        !existingDrafts.length
+        || attachmentDraftSignature(existingDrafts) === attachmentDraftSignature(previousServerDrafts)
+      ) {
+        state.taskAttachmentDrafts[taskId] = nextServerDrafts;
+      }
+    }
     state.signatures.selectedTask = nextSignature;
     return changed;
   }
@@ -89,6 +108,12 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
   }
 
   function setModal(nextModal) {
+    if (nextModal === "task") {
+      state.createTaskAttachments = [];
+    }
+    if (!nextModal && state.activeModal === "task") {
+      state.createTaskAttachments = [];
+    }
     state.activeModal = nextModal;
     state.modalBusy = false;
     state.modalError = "";
@@ -185,6 +210,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       if (action === "close-task-panel") {
         state.selectedTaskId = "";
         commitSelectedTaskData(null);
+        state.taskAttachmentDrafts = {};
         clearSessionInsights();
         stopSessionRefreshLoop();
         render();
@@ -196,6 +222,22 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       }
       if (action === "request-changes") {
         await requestChanges();
+        return;
+      }
+      if (action === "paste-create-attachments") {
+        await pasteClipboardAttachments("create");
+        return;
+      }
+      if (action === "paste-task-attachments") {
+        await pasteClipboardAttachments("task");
+        return;
+      }
+      if (action === "remove-create-attachment") {
+        removeDraftAttachment("create", Number(actionNode.dataset.attachmentIndex || -1));
+        return;
+      }
+      if (action === "remove-task-attachment") {
+        removeDraftAttachment("task", Number(actionNode.dataset.attachmentIndex || -1));
         return;
       }
     }
@@ -222,6 +264,14 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
   async function handleChange(event) {
     const target = event.target;
     if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement)) {
+      return;
+    }
+    if (target instanceof HTMLInputElement && target.type === "file") {
+      if (target.files?.length) {
+        const scope = target.name === "task_attachments_input" ? "task" : "create";
+        await addFilesToAttachmentDraft(scope, target.files);
+        target.value = "";
+      }
       return;
     }
     const form = target.closest("form");
@@ -254,6 +304,22 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     ) {
       syncConditionalFields(target.closest("form, .task-inspector, .modal-card, .detail-section") || root);
     }
+  }
+
+  async function handlePaste(event) {
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+    const scope = resolveAttachmentScope(event.target);
+    if (!scope || !(event.clipboardData instanceof DataTransfer)) {
+      return;
+    }
+    const files = Array.from(event.clipboardData.files || []);
+    if (!files.length) {
+      return;
+    }
+    event.preventDefault();
+    await addFilesToAttachmentDraft(scope, files);
   }
 
   async function handleSubmit(event) {
@@ -675,7 +741,8 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     const formData = new FormData(form);
     const payload = {
       title: String(formData.get("title") || "").trim(),
-      prompt: String(formData.get("prompt") || "").trim(),
+      description: String(formData.get("description") || "").trim(),
+      status: String(formData.get("status") || "plan").trim() || "plan",
       created_by_type: currentConfig().task_flow_actor_type,
       created_by_ref: currentConfig().task_flow_actor_ref,
       flow_id: String(formData.get("flow_id") || "") || null,
@@ -696,9 +763,11 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       labels: parseCsv(formData.get("labels")),
       requires_review: formData.get("requires_review") === "on",
       depends_on_task_ids: parseCsv(formData.get("depends_on_task_ids")),
+      attachments: serializeDraftAttachments(state.createTaskAttachments),
     };
     const response = await api.createTask(profileId, payload);
     setModal("");
+    state.createTaskAttachments = [];
     state.selectedTaskId = response.task.id;
     notify("Task created.", "success");
     await refreshAll({ force: true });
@@ -751,9 +820,9 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       return;
     }
     const formData = new FormData(form);
-    await api.updateTask(profileId, state.selectedTaskId, {
+    const response = await api.updateTask(profileId, state.selectedTaskId, {
       title: String(formData.get("title") || "").trim(),
-      prompt: String(formData.get("prompt") || "").trim(),
+      description: String(formData.get("description") || "").trim(),
       status: String(formData.get("status") || ""),
       priority: Number(formData.get("priority") || 50),
       due_at: formData.get("due_at") ? new Date(String(formData.get("due_at"))).toISOString() : null,
@@ -774,7 +843,11 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       blocked_reason_text: String(formData.get("blocked_reason_text") || "").trim() || null,
       actor_type: currentConfig().task_flow_actor_type,
       actor_ref: currentConfig().task_flow_actor_ref,
+      attachments: serializeDraftAttachments(state.taskAttachmentDrafts[state.selectedTaskId] || []),
     });
+    if (response?.task?.id) {
+      state.taskAttachmentDrafts[response.task.id] = cloneAttachmentDrafts(response.task.attachments || []);
+    }
     notify("Task updated.", "success");
     await refreshAll({ force: true });
   }
@@ -791,6 +864,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     try {
       await api.deleteTask(profileId, taskId);
       state.selectedTaskIds.delete(taskId);
+      delete state.taskAttachmentDrafts[taskId];
       state.selectedTaskId = "";
       commitSelectedTaskData(null);
       clearSessionInsights();
@@ -818,6 +892,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       const response = await api.bulkDeleteTasks(profileId, { task_ids: taskIds });
       for (const taskId of response.deleted_task_ids || []) {
         state.selectedTaskIds.delete(taskId);
+        delete state.taskAttachmentDrafts[taskId];
       }
       if (state.selectedTaskId && (response.deleted_task_ids || []).includes(state.selectedTaskId)) {
         state.selectedTaskId = "";
@@ -904,6 +979,111 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     await refreshAll({ force: true });
   }
 
+  function resolveAttachmentScope(node) {
+    if (!(node instanceof HTMLElement)) {
+      return "";
+    }
+    if (node.closest('[data-role="taskflow-create-task"]')) {
+      return "create";
+    }
+    if (node.closest('[data-role="taskflow-task-edit"], .task-inspector')) {
+      return "task";
+    }
+    return "";
+  }
+
+  function getAttachmentDrafts(scope) {
+    if (scope === "create") {
+      return state.createTaskAttachments;
+    }
+    if (scope === "task" && state.selectedTaskId) {
+      return state.taskAttachmentDrafts[state.selectedTaskId] || [];
+    }
+    return [];
+  }
+
+  function setAttachmentDrafts(scope, drafts) {
+    if (scope === "create") {
+      state.createTaskAttachments = drafts;
+      return;
+    }
+    if (scope === "task" && state.selectedTaskId) {
+      state.taskAttachmentDrafts[state.selectedTaskId] = drafts;
+    }
+  }
+
+  function patchAttachmentEditor(scope) {
+    if (!root) {
+      return;
+    }
+    const editor = root.querySelector(`[data-attachment-editor-scope="${scope}"]`);
+    if (!(editor instanceof HTMLElement)) {
+      return;
+    }
+    editor.innerHTML = renderAttachmentEditorBody(scope, getAttachmentDrafts(scope));
+  }
+
+  async function addFilesToAttachmentDraft(scope, fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) {
+      return;
+    }
+    const drafts = getAttachmentDrafts(scope);
+    const nextDrafts = [...drafts];
+    for (const file of files) {
+      if ((file.size || 0) > ATTACHMENT_MAX_BYTES) {
+        notify(`${file.name || "Attachment"} exceeds the 5 MB limit.`, "danger");
+        continue;
+      }
+      nextDrafts.push({
+        client_id: buildDraftId(),
+        name: file.name || inferClipboardFileName(file.type, nextDrafts.length),
+        content_type: file.type || "application/octet-stream",
+        kind: inferAttachmentKind(file.type),
+        size: Number(file.size || 0),
+        content_base64: await fileToBase64(file),
+        download_url: "",
+      });
+    }
+    setAttachmentDrafts(scope, nextDrafts);
+    patchAttachmentEditor(scope);
+  }
+
+  async function pasteClipboardAttachments(scope) {
+    if (!navigator.clipboard?.read) {
+      notify("Clipboard file read is not available in this browser.", "danger");
+      return;
+    }
+    try {
+      const items = await navigator.clipboard.read();
+      const files = [];
+      for (const item of items) {
+        const candidateType = item.types.find((type) => type.startsWith("image/")) || item.types.find((type) => type !== "text/plain");
+        if (!candidateType) {
+          continue;
+        }
+        const blob = await item.getType(candidateType);
+        files.push(new File([blob], inferClipboardFileName(blob.type || candidateType, files.length), { type: blob.type || candidateType }));
+      }
+      if (!files.length) {
+        notify("No file attachments found in the clipboard.", "info");
+        return;
+      }
+      await addFilesToAttachmentDraft(scope, files);
+    } catch (error) {
+      notify(normalizeError(error), "danger");
+    }
+  }
+
+  function removeDraftAttachment(scope, index) {
+    const drafts = getAttachmentDrafts(scope);
+    if (index < 0 || index >= drafts.length) {
+      return;
+    }
+    setAttachmentDrafts(scope, drafts.filter((_, currentIndex) => currentIndex !== index));
+    patchAttachmentEditor(scope);
+  }
+
   function render() {
     if (!root) {
       return;
@@ -916,7 +1096,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
           <div>
             <div class="task-pane__eyebrow">Workspace / Task Flow</div>
             <h2 class="section-title">Task Flow</h2>
-            <p class="section-copy">Reactive kanban board for profile-scoped work, review loops, and live execution context in the same workspace shell.</p>
+            <p class="section-copy">Reactive kanban board for profile-scoped work, a human-only PLAN lane, review loops, and live execution context in the same workspace shell.</p>
           </div>
           <div class="section-actions">
             <button class="button button--ghost" data-taskflow-action="refresh" type="button">Refresh</button>
@@ -932,6 +1112,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
           <div class="board-toolbar__summary">
             <span class="badge">${escapeHtml(String(state.board?.total_count || 0))} tasks</span>
             <span class="badge">${escapeHtml(String(state.selectedTaskIds.size))} selected</span>
+            <span class="badge badge--plan">${escapeHtml(String(state.board?.plan_count || 0))} in PLAN</span>
             ${activeFlow ? `<span class="badge">${escapeHtml(activeFlow.title)}</span>` : '<span class="board-toolbar__hint">All flows</span>'}
           </div>
           <div class="board-toolbar__controls">
@@ -962,7 +1143,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
           <section class="board-shell glass-panel">
             ${state.loading ? '<div class="empty-state empty-state--compact"><h3>Loading…</h3><p>Refreshing Task Flow data.</p></div>' : renderBoard(state.board, state.selectedTaskId, state.selectedTaskIds)}
           </section>
-          ${renderTaskPanel(state.selectedTaskData, currentProfiles(), currentConfig(), state.sessionInsights, state.sessionFeedOpen)}
+          ${renderTaskPanel(state.selectedTaskData, currentProfiles(), currentConfig(), state.sessionInsights, state.sessionFeedOpen, state.taskAttachmentDrafts)}
         </div>
 
         ${renderModal(state, currentConfig(), currentProfiles())}
@@ -1002,6 +1183,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       root.addEventListener("click", handleClick);
       root.addEventListener("change", handleChange);
       root.addEventListener("submit", handleSubmit);
+      root.addEventListener("paste", handlePaste);
       root.addEventListener("mousedown", handleMouseDown);
       root.addEventListener("dragstart", handleDragStart);
       root.addEventListener("dragend", handleDragEnd);
@@ -1038,6 +1220,8 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       state.reviewTasks = [];
       state.selectedTaskId = "";
       state.selectedTaskIds.clear();
+      state.taskAttachmentDrafts = {};
+      state.createTaskAttachments = [];
       state.signatures = { flows: "", board: "", review: "", selectedTask: "", sessionInsights: "" };
       commitSelectedTaskData(null);
       clearSessionInsights();
@@ -1063,6 +1247,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       root.removeEventListener("click", handleClick);
       root.removeEventListener("change", handleChange);
       root.removeEventListener("submit", handleSubmit);
+      root.removeEventListener("paste", handlePaste);
       root.removeEventListener("mousedown", handleMouseDown);
       root.removeEventListener("dragstart", handleDragStart);
       root.removeEventListener("dragend", handleDragEnd);
@@ -1176,7 +1361,7 @@ function renderBoard(board, selectedTaskId, selectedTaskIds) {
     return `
       <div class="empty-state">
         <h3>No tasks yet</h3>
-        <p>Create a flow and add tasks. The board stays live inside the same UI instead of jumping to a separate page.</p>
+        <p>Create a flow and add tasks. Start rough work in PLAN, then move it into TODO when the description and attachments are ready for AI.</p>
       </div>
     `;
   }
@@ -1186,7 +1371,10 @@ function renderBoard(board, selectedTaskId, selectedTaskIds) {
         ${board.columns.map((column) => `
           <section class="task-column ${statusToneClass("task-column", column.id)}" data-column-id="${escapeAttribute(column.id)}">
             <header class="task-column__head">
-              <h3 class="task-column__title">${escapeHtml(column.title)}</h3>
+              <div class="task-column__title-wrap">
+                <h3 class="task-column__title">${escapeHtml(column.title)}</h3>
+                ${column.id === "plan" ? '<p class="task-column__note">Manual planning lane. AI does not claim tasks from here.</p>' : ""}
+              </div>
               <span class="task-column__count">${escapeHtml(String(column.count))}</span>
             </header>
             <div class="task-column__body">
@@ -1202,7 +1390,7 @@ function renderBoard(board, selectedTaskId, selectedTaskIds) {
 function renderCard(task, selectedTaskId, selectedTaskIds) {
   const isSelected = task.id === selectedTaskId || selectedTaskIds.has(task.id);
   const activeSession = getTaskActiveSession(task);
-  const previewCopy = task.last_comment_message || task.prompt || "No prompt yet.";
+  const previewCopy = task.last_comment_message || task.description || "No description yet.";
   const ownerSummary = formatTaskOwnerSummary(task);
   return `
     <article class="task-card ${statusToneClass("task-card", task.status)} ${isSelected ? "task-card--selected" : ""}" data-task-id="${escapeAttribute(task.id)}" draggable="${isActiveRuntimeStatus(task.status) ? "false" : "true"}">
@@ -1230,6 +1418,7 @@ function renderCard(task, selectedTaskId, selectedTaskIds) {
           <span class="badge badge--accent">p${escapeHtml(String(task.priority ?? 50))}</span>
           ${task.flow_id ? `<span class="badge">${escapeHtml(task.flow_id)}</span>` : ""}
           ${task.requires_review ? '<span class="badge badge--warning">review</span>' : ""}
+          ${task.attachment_count ? `<span class="badge">${escapeHtml(String(task.attachment_count))} files</span>` : ""}
           ${task.last_comment_created_at ? `<span class="badge badge--muted">${escapeHtml(formatDateTime(task.last_comment_created_at))}</span>` : ""}
           ${task.due_at ? `<span class="badge ${isOverdue(task) ? "badge--danger" : ""}">${escapeHtml(formatDateTime(task.due_at))}</span>` : ""}
         </div>
@@ -1238,7 +1427,7 @@ function renderCard(task, selectedTaskId, selectedTaskIds) {
   `;
 }
 
-function renderTaskPanel(data, profiles, config, sessionInsights, sessionFeedOpen) {
+function renderTaskPanel(data, profiles, config, sessionInsights, sessionFeedOpen, taskAttachmentDrafts) {
   if (!data?.task) {
     return "";
   }
@@ -1259,9 +1448,10 @@ function renderTaskPanel(data, profiles, config, sessionInsights, sessionFeedOpe
             <input name="title" value="${escapeAttribute(task.title || "")}" required />
           </label>
           <label class="field">
-            <span class="field__label">Prompt</span>
-            <textarea name="prompt" rows="8" required>${escapeHtml(task.prompt || "")}</textarea>
+            <span class="field__label">Description</span>
+            <textarea name="description" rows="8" required placeholder="Describe the task in plain language, with any acceptance criteria or context.">${escapeHtml(task.description || "")}</textarea>
           </label>
+          ${task.status === "plan" ? '<div class="support-note">PLAN is the manual preparation lane. Keep tasks here while you refine the description and attachments. AI will not claim them until you move them out of PLAN.</div>' : ""}
           <div class="field-grid">
             <label class="field field--compact">
               <span class="field__label">Status</span>
@@ -1327,6 +1517,15 @@ function renderTaskPanel(data, profiles, config, sessionInsights, sessionFeedOpe
             <span class="field__label">Blocked Reason</span>
             <textarea name="blocked_reason_text" rows="3">${escapeHtml(task.blocked_reason_text || "")}</textarea>
           </label>
+          <section class="detail-section detail-section--embedded">
+            <div class="panel-head panel-head--compact">
+              <div>
+                <p class="panel-head__eyebrow">Attachments</p>
+                <h4 class="panel-head__title">Files & Clipboard</h4>
+              </div>
+            </div>
+            ${renderAttachmentEditor("task", taskAttachmentDrafts?.[task.id] || task.attachments || [])}
+          </section>
           <div class="button-row">
             <button class="button button--primary" type="submit">Save Task</button>
             <button class="button button--danger" data-taskflow-action="open-delete-task" type="button">Delete Task</button>
@@ -1537,7 +1736,7 @@ function renderModal(state, config, profiles) {
           <div>
             <p class="surface-page__eyebrow">Create Task</p>
             <h3>New Backlog Item</h3>
-            <p class="muted">Define the work, assign the AI owner when needed, and keep review expectations explicit without leaving the board.</p>
+            <p class="muted">Start rough work in PLAN while a human is still shaping the description and attachments, then move it into TODO when AI can execute it.</p>
           </div>
           <button class="icon-button" data-taskflow-action="close-modal" type="button" aria-label="Close create task modal">×</button>
         </div>
@@ -1546,10 +1745,17 @@ function renderModal(state, config, profiles) {
           <input name="title" required />
         </label>
         <label class="field">
-          <span class="field__label">Prompt</span>
-          <textarea name="prompt" rows="8" required></textarea>
+          <span class="field__label">Description</span>
+          <textarea name="description" rows="8" required placeholder="Describe the task, expected result, and any constraints."></textarea>
         </label>
         <div class="field-grid">
+          <label class="field field--compact">
+            <span class="field__label">Start In</span>
+            <select name="status">
+              <option value="plan" selected>PLAN</option>
+              <option value="todo">TODO</option>
+            </select>
+          </label>
           <label class="field field--compact">
             <span class="field__label">Flow</span>
             <select name="flow_id">
@@ -1562,6 +1768,7 @@ function renderModal(state, config, profiles) {
             <input type="number" name="priority" min="0" max="100" value="50" />
           </label>
         </div>
+        <div class="support-note">PLAN is reserved for manual refinement. AI runtimes do not pull tasks from PLAN until you move them into TODO or another execution state.</div>
         <div class="field-grid">
           <label class="field field--compact">
             <span class="field__label">Owner Type</span>
@@ -1617,6 +1824,7 @@ function renderModal(state, config, profiles) {
           <span class="field__label">Depends On</span>
           <input name="depends_on_task_ids" placeholder="task-id-1, task-id-2…" />
         </label>
+        ${renderAttachmentEditor("create", state.createTaskAttachments)}
         <div class="button-row">
           <button class="button button--primary" type="submit">Create Task</button>
           <button class="button button--ghost" data-taskflow-action="close-modal" type="button">Cancel</button>
@@ -1680,8 +1888,11 @@ function renderModal(state, config, profiles) {
           ${state.reviewTasks.length ? state.reviewTasks.map((task) => `
             <article class="review-card" data-review-select="${escapeAttribute(task.id)}">
               <h4>${escapeHtml(task.title)}</h4>
-              <p>${escapeHtml(truncate(task.last_comment_message || task.prompt || "", 120))}</p>
-              <span class="badge badge--warning">${escapeHtml(task.id)}</span>
+              <p>${escapeHtml(truncate(task.last_comment_message || task.description || "", 120))}</p>
+              <div class="badge-row">
+                <span class="badge badge--warning">${escapeHtml(task.id)}</span>
+                ${task.attachment_count ? `<span class="badge">${escapeHtml(String(task.attachment_count))} files</span>` : ""}
+              </div>
             </article>
           `).join("") : '<div class="empty-state empty-state--compact"><h3>Queue clear</h3><p>No tasks waiting for review.</p></div>'}
         </div>
@@ -1877,6 +2088,163 @@ function renderProfileSelect({ name, value, profiles, allowBlank = false, blankL
   `;
 }
 
+function renderAttachmentEditor(scope, attachments) {
+  return `
+    <section class="attachment-editor" data-attachment-editor-scope="${escapeAttribute(scope)}">
+      ${renderAttachmentEditorBody(scope, attachments)}
+    </section>
+  `;
+}
+
+function renderAttachmentEditorBody(scope, attachments) {
+  const normalizedAttachments = attachments || [];
+  const fileInputName = scope === "task" ? "task_attachments_input" : "create_attachments_input";
+  const pasteAction = scope === "task" ? "paste-task-attachments" : "paste-create-attachments";
+  const removeAction = scope === "task" ? "remove-task-attachment" : "remove-create-attachment";
+  return `
+    <div class="attachment-editor__actions">
+      <label class="button button--ghost button--tiny attachment-editor__picker">
+        <input type="file" name="${escapeAttribute(fileInputName)}" multiple hidden />
+        Add Files
+      </label>
+      <button class="button button--ghost button--tiny" data-taskflow-action="${escapeAttribute(pasteAction)}" type="button">Paste Clipboard</button>
+    </div>
+    <p class="attachment-editor__hint">Attach files or screenshots as JSON payloads. Paste works when the browser exposes clipboard files or images.</p>
+    <div class="attachment-list">
+      ${normalizedAttachments.length ? normalizedAttachments.map((attachment, index) => `
+        <article class="attachment-card">
+          <div class="attachment-card__meta">
+            <div>
+              <p class="attachment-card__name">${escapeHtml(attachment.name || `Attachment ${index + 1}`)}</p>
+              <p class="attachment-card__copy">${escapeHtml([attachment.kind || "file", attachment.content_type || "application/octet-stream", formatBytes(attachment.size || 0)].filter(Boolean).join(" • "))}</p>
+            </div>
+            <div class="attachment-card__actions">
+              ${attachmentPreviewUrl(attachment) ? `<a class="button button--ghost button--tiny" href="${escapeAttribute(attachmentPreviewUrl(attachment))}" target="_blank" rel="noreferrer">Open</a>` : ""}
+              <button class="button button--ghost button--tiny" data-taskflow-action="${escapeAttribute(removeAction)}" data-attachment-index="${escapeAttribute(String(index))}" type="button">Remove</button>
+            </div>
+          </div>
+          ${attachment.kind === "image" && attachmentPreviewUrl(attachment) ? `<img class="attachment-card__preview" src="${escapeAttribute(attachmentPreviewUrl(attachment))}" alt="${escapeAttribute(attachment.name || "Attachment preview")}" />` : ""}
+        </article>
+      `).join("") : '<p class="muted-copy">No attachments yet.</p>'}
+    </div>
+  `;
+}
+
+function serializeDraftAttachments(attachments) {
+  return (attachments || []).map((attachment) => {
+    if (attachment.id && !attachment.content_base64) {
+      return {
+        id: attachment.id,
+        name: attachment.name,
+        content_type: attachment.content_type,
+        kind: attachment.kind,
+      };
+    }
+    return {
+      name: attachment.name,
+      content_type: attachment.content_type,
+      kind: attachment.kind,
+      content_base64: attachment.content_base64,
+    };
+  });
+}
+
+function cloneAttachmentDrafts(attachments) {
+  return (attachments || []).map((attachment) => ({
+    client_id: attachment.client_id || buildDraftId(),
+    id: attachment.id || "",
+    name: attachment.name || "",
+    content_type: attachment.content_type || "application/octet-stream",
+    kind: attachment.kind || inferAttachmentKind(attachment.content_type || ""),
+    size: Number(attachment.size || 0),
+    content_base64: attachment.content_base64 || "",
+    download_url: attachment.download_url || "",
+  }));
+}
+
+function attachmentDraftSignature(attachments) {
+  return JSON.stringify(
+    (attachments || []).map((attachment) => ({
+      id: attachment.id || "",
+      name: attachment.name || "",
+      content_type: attachment.content_type || "",
+      kind: attachment.kind || "",
+      size: Number(attachment.size || 0),
+      content_base64: attachment.content_base64 || "",
+      download_url: attachment.download_url || "",
+    })),
+  );
+}
+
+function buildDraftId() {
+  return `draft-${Math.random().toString(16).slice(2, 10)}-${Date.now().toString(16)}`;
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const [, base64Payload = ""] = result.split(",", 2);
+      resolve(base64Payload);
+    };
+    reader.onerror = () => reject(reader.error || new Error("Failed to read file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function inferAttachmentKind(contentType) {
+  const normalized = String(contentType || "").trim().toLowerCase();
+  if (normalized.startsWith("image/")) {
+    return "image";
+  }
+  if (normalized.startsWith("text/") || normalized === "application/json") {
+    return "text";
+  }
+  return "file";
+}
+
+function inferClipboardFileName(contentType, index = 0) {
+  const normalized = String(contentType || "").trim().toLowerCase();
+  if (normalized === "image/png") {
+    return `clipboard-image-${index + 1}.png`;
+  }
+  if (normalized === "image/jpeg") {
+    return `clipboard-image-${index + 1}.jpg`;
+  }
+  if (normalized === "application/pdf") {
+    return `clipboard-file-${index + 1}.pdf`;
+  }
+  if (normalized.startsWith("text/")) {
+    return `clipboard-note-${index + 1}.txt`;
+  }
+  return `clipboard-file-${index + 1}`;
+}
+
+function formatBytes(value) {
+  const bytes = Number(value || 0);
+  if (!bytes) {
+    return "0 B";
+  }
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+  return `${bytes} B`;
+}
+
+function attachmentPreviewUrl(attachment) {
+  if (attachment.download_url) {
+    return attachment.download_url;
+  }
+  if (attachment.kind === "image" && attachment.content_base64) {
+    return `data:${attachment.content_type || "image/png"};base64,${attachment.content_base64}`;
+  }
+  return "";
+}
+
 function flowSignature(flows) {
   return JSON.stringify(
     (flows || []).map((flow) => ({
@@ -1901,7 +2269,8 @@ function boardSignature(board) {
       tasks: (column.tasks || []).map((task) => ({
         id: task.id,
         title: task.title,
-        prompt: task.prompt,
+        description: task.description,
+        attachment_count: Number(task.attachment_count || (task.attachments || []).length || 0),
         last_comment_message: task.last_comment_message,
         last_comment_created_at: task.last_comment_created_at,
         status: task.status,
@@ -1929,6 +2298,7 @@ function reviewSignature(tasks) {
       owner_ref: task.owner_ref,
       reviewer_type: task.reviewer_type,
       reviewer_ref: task.reviewer_ref,
+      attachment_count: Number(task.attachment_count || (task.attachments || []).length || 0),
       updated_at: task.updated_at,
     })),
   );
@@ -2313,6 +2683,9 @@ function statusToneClass(prefix, status) {
 
 function taskStatusBadgeClass(status) {
   const normalized = String(status || "").trim();
+  if (normalized === "plan") {
+    return "badge--plan";
+  }
   if (normalized === "running") {
     return "badge--running";
   }
@@ -2335,6 +2708,9 @@ function formatStatusLabel(status) {
   const normalized = String(status || "").trim();
   if (!normalized) {
     return "Unknown";
+  }
+  if (normalized === "plan") {
+    return "PLAN";
   }
   return normalized
     .replaceAll("_", " ")
