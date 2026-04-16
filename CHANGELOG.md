@@ -2,6 +2,14 @@
 
 All notable changes to this plugin are tracked here.
 
+## 0.4.0 - 2026-04-16
+
+- add the leading human-only `PLAN` column to Task Flow and keep staged work out of the AI claim path
+- migrate the UI from `prompt` to `description` so task copy matches the backend contract
+- support persisted task attachments from both file picker and clipboard paste flows in the inspector
+- keep attachment drafts stable during polling and route attachment sync through the backend attachment API
+- require AFKBOT `1.2.0+` for the updated Task Flow contract and release metadata
+
 ## 0.3.4 - 2026-04-15
 
 - add a task session feed inside the Task Flow inspector so operators can review recent user and assistant turns for the active task session
