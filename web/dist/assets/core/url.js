@@ -35,3 +35,16 @@ export function updateUrlState(patch, { replace = false } = {}) {
     window.history.pushState({}, "", nextUrl);
   }
 }
+
+export function readCurrentUiUrl() {
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+}
+
+export function buildLoginUrl(nextPath = readCurrentUiUrl()) {
+  const url = new URL("/auth/login", window.location.origin);
+  const normalized = String(nextPath || "").trim();
+  if (normalized.startsWith("/") && !normalized.startsWith("//")) {
+    url.searchParams.set("next", normalized);
+  }
+  return `${url.pathname}${url.search}`;
+}

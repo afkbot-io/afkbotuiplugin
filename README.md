@@ -2,12 +2,13 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, subagents, skills, and bootstrap files.
 
-Current release: `0.3.4`
+Current release: `0.4.0`
 
-## What is in 0.3.4
+## What is in 0.4.0
 
 - single shell workspace at `/plugins/afkbotui`
 - profile-aware sections for `Automations`, `Task Flow`, `Subagents`, `Skills`, and `Bootstrap`
+- core-level operator auth integration through AFKBOT `afk auth ...`, with login redirect, session badge, and logout support
 - reactive Task Flow board without full page refreshes
 - task inspector session feed with recent chat turns and live activity events for the current agent session
 - unified modal-driven CRUD flows across the workspace
@@ -39,6 +40,13 @@ Current release: `0.3.4`
 - `Skills`: profile-local `SKILL.md` assets
 - `Bootstrap`: profile-local bootstrap files for the active profile
 
+### Operator auth
+
+- when AFKBOT core auth is enabled, the workspace redirects to `/auth/login` before any UI or plugin API access is granted
+- the shell shows the current signed-in operator and provides logout in the top bar
+- the plugin now fails closed against missing core auth endpoints instead of silently booting without protection
+- no auth state is stored in plugin config; enforcement and secrets stay in AFKBOT core
+
 ## Install
 
 Install locally into AFKBOT:
@@ -46,6 +54,8 @@ Install locally into AFKBOT:
 ```bash
 afk plugin install ../afkbotui
 ```
+
+AFKBOT UI `0.4.0` requires AFKBOT `1.3.0` or newer because plugin UI and plugin API protection now use core `afk auth` support.
 
 Optional plugin config:
 
