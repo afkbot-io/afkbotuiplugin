@@ -234,6 +234,28 @@ a {
   border-bottom-color: rgba(0, 217, 255, 0.24);
 }
 
+.topbar__session {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.25rem 0 0.25rem 0.9rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.topbar__session-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+  min-width: 0;
+}
+
+.topbar__session-status {
+  color: var(--text-primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .topbar__label,
 .topbar__meta-eyebrow,
 .task-pane__eyebrow,

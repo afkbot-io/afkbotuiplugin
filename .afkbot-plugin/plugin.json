@@ -1,8 +1,8 @@
 {
   "plugin_id": "afkbotui",
   "name": "AFKBOT UI",
-  "version": "0.3.4",
-  "afkbot_version": ">=1.0.7,<2.0.0",
+  "version": "0.4.0",
+  "afkbot_version": ">=1.3.0,<2.0.0",
   "kind": "embedded",
   "entrypoint": "afkbot_plugin_afkbotui.plugin:register",
   "description": "Unified AFKBOT workspace for automations, Task Flow, and profile-local subagents, skills, and bootstrap files.",
@@ -67,6 +67,9 @@
     "taskflow": "read_write",
     "outbound_http": false,
     "data_dir_write": false
+  },
+  "auth": {
+    "operator_required": true
   },
   "capabilities": {
     "api_router": true,

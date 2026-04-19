@@ -1,15 +1,19 @@
 import { ApiClient } from "./core/api.js";
 import { escapeAttribute, escapeHtml } from "./core/dom.js";
-import { readUrlState, ROUTES, updateUrlState } from "./core/url.js";
+import { buildLoginUrl, readCurrentUiUrl, readUrlState, ROUTES, updateUrlState } from "./core/url.js";
 import { createAutomationsController } from "./features/automations.js";
 import { createBootstrapFilesController } from "./features/bootstrap-files.js";
 import { createSkillsController } from "./features/skills.js";
 import { createTaskFlowController } from "./features/task-flow.js";
 import { createSubagentsController } from "./features/subagents.js";
 
-const api = new ApiClient(document.body.dataset.apiBase || "/v1/plugins/afkbotui");
+const api = new ApiClient(document.body.dataset.apiBase || "/v1/plugins/afkbotui", {
+  onUnauthorized: () => beginAuthRedirect(),
+});
 const root = document.getElementById("app");
 const urlState = readUrlState();
+const webBase = document.body.dataset.webBase || "/plugins/afkbotui";
+const AUTH_SESSION_REFRESH_MS = 30000;
 
 const defaultConfig = {
   poll_interval_sec: 5,
@@ -20,18 +24,29 @@ const defaultConfig = {
   task_flow_actor_ref: "web-user",
 };
 
+const defaultAuthState = {
+  mode: "disabled",
+  configured: false,
+  username: "",
+  protected_plugin_ids: [],
+};
+
 const state = {
   booting: true,
   route: urlState.route,
   profiles: [],
   selectedProfileId: urlState.profileId,
   config: { ...defaultConfig },
+  auth: { ...defaultAuthState },
+  session: null,
+  authRedirecting: false,
   globalError: "",
 };
 
 const refs = {};
 const views = {};
 let flashTimer = null;
+let authRefreshTimer = null;
 
 buildShell();
 bindShellListeners();
@@ -39,19 +54,36 @@ void boot();
 
 async function boot() {
   try {
+    const authResponse = await loadAuthSession();
+    state.auth = normalizeAuthState(authResponse?.auth);
+    state.session = authResponse?.authenticated ? authResponse.session || null : null;
+    if (state.auth.configured && !authResponse?.authenticated) {
+      beginAuthRedirect();
+      return;
+    }
+
     const [configResponse, profilesResponse] = await Promise.all([api.getConfig(), api.listProfiles()]);
     state.config = normalizeConfig(configResponse.config || configResponse.plugin_config?.config || state.config);
     state.profiles = profilesResponse.profiles || [];
     state.selectedProfileId = resolveProfileId(state.profiles, state.selectedProfileId || state.config.default_profile_id);
     state.globalError = "";
   } catch (error) {
-    state.globalError = normalizeError(error);
+    if (!state.authRedirecting) {
+      state.globalError = normalizeError(error);
+    }
   } finally {
+    if (state.authRedirecting) {
+      return;
+    }
     state.booting = false;
     renderShellState();
   }
 
+  if (state.authRedirecting) {
+    return;
+  }
   mountViews();
+  scheduleAuthRefresh();
   await activateRoute(state.route, { replace: true });
 }
 
@@ -82,6 +114,13 @@ function buildShell() {
                 <span class="topbar__label">Profile</span>
                 <select id="workspace-profile-switch" class="select topbar__select" aria-label="Select profile"></select>
               </label>
+            </div>
+            <div id="workspace-auth" class="topbar__session" hidden>
+              <div class="topbar__session-copy">
+                <span class="topbar__label">Access</span>
+                <span id="workspace-auth-status" class="topbar__session-status"></span>
+              </div>
+              <button class="button button--ghost button--compact" type="button" data-shell-action="logout">Sign out</button>
             </div>
             <div class="topbar__actions">
               <button class="button" type="button" data-shell-action="refresh">Refresh</button>
@@ -114,6 +153,8 @@ function buildShell() {
   refs.error = root.querySelector("#workspace-error");
   refs.flash = root.querySelector("#workspace-flash");
   refs.routeLinks = [...root.querySelectorAll("[data-route-link]")];
+  refs.authPanel = root.querySelector("#workspace-auth");
+  refs.authStatus = root.querySelector("#workspace-auth-status");
   refs.routeNodes = {
     automations: root.querySelector("#route-automations"),
     "task-flow": root.querySelector("#route-task-flow"),
@@ -128,16 +169,30 @@ function bindShellListeners() {
     const routeLink = event.target.closest("[data-route-link]");
     if (routeLink) {
       event.preventDefault();
+      if (await requireInteractiveAuth()) {
+        return;
+      }
       await activateRoute(routeLink.dataset.routeLink);
       return;
     }
 
     if (event.target.closest("[data-shell-action='refresh']")) {
+      if (await requireInteractiveAuth()) {
+        return;
+      }
       await views[state.route]?.refresh?.();
+      return;
+    }
+
+    if (event.target.closest("[data-shell-action='logout']")) {
+      await logout();
     }
   });
 
   refs.profileSelect?.addEventListener("change", async (event) => {
+    if (await requireInteractiveAuth()) {
+      return;
+    }
     await setProfile(event.target.value);
   });
 
@@ -149,6 +204,20 @@ function bindShellListeners() {
     }
     renderShellState();
     await activateRoute(state.route, { replace: true });
+  });
+
+  window.addEventListener("focus", () => {
+    if (!state.auth.configured || state.authRedirecting) {
+      return;
+    }
+    void refreshAuthSession();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || !state.auth.configured || state.authRedirecting) {
+      return;
+    }
+    void refreshAuthSession();
   });
 }
 
@@ -233,6 +302,103 @@ async function updateConfig(patch) {
   return state.config;
 }
 
+async function loadAuthSession() {
+  try {
+    return await api.getAuthSession();
+  } catch (error) {
+    if (error?.status === 404) {
+      return {
+        authenticated: true,
+        auth: { ...defaultAuthState },
+        session: null,
+      };
+    }
+    throw error;
+  }
+}
+
+async function logout() {
+  try {
+    await api.logout();
+  } catch (error) {
+    if (!(error?.status === 401 && error?.code === "ui_auth_required")) {
+      showToast(normalizeError(error), "danger");
+    }
+  } finally {
+    beginAuthRedirect();
+  }
+}
+
+function beginAuthRedirect() {
+  if (state.authRedirecting) {
+    return;
+  }
+  clearAuthRefreshTimer();
+  state.authRedirecting = true;
+  state.globalError = "Authentication required. Redirecting to login…";
+  state.booting = false;
+  renderShellState();
+  window.setTimeout(() => {
+    window.location.assign(buildLoginUrl(resolveNextUrl()));
+  }, 40);
+}
+
+function resolveNextUrl() {
+  const current = readCurrentUiUrl();
+  if (current.startsWith("/")) {
+    return current;
+  }
+  return webBase;
+}
+
+async function requireInteractiveAuth() {
+  if (!state.auth.configured || state.authRedirecting) {
+    return state.authRedirecting;
+  }
+  await refreshAuthSession();
+  return state.authRedirecting;
+}
+
+async function refreshAuthSession() {
+  if (!state.auth.configured || state.authRedirecting) {
+    return;
+  }
+  try {
+    const authResponse = await loadAuthSession();
+    state.auth = normalizeAuthState(authResponse?.auth);
+    state.session = authResponse?.authenticated ? authResponse.session || null : null;
+    renderShellState();
+    if (state.auth.configured && !authResponse?.authenticated) {
+      beginAuthRedirect();
+      return;
+    }
+  } catch (error) {
+    if (error?.status === 401 && error?.code === "ui_auth_required") {
+      beginAuthRedirect();
+      return;
+    }
+  } finally {
+    scheduleAuthRefresh();
+  }
+}
+
+function scheduleAuthRefresh() {
+  clearAuthRefreshTimer();
+  if (!state.auth.configured || state.authRedirecting) {
+    return;
+  }
+  authRefreshTimer = window.setTimeout(() => {
+    void refreshAuthSession();
+  }, AUTH_SESSION_REFRESH_MS);
+}
+
+function clearAuthRefreshTimer() {
+  if (authRefreshTimer !== null) {
+    window.clearTimeout(authRefreshTimer);
+    authRefreshTimer = null;
+  }
+}
+
 function renderShellState() {
   refs.routeLinks.forEach((node) => {
     const active = node.dataset.routeLink === state.route;
@@ -248,9 +414,17 @@ function renderShellState() {
   });
 
   refs.profileSelect.innerHTML = renderProfileOptions();
-  refs.profileSelect.disabled = state.booting || !state.profiles.length;
+  refs.profileSelect.disabled = state.booting || state.authRedirecting || !state.profiles.length;
   if (state.selectedProfileId) {
     refs.profileSelect.value = state.selectedProfileId;
+  }
+
+  const authVisible = state.auth.configured;
+  refs.authPanel.hidden = !authVisible;
+  if (authVisible) {
+    refs.authStatus.textContent = state.session?.username
+      ? `Signed in as ${state.session.username}`
+      : "Protected workspace";
   }
 
   refs.bootPanel.hidden = !state.booting;
@@ -313,6 +487,14 @@ function normalizeConfig(config) {
   };
 }
 
+function normalizeAuthState(auth) {
+  return {
+    ...defaultAuthState,
+    ...(auth || {}),
+    protected_plugin_ids: Array.isArray(auth?.protected_plugin_ids) ? auth.protected_plugin_ids : [],
+  };
+}
+
 function showToast(message, kind = "info") {
   refs.flash.innerHTML = `<div class="flash flash--${escapeAttribute(kind)}">${escapeHtml(message)}</div>`;
   if (flashTimer !== null) {
@@ -341,5 +523,8 @@ function routeLabel(route) {
 }
 
 function normalizeError(error) {
+  if (error?.code === "ui_auth_required") {
+    return "Authentication required.";
+  }
   return error instanceof Error && error.message ? error.message : "Unexpected error";
 }

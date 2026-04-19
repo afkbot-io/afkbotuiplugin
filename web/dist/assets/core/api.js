@@ -25,8 +25,10 @@ function toApiError(response, payload) {
 }
 
 export class ApiClient {
-  constructor(basePath) {
+  constructor(basePath, { onUnauthorized } = {}) {
     this.basePath = basePath.replace(/\/$/, "");
+    this.onUnauthorized = typeof onUnauthorized === "function" ? onUnauthorized : null;
+    this.unauthorizedHandled = false;
   }
 
   async request(path, { method = "GET", params, body } = {}) {
@@ -36,11 +38,52 @@ export class ApiClient {
       method,
       headers: body === undefined ? undefined : { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: "same-origin",
+    });
+    const payload = await safeJson(response);
+    if (!response.ok) {
+      const error = toApiError(response, payload);
+      if (response.status === 401 && error.code === "ui_auth_required") {
+        this.handleUnauthorized(error);
+      }
+      throw error;
+    }
+    this.unauthorizedHandled = false;
+    return payload;
+  }
+
+  handleUnauthorized(error) {
+    if (this.unauthorizedHandled) {
+      return;
+    }
+    this.unauthorizedHandled = true;
+    this.onUnauthorized?.(error);
+  }
+
+  async getAuthSession() {
+    const url = new URL("/v1/auth/session", window.location.origin);
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      credentials: "same-origin",
     });
     const payload = await safeJson(response);
     if (!response.ok) {
       throw toApiError(response, payload);
     }
+    return payload;
+  }
+
+  async logout() {
+    const url = new URL("/v1/auth/logout", window.location.origin);
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      credentials: "same-origin",
+    });
+    const payload = await safeJson(response);
+    if (!response.ok) {
+      throw toApiError(response, payload);
+    }
+    this.unauthorizedHandled = false;
     return payload;
   }
 

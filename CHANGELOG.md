@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are tracked here.
 
+## 0.4.0 - 2026-04-19
+
+- integrate the workspace with AFKBOT core operator auth so protected plugin UI and plugin API routes redirect through `/auth/login`
+- add auth session preflight, session badge, logout, and unauthorized recovery in the shell without keeping plugin-local password state
+- mark the plugin manifest as `auth.operator_required` and require AFKBOT `1.3.0+`
+- sync release metadata to version `0.4.0`
+
 ## 0.3.4 - 2026-04-15
 
 - add a task session feed inside the Task Flow inspector so operators can review recent user and assistant turns for the active task session
