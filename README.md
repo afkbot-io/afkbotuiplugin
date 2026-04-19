@@ -44,6 +44,7 @@ Current release: `0.4.0`
 
 - when AFKBOT core auth is enabled, the workspace redirects to `/auth/login` before any UI or plugin API access is granted
 - the shell shows the current signed-in operator and provides logout in the top bar
+- the plugin now fails closed against missing core auth endpoints instead of silently booting without protection
 - no auth state is stored in plugin config; enforcement and secrets stay in AFKBOT core
 
 ## Install

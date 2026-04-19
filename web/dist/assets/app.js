@@ -79,7 +79,7 @@ async function boot() {
     renderShellState();
   }
 
-  if (state.authRedirecting) {
+  if (state.authRedirecting || state.globalError) {
     return;
   }
   mountViews();
@@ -307,11 +307,12 @@ async function loadAuthSession() {
     return await api.getAuthSession();
   } catch (error) {
     if (error?.status === 404) {
-      return {
-        authenticated: true,
-        auth: { ...defaultAuthState },
-        session: null,
-      };
+      const authError = new Error(
+        "AFKBOT UI 0.4.0 requires AFKBOT 1.3.0+ with the core /v1/auth/session endpoint available.",
+      );
+      authError.code = "ui_auth_endpoint_missing";
+      authError.status = 404;
+      throw authError;
     }
     throw error;
   }
@@ -364,18 +365,26 @@ async function refreshAuthSession() {
     return;
   }
   try {
+    const previousAuth = JSON.stringify(state.auth);
+    const previousSession = JSON.stringify(state.session);
     const authResponse = await loadAuthSession();
     state.auth = normalizeAuthState(authResponse?.auth);
     state.session = authResponse?.authenticated ? authResponse.session || null : null;
-    renderShellState();
     if (state.auth.configured && !authResponse?.authenticated) {
       beginAuthRedirect();
       return;
+    }
+    if (JSON.stringify(state.auth) !== previousAuth || JSON.stringify(state.session) !== previousSession) {
+      renderAuthState();
     }
   } catch (error) {
     if (error?.status === 401 && error?.code === "ui_auth_required") {
       beginAuthRedirect();
       return;
+    }
+    if (error?.code === "ui_auth_endpoint_missing") {
+      state.globalError = normalizeError(error);
+      renderErrorState();
     }
   } finally {
     scheduleAuthRefresh();
@@ -400,6 +409,14 @@ function clearAuthRefreshTimer() {
 }
 
 function renderShellState() {
+  renderRouteState();
+  renderProfileState();
+  renderAuthState();
+  renderBootState();
+  renderErrorState();
+}
+
+function renderRouteState() {
   refs.routeLinks.forEach((node) => {
     const active = node.dataset.routeLink === state.route;
     node.classList.toggle("tab-button--active", active);
@@ -412,13 +429,17 @@ function renderShellState() {
     }
     node.href = `${url.pathname}${url.search}${url.hash}`;
   });
+}
 
+function renderProfileState() {
   refs.profileSelect.innerHTML = renderProfileOptions();
   refs.profileSelect.disabled = state.booting || state.authRedirecting || !state.profiles.length;
   if (state.selectedProfileId) {
     refs.profileSelect.value = state.selectedProfileId;
   }
+}
 
+function renderAuthState() {
   const authVisible = state.auth.configured;
   refs.authPanel.hidden = !authVisible;
   if (authVisible) {
@@ -426,8 +447,13 @@ function renderShellState() {
       ? `Signed in as ${state.session.username}`
       : "Protected workspace";
   }
+}
 
+function renderBootState() {
   refs.bootPanel.hidden = !state.booting;
+}
+
+function renderErrorState() {
   refs.error.innerHTML = state.globalError
     ? `<div class="inline-alert inline-alert--danger">${escapeHtml(state.globalError)}</div>`
     : "";
