@@ -1224,13 +1224,17 @@ a {
   background: rgba(255, 255, 255, 0.03);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-family: "JetBrains Mono", monospace;
+  font-family: inherit;
 }
 
 .detail-item {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+}
+
+.detail-item--full {
+  grid-column: 1 / -1;
 }
 
 .detail-item__label {
@@ -1247,6 +1251,11 @@ a {
   color: var(--text-primary);
   line-height: 1.5;
   word-break: break-word;
+}
+
+.detail-item__value--mono {
+  font-family: "JetBrains Mono", monospace;
+  overflow-wrap: anywhere;
 }
 
 .taskflow-page {
@@ -1915,6 +1924,68 @@ a {
   justify-content: space-between;
 }
 
+.automation-card {
+  gap: 0.95rem;
+}
+
+.automation-card .card__topline {
+  align-items: flex-start;
+}
+
+.automation-card .card__title {
+  font-size: 1.08rem;
+}
+
+.automation-card .card__snippet {
+  margin: 0;
+  -webkit-line-clamp: 5;
+}
+
+.automation-card__meta-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(9rem, 0.9fr);
+  gap: 0.75rem;
+}
+
+.automation-card__meta-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.78rem 0.82rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.92rem;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.automation-card__meta-label {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: "JetBrains Mono", monospace;
+}
+
+.automation-card__meta-value,
+.automation-card__footer-copy {
+  margin: 0;
+  color: var(--text-primary);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.automation-card__footer {
+  align-items: flex-end;
+}
+
+.automation-card__footer-copy {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  text-align: right;
+  max-width: 11rem;
+}
+
 .automation-card__error {
   margin: 0;
   padding: 0.8rem 0.9rem;
@@ -1939,6 +2010,15 @@ a {
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.7rem;
+}
+
+.copy-row--stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.copy-row--stack .button {
+  align-self: flex-start;
 }
 
 .graph-stack {
@@ -2202,6 +2282,20 @@ a {
     align-items: stretch;
   }
 
+  .automation-card__meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .automation-card__footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .automation-card__footer-copy {
+    max-width: none;
+    text-align: left;
+  }
+
   .workspace {
     grid-template-columns: 1fr;
   }
@@ -2265,6 +2359,15 @@ a {
   .bootstrap-grid,
   .cards-grid {
     grid-template-columns: 1fr;
+  }
+
+  .copy-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .copy-row .button {
+    align-self: flex-start;
   }
 
   .board {

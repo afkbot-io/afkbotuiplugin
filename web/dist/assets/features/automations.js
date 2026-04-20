@@ -706,6 +706,8 @@ export function createAutomationsController({
       const selected = state.panel.automation?.id === item.id;
       const runtime = describeRuntime(item);
       const activity = describeActivity(item);
+      const delivery = describeCardDelivery(item);
+      const sessionLabel = item.webhook?.last_session_id ? shortSessionLabel(item.webhook.last_session_id) : "";
       const lastError = item.webhook?.last_error ? `<div class="automation-card__error">${escapeHtml(truncateText(item.webhook.last_error, 120))}</div>` : "";
       return `
         <article class="card automation-card ${selected ? "card--selected" : ""}" data-automation-id="${item.id}">
@@ -719,14 +721,23 @@ export function createAutomationsController({
           </div>
           <div class="card__snippet">${escapeHtml(truncateText(item.prompt || "No prompt yet.", 160))}</div>
           ${lastError}
-          <div class="card__footer">
+          <div class="automation-card__meta-grid">
+            <div class="automation-card__meta-block">
+              <p class="automation-card__meta-label">${escapeHtml(item.trigger_type === "cron" ? "Schedule" : "Endpoint")}</p>
+              <p class="automation-card__meta-value">${escapeHtml(delivery)}</p>
+            </div>
+            <div class="automation-card__meta-block automation-card__meta-block--activity">
+              <p class="automation-card__meta-label">Last activity</p>
+              <p class="automation-card__meta-value">${escapeHtml(activity)}</p>
+            </div>
+          </div>
+          <div class="card__footer automation-card__footer">
             <div class="card__badges">
-              <span class="badge">${escapeHtml(describeSchedule(item).primary)}</span>
               <span class="badge ${runtime.className}">${escapeHtml(runtime.label)}</span>
-              ${item.webhook?.last_session_id ? `<span class="badge badge--muted">${escapeHtml(shortSessionLabel(item.webhook.last_session_id))}</span>` : ""}
+              ${sessionLabel ? `<span class="badge badge--muted">${escapeHtml(sessionLabel)}</span>` : ""}
               <span class="badge badge--muted">${escapeHtml(`#${item.id}`)}</span>
             </div>
-            <div class="tiny">${escapeHtml(activity)}</div>
+            <div class="automation-card__footer-copy">${escapeHtml(item.execution_mode === "graph" ? "Graph → AI runtime" : "Prompt → AI runtime")}</div>
           </div>
         </article>
       `;
@@ -876,14 +887,14 @@ export function createAutomationsController({
         </section>
         <section class="panel-section">
           <div class="panel-section__header"><div class="panel-section__title">${automation.trigger_type === "cron" ? "Schedule" : "Webhook diagnostics"}</div></div>
-          ${showWebhookSecretNotice ? '<div class="support-note">Current webhook URL is hidden because the plaintext token is not stored server-side. Issue a new URL to reveal a fresh endpoint in this inspector.</div>' : ""}
+          ${showWebhookSecretNotice ? '<div class="support-note">Current webhook URL is unavailable in this UI session. Issue a new URL if you need to copy the endpoint again.</div>' : ""}
           <div class="detail-grid">${automation.trigger_type === "cron" ? `
             ${renderDetail("Cron", automation.cron?.cron_expr || "Unavailable")}
             ${renderDetail("Timezone", automation.cron?.timezone || "Unavailable")}
             ${renderDetail("Next run", formatDateTime(automation.cron?.next_run_at))}
             ${renderDetail("Last run", formatDateTime(automation.cron?.last_run_at))}
           ` : `
-            ${renderCopyDetail("Webhook URL", webhook?.webhook_url || "Unavailable", webhook?.webhook_url || "")}
+            ${renderCopyDetail("Webhook URL", webhook?.webhook_url || "Unavailable", webhook?.webhook_url || "", { full: true, mono: true, stack: true })}
             ${renderStatusDetail("Last status", webhook?.last_execution_status || "idle", runtimeStatusBadgeClass(webhook?.last_execution_status || "idle"))}
             ${renderDetail("Last received", formatDateTime(webhook?.last_received_at))}
             ${renderDetail("Last started", formatDateTime(webhook?.last_started_at))}
@@ -891,7 +902,7 @@ export function createAutomationsController({
             ${renderDetail("Last failed", formatDateTime(webhook?.last_failed_at))}
             ${renderDetail("Last activity", formatDateTime(automation.derived?.last_activity_at))}
             ${renderDetail("Last session", webhook?.last_session_id || "Unavailable", "mono-inline")}
-            ${renderCopyDetail("Resume command", webhook?.chat_resume_command || "Unavailable", webhook?.chat_resume_command || "")}
+            ${renderCopyDetail("Resume command", webhook?.chat_resume_command || "Unavailable", webhook?.chat_resume_command || "", { full: true, mono: true, stack: true })}
           `}</div>
           ${webhookErrorAlert}
         </section>
@@ -1083,17 +1094,21 @@ export function createAutomationsController({
     `;
   }
 
-  function renderDetail(label, value, extraClass = "") {
-    return `<div class="detail-item"><p class="detail-item__label">${escapeHtml(label)}</p><p class="detail-item__value ${escapeAttribute(extraClass)}">${escapeHtml(value)}</p></div>`;
+  function renderDetail(label, value, extraClass = "", options = {}) {
+    const className = ["detail-item", options.full ? "detail-item--full" : ""].filter(Boolean).join(" ");
+    return `<div class="${className}"><p class="detail-item__label">${escapeHtml(label)}</p><p class="detail-item__value ${escapeAttribute(extraClass)}">${escapeHtml(value)}</p></div>`;
   }
 
   function renderStatusDetail(label, value, className) {
     return `<div class="detail-item"><p class="detail-item__label">${escapeHtml(label)}</p><div class="badge-row"><span class="badge ${escapeAttribute(className)}">${escapeHtml(value)}</span></div></div>`;
   }
 
-  function renderCopyDetail(label, displayValue, rawValue) {
+  function renderCopyDetail(label, displayValue, rawValue, options = {}) {
     const normalizedValue = String(rawValue || "").trim();
-    return `<div class="detail-item"><p class="detail-item__label">${escapeHtml(label)}</p><div class="copy-row"><p class="detail-item__value">${escapeHtml(displayValue)}</p><button class="button button--ghost button--compact" type="button" data-automation-action="copy" data-copy-value="${escapeAttribute(normalizedValue)}" ${normalizedValue ? "" : "disabled"}>Copy</button></div></div>`;
+    const className = ["detail-item", options.full ? "detail-item--full" : ""].filter(Boolean).join(" ");
+    const rowClassName = ["copy-row", options.stack ? "copy-row--stack" : ""].filter(Boolean).join(" ");
+    const valueClassName = ["detail-item__value", options.mono ? "detail-item__value--mono" : ""].join(" ");
+    return `<div class="${className}"><p class="detail-item__label">${escapeHtml(label)}</p><div class="${rowClassName}"><p class="${valueClassName}">${escapeHtml(displayValue)}</p><button class="button button--ghost button--compact" type="button" data-automation-action="copy" data-copy-value="${escapeAttribute(normalizedValue)}" ${normalizedValue ? "" : "disabled"}>Copy</button></div></div>`;
   }
 
   return {
@@ -1142,11 +1157,20 @@ function describeActivity(item) {
   if (!activityAt) {
     return "No activity recorded yet";
   }
-  const formatted = exactAndRelative(activityAt);
-  if (item.webhook?.last_session_id) {
-    return `${formatted.relative} · ${shortSessionLabel(item.webhook.last_session_id)}`;
+  return exactAndRelative(activityAt).relative;
+}
+
+function describeCardDelivery(item) {
+  if (item.trigger_type === "cron" && item.cron) {
+    return `${item.cron.cron_expr} · ${item.cron.timezone}`;
   }
-  return formatted.relative;
+  if (item.webhook?.webhook_url) {
+    return "Webhook URL ready";
+  }
+  if (item.webhook?.last_execution_status === "failed") {
+    return "Webhook endpoint";
+  }
+  return "Webhook trigger";
 }
 
 function graphPreviewVersion(item) {
