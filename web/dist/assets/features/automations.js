@@ -265,6 +265,35 @@ export function createAutomationsController({
     };
   }
 
+  function mergePanelAutomation(previous, next) {
+    if (!previous || !next || previous.id !== next.id) {
+      return next;
+    }
+    if (next.trigger_type !== "webhook") {
+      return next;
+    }
+    const previousWebhook = previous.webhook || null;
+    const nextWebhook = next.webhook || null;
+    if (!previousWebhook || !nextWebhook) {
+      return next;
+    }
+    if (hasVisibleWebhookEndpoint(nextWebhook) || !hasVisibleWebhookEndpoint(previousWebhook)) {
+      return next;
+    }
+    return {
+      ...next,
+      webhook: {
+        ...nextWebhook,
+        webhook_url: previousWebhook.webhook_url || nextWebhook.webhook_url || null,
+        webhook_path: previousWebhook.webhook_path || nextWebhook.webhook_path || null,
+        webhook_token_masked: previousWebhook.webhook_token_masked || nextWebhook.webhook_token_masked,
+        webhook_endpoint_recoverable: typeof previousWebhook.webhook_endpoint_recoverable === "boolean"
+          ? previousWebhook.webhook_endpoint_recoverable
+          : nextWebhook.webhook_endpoint_recoverable,
+      },
+    };
+  }
+
   async function refresh(options = {}) {
     const silent = Boolean(options.silent);
     const profileId = getProfileId();
@@ -297,11 +326,19 @@ export function createAutomationsController({
       state.loading = false;
       state.error = "";
       let graphRefreshAutomationId = null;
+      let panelRevealRefreshAutomationId = null;
       if (state.panel.automation) {
         const refreshed = state.items.find((item) => item.id === state.panel.automation.id);
         if (refreshed) {
+          const previousAutomation = state.panel.automation;
           const previousPreviewVersion = state.panel.graphPreviewVersion;
-          state.panel.automation = refreshed;
+          state.panel.automation = mergePanelAutomation(previousAutomation, refreshed);
+          if (
+            refreshed.trigger_type === "webhook"
+            && String(previousAutomation.updated_at || "") !== String(refreshed.updated_at || "")
+          ) {
+            panelRevealRefreshAutomationId = refreshed.id;
+          }
           if (refreshed.execution_mode !== "graph") {
             state.panel.graphOpen = false;
             state.panel.graphLoading = false;
@@ -324,6 +361,9 @@ export function createAutomationsController({
       render();
       if (graphRefreshAutomationId !== null) {
         void loadGraphPreview(graphRefreshAutomationId, { force: true, silent: true });
+      }
+      if (panelRevealRefreshAutomationId !== null) {
+        void reloadPanelAutomation(panelRevealRefreshAutomationId, { silent: true });
       }
       syncPoller();
     } catch (error) {
@@ -374,6 +414,60 @@ export function createAutomationsController({
       renderPanel();
     } catch (error) {
       if (requestId !== detailRequestId) {
+        return;
+      }
+      state.panel.loading = false;
+      state.panel.error = normalizeError(error);
+      renderPanel();
+    }
+  }
+
+  async function reloadPanelAutomation(automationId, options = {}) {
+    const silent = Boolean(options.silent);
+    if (!state.panel.open || !state.panel.automation || state.panel.automation.id !== automationId) {
+      return;
+    }
+    const requestId = ++detailRequestId;
+    if (!silent) {
+      state.panel.loading = true;
+      renderPanel();
+    }
+    try {
+      const payload = await api.getAutomation(automationId, getProfileId());
+      if (requestId !== detailRequestId) {
+        return;
+      }
+      if (!state.panel.automation || state.panel.automation.id !== automationId) {
+        return;
+      }
+      const automation = payload.automation;
+      const previousPreviewVersion = state.panel.graphPreviewVersion;
+      state.panel.loading = false;
+      state.panel.error = "";
+      state.panel.automation = automation;
+      if (automation.execution_mode !== "graph") {
+        state.panel.graphOpen = false;
+        state.panel.graphLoading = false;
+        state.panel.graphError = "";
+        state.panel.graphPreview = null;
+        state.panel.graphPreviewVersion = null;
+      } else {
+        const nextPreviewVersion = graphPreviewVersion(automation);
+        if (previousPreviewVersion !== nextPreviewVersion) {
+          state.panel.graphError = "";
+          state.panel.graphPreview = null;
+          state.panel.graphPreviewVersion = null;
+          if (state.panel.graphOpen) {
+            void loadGraphPreview(automation.id, { force: true, silent: true });
+          }
+        }
+      }
+      renderPanel();
+    } catch (error) {
+      if (requestId !== detailRequestId) {
+        return;
+      }
+      if (!state.panel.automation || state.panel.automation.id !== automationId) {
         return;
       }
       state.panel.loading = false;
@@ -859,7 +953,9 @@ export function createAutomationsController({
     }
     const runtime = describeRuntime(automation);
     const webhook = automation.webhook;
-    const showWebhookSecretNotice = automation.trigger_type === "webhook" && !hasVisibleWebhookEndpoint(webhook);
+    const showWebhookSecretNotice = automation.trigger_type === "webhook"
+      && !hasVisibleWebhookEndpoint(webhook)
+      && webhook?.webhook_endpoint_recoverable === false;
     const webhookErrorAlert = automation.trigger_type === "webhook" && webhook?.last_error
       ? `<div class="inline-alert inline-alert--danger">${escapeHtml(webhook.last_error)}</div>`
       : "";
@@ -887,7 +983,7 @@ export function createAutomationsController({
         </section>
         <section class="panel-section">
           <div class="panel-section__header"><div class="panel-section__title">${automation.trigger_type === "cron" ? "Schedule" : "Webhook diagnostics"}</div></div>
-          ${showWebhookSecretNotice ? '<div class="support-note">Current webhook URL is unavailable in this UI session. Issue a new URL if you need to copy the endpoint again.</div>' : ""}
+          ${showWebhookSecretNotice ? '<div class="support-note">This automation does not have a recoverable webhook URL in server storage yet. Rotate the URL only if you intentionally want a new endpoint.</div>' : ""}
           <div class="detail-grid">${automation.trigger_type === "cron" ? `
             ${renderDetail("Cron", automation.cron?.cron_expr || "Unavailable")}
             ${renderDetail("Timezone", automation.cron?.timezone || "Unavailable")}

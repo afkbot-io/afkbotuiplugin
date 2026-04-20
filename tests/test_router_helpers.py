@@ -4,10 +4,8 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from afkbot_plugin_afkbotui.router import (
-    _forget_webhook_endpoint,
+    _apply_webhook_endpoint_reveal,
     _last_activity_datetime,
-    _merge_webhook_endpoint,
-    _remember_webhook_endpoint,
     _serialize_graph_preview_trace,
     _serialize_graph_preview_validation,
 )
@@ -113,30 +111,25 @@ def test_last_activity_ignores_future_cron_next_run() -> None:
     assert _last_activity_datetime(item) == now - timedelta(minutes=30)
 
 
-def test_remembered_webhook_endpoint_merges_back_without_browser_cache() -> None:
-    issued = {
-        "id": 8,
-        "profile_id": "github",
-        "trigger_type": "webhook",
-        "webhook": {
-            "webhook_url": "https://example.com/v1/automations/github/webhook/token-1",
-            "webhook_path": "/v1/automations/github/webhook/token-1",
-        },
-    }
-    missing = {
+def test_apply_webhook_endpoint_reveal_merges_operator_endpoint_payload() -> None:
+    payload = {
         "id": 8,
         "profile_id": "github",
         "trigger_type": "webhook",
         "webhook": {
             "webhook_url": None,
             "webhook_path": None,
+            "webhook_token_masked": "[HIDDEN]",
         },
     }
-
-    try:
-        _remember_webhook_endpoint(issued)
-        merged = _merge_webhook_endpoint(missing)
-        assert merged["webhook"]["webhook_url"] == issued["webhook"]["webhook_url"]
-        assert merged["webhook"]["webhook_path"] == issued["webhook"]["webhook_path"]
-    finally:
-        _forget_webhook_endpoint(profile_id="github", automation_id=8)
+    endpoint = {
+        "recoverable": True,
+        "webhook_url": "https://example.com/v1/automations/github/webhook/token-1",
+        "webhook_path": "/v1/automations/github/webhook/token-1",
+        "webhook_token_masked": "toke...en-1",
+    }
+    merged = _apply_webhook_endpoint_reveal(payload, endpoint=endpoint)
+    assert merged["webhook"]["webhook_url"] == endpoint["webhook_url"]
+    assert merged["webhook"]["webhook_path"] == endpoint["webhook_path"]
+    assert merged["webhook"]["webhook_token_masked"] == endpoint["webhook_token_masked"]
+    assert merged["webhook"]["webhook_endpoint_recoverable"] is True

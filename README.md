@@ -2,9 +2,9 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, subagents, skills, and bootstrap files.
 
-Current release: `0.4.1`
+Current release: `0.4.2`
 
-## What is in 0.4.1
+## What is in 0.4.2
 
 - single shell workspace at `/plugins/afkbotui`
 - profile-aware sections for `Automations`, `Task Flow`, `Subagents`, `Skills`, and `Bootstrap`
@@ -58,7 +58,7 @@ Install locally into AFKBOT:
 afk plugin install ../afkbotui
 ```
 
-AFKBOT UI `0.4.1` requires AFKBOT `1.3.0` or newer because plugin UI and plugin API protection now use core `afk auth` support.
+AFKBOT UI `0.4.2` requires AFKBOT `1.4.2` or newer because the automation inspector now depends on the core operator-side webhook reveal API for durable webhook URL display.
 
 Optional plugin config:
 

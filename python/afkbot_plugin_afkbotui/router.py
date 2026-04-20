@@ -365,7 +365,18 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         except AutomationsServiceError as exc:
             raise _automation_http_error(exc) from exc
         payload = _serialize_automation(item)
-        _remember_webhook_endpoint(payload)
+        if item.trigger_type == "webhook":
+            try:
+                endpoint = await service.reveal_webhook_endpoint(
+                    profile_id=profile_id,
+                    automation_id=automation_id,
+                )
+                payload = _apply_webhook_endpoint_reveal(
+                    payload,
+                    endpoint=endpoint.model_dump(mode="json"),
+                )
+            except AutomationsServiceError as exc:
+                raise _automation_http_error(exc) from exc
         return {"automation": payload}
 
     @router.get("/automations/{automation_id}/graph-preview")
@@ -468,9 +479,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 )
         except AutomationsServiceError as exc:
             raise _automation_http_error(exc) from exc
-        payload = _serialize_automation(item)
-        _remember_webhook_endpoint(payload)
-        return {"automation": payload}
+        return {"automation": _serialize_automation(item)}
 
     @router.patch("/automations/{automation_id}")
     async def patch_automation(
@@ -492,9 +501,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             )
         except AutomationsServiceError as exc:
             raise _automation_http_error(exc) from exc
-        payload = _serialize_automation(item)
-        _remember_webhook_endpoint(payload)
-        return {"automation": payload}
+        return {"automation": _serialize_automation(item)}
 
     @router.delete("/automations/{automation_id}")
     async def delete_automation(
@@ -506,7 +513,6 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             await service.delete(profile_id=profile_id, automation_id=automation_id)
         except AutomationsServiceError as exc:
             raise _automation_http_error(exc) from exc
-        _forget_webhook_endpoint(profile_id=profile_id, automation_id=automation_id)
         return {"deleted": True, "automation_id": automation_id}
 
     @router.get("/task-flow/flows")
@@ -1344,74 +1350,6 @@ def _task_comment_preview_resources():
     return engine, create_session_factory(engine)
 
 
-_ISSUED_WEBHOOK_ENDPOINTS: dict[str, dict[str, str]] = {}
-
-
-def _webhook_endpoint_cache_key(*, profile_id: str, automation_id: int) -> str:
-    """Build one stable cache key for remembered webhook endpoints."""
-
-    return f"{profile_id.strip()}:{automation_id}"
-
-
-def _remember_webhook_endpoint(payload: dict[str, object]) -> dict[str, object]:
-    """Store one freshly issued webhook endpoint in plugin-process memory."""
-
-    if str(payload.get("trigger_type") or "").strip() != "webhook":
-        return payload
-    webhook = payload.get("webhook")
-    if not isinstance(webhook, dict):
-        return payload
-    webhook_url = str(webhook.get("webhook_url") or "").strip()
-    webhook_path = str(webhook.get("webhook_path") or "").strip()
-    if not webhook_url and not webhook_path:
-        return payload
-    cache_key = _webhook_endpoint_cache_key(
-        profile_id=str(payload.get("profile_id") or "").strip(),
-        automation_id=int(payload.get("id") or 0),
-    )
-    _ISSUED_WEBHOOK_ENDPOINTS[cache_key] = {
-        "webhook_url": webhook_url,
-        "webhook_path": webhook_path,
-    }
-    return payload
-
-
-def _merge_webhook_endpoint(payload: dict[str, object]) -> dict[str, object]:
-    """Merge one remembered webhook endpoint into serialized automation payload."""
-
-    if str(payload.get("trigger_type") or "").strip() != "webhook":
-        return payload
-    webhook = payload.get("webhook")
-    if not isinstance(webhook, dict):
-        return payload
-    if str(webhook.get("webhook_url") or "").strip() or str(webhook.get("webhook_path") or "").strip():
-        return payload
-    cache_key = _webhook_endpoint_cache_key(
-        profile_id=str(payload.get("profile_id") or "").strip(),
-        automation_id=int(payload.get("id") or 0),
-    )
-    cached = _ISSUED_WEBHOOK_ENDPOINTS.get(cache_key)
-    if not cached:
-        return payload
-    return {
-        **payload,
-        "webhook": {
-            **webhook,
-            "webhook_url": cached.get("webhook_url") or None,
-            "webhook_path": cached.get("webhook_path") or None,
-        },
-    }
-
-
-def _forget_webhook_endpoint(*, profile_id: str, automation_id: int) -> None:
-    """Remove one remembered webhook endpoint from plugin-process memory."""
-
-    _ISSUED_WEBHOOK_ENDPOINTS.pop(
-        _webhook_endpoint_cache_key(profile_id=profile_id, automation_id=automation_id),
-        None,
-    )
-
-
 def _serialize_automation(item: AutomationMetadata) -> dict[str, object]:
     """Serialize one automation with derived UI fields."""
 
@@ -1423,7 +1361,37 @@ def _serialize_automation(item: AutomationMetadata) -> dict[str, object]:
             item.webhook is not None and item.webhook.last_execution_status == "failed"
         ),
     }
-    return _merge_webhook_endpoint(payload)
+    return payload
+
+
+def _apply_webhook_endpoint_reveal(
+    payload: dict[str, object],
+    *,
+    endpoint: dict[str, object] | None,
+) -> dict[str, object]:
+    """Merge operator-only webhook endpoint reveal data into one automation payload."""
+
+    if str(payload.get("trigger_type") or "").strip() != "webhook":
+        return payload
+    webhook = payload.get("webhook")
+    if not isinstance(webhook, dict):
+        return payload
+    endpoint_payload = endpoint if isinstance(endpoint, dict) else {}
+    return {
+        **payload,
+        "webhook": {
+            **webhook,
+            "webhook_path": endpoint_payload.get("webhook_path") or webhook.get("webhook_path"),
+            "webhook_url": endpoint_payload.get("webhook_url") or webhook.get("webhook_url"),
+            "webhook_token_masked": endpoint_payload.get("webhook_token_masked")
+            or webhook.get("webhook_token_masked"),
+            "webhook_endpoint_recoverable": bool(
+                endpoint_payload.get("recoverable")
+                or webhook.get("webhook_path")
+                or webhook.get("webhook_url")
+            ),
+        },
+    }
 
 
 def _graph_has_ai_handoff(graph_payload: dict[str, object] | None) -> bool:
