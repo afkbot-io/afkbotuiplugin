@@ -2,19 +2,21 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, subagents, skills, and bootstrap files.
 
-Current release: `0.4.0`
+Current release: `0.4.1`
 
-## What is in 0.4.0
+## What is in 0.4.1
 
 - single shell workspace at `/plugins/afkbotui`
 - profile-aware sections for `Automations`, `Task Flow`, `Subagents`, `Skills`, and `Bootstrap`
 - core-level operator auth integration through AFKBOT `afk auth ...`, with login redirect, session badge, and logout support
+- safer automation inspector behavior: webhook URLs are no longer cached in browser storage after issuance
+- graph-aware automation inspector with runtime path, lazy graph preview, recent runs, and latest trace summary
 - reactive Task Flow board without full page refreshes
 - task inspector session feed with recent chat turns and live activity events for the current agent session
 - unified modal-driven CRUD flows across the workspace
 - kanban-style Task Flow with inspector, comments, review actions, quick selection, delete actions, and mobile behavior
 - profile-local text libraries for subagents, skills, and bootstrap files
-- webhook automation inspector with diagnostics, copy actions, and token rotation from the UI
+- webhook automation inspector with diagnostics, copy actions, error emphasis, and URL rotation from the UI
 - inspector refresh that preserves scroll position while board and session data continue updating in the background
 - UI polish pass for card previews, owner visibility, tighter bulk actions, card-based automation layout, and cleaner spacing below the workspace header
 
@@ -24,7 +26,8 @@ Current release: `0.4.0`
 
 - cron and webhook automation management inside the workspace
 - create, edit, delete, filter, and inspect flows without leaving the page
-- webhook diagnostics include token state, URL, path, execution timestamps, last session, and resume command
+- webhook diagnostics include URL, execution timestamps, last session, resume command, and clearer failure state
+- graph automations expose a lazy `View Graph` preview so operators can inspect nodes, edges, recent runs, and AI handoff presence without leaving the inspector
 - existing webhook tokens can be rotated directly from the UI
 
 ### Task Flow
@@ -55,7 +58,7 @@ Install locally into AFKBOT:
 afk plugin install ../afkbotui
 ```
 
-AFKBOT UI `0.4.0` requires AFKBOT `1.3.0` or newer because plugin UI and plugin API protection now use core `afk auth` support.
+AFKBOT UI `0.4.1` requires AFKBOT `1.3.0` or newer because plugin UI and plugin API protection now use core `afk auth` support.
 
 Optional plugin config:
 
@@ -83,6 +86,7 @@ afk start
 - `GET /v1/plugins/afkbotui/profiles`
 - `GET /v1/plugins/afkbotui/automations`
 - `GET /v1/plugins/afkbotui/automations/{id}`
+- `GET /v1/plugins/afkbotui/automations/{id}/graph-preview`
 - `POST /v1/plugins/afkbotui/automations`
 - `PATCH /v1/plugins/afkbotui/automations/{id}`
 - `DELETE /v1/plugins/afkbotui/automations/{id}`
@@ -94,5 +98,5 @@ afk start
 ## Notes
 
 - AFKBOT does not return old plaintext webhook tokens from ordinary `list/get` calls after issuance
-- the UI can reveal and cache webhook URL and token only when they are freshly created or rotated
+- the UI can reveal a fresh webhook URL only when it is newly created or rotated in the current inspector session
 - version history is tracked in [CHANGELOG.md](/Users/kikasnikita/PycharmProjects/afkbotui/CHANGELOG.md)
