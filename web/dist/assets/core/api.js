@@ -126,6 +126,12 @@ export class ApiClient {
     });
   }
 
+  async getAutomationGraphPreview(automationId, profileId, limit = 6) {
+    return this.request(`/automations/${automationId}/graph-preview`, {
+      params: { profile_id: profileId, limit },
+    });
+  }
+
   async createAutomation(profileId, payload) {
     return this.request("/automations", {
       method: "POST",

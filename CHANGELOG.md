@@ -2,6 +2,14 @@
 
 All notable changes to this plugin are tracked here.
 
+## 0.4.1 - 2026-04-20
+
+- add graph-aware automation inspector UI with execution mode badges, lazy graph preview, recent graph runs, latest trace summary, and explicit AI handoff visibility
+- simplify webhook diagnostics to show the issued webhook URL only, preserve useful session/run diagnostics, and surface failed states as inline errors
+- preserve workspace scroll position during automatic automation refreshes while avoiding stale graph inspector data
+- stop caching webhook endpoints in browser storage and narrow graph preview payloads to a stable, redacted plugin contract
+- sync release metadata to version `0.4.1`
+
 ## 0.4.0 - 2026-04-19
 
 - integrate the workspace with AFKBOT core operator auth so protected plugin UI and plugin API routes redirect through `/auth/login`

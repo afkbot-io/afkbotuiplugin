@@ -366,6 +366,67 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             raise _automation_http_error(exc) from exc
         return {"automation": _serialize_automation(item)}
 
+    @router.get("/automations/{automation_id}/graph-preview")
+    async def get_automation_graph_preview(
+        automation_id: int,
+        profile_id: str = "default",
+        limit: int = 6,
+    ) -> dict[str, object]:
+        service = get_automations_service(get_settings())
+        try:
+            automation = await service.get(profile_id=profile_id, automation_id=automation_id)
+        except AutomationsServiceError as exc:
+            raise _automation_http_error(exc) from exc
+
+        graph_payload: dict[str, object] | None = None
+        validation_payload: dict[str, object] | None = None
+        recent_runs: list[dict[str, object]] = []
+        latest_trace: dict[str, object] | None = None
+        graph_error: dict[str, str] | None = None
+        ai_handoff_present = False
+
+        if automation.execution_mode == "graph":
+            try:
+                graph = await service.get_graph(profile_id=profile_id, automation_id=automation_id)
+                validation = await service.validate_graph(profile_id=profile_id, automation_id=automation_id)
+                runs = await service.list_graph_runs(
+                    profile_id=profile_id,
+                    automation_id=automation_id,
+                    limit=max(1, min(int(limit or 6), 12)),
+                )
+                graph_payload = _serialize_graph_preview_graph(graph.model_dump(mode="json"))
+                validation_payload = _serialize_graph_preview_validation(
+                    validation.model_dump(mode="json")
+                )
+                recent_runs = [_serialize_graph_preview_run(item.model_dump(mode="json")) for item in runs]
+                ai_handoff_present = _graph_has_ai_handoff(graph_payload)
+                if runs:
+                    latest_trace = _serialize_graph_preview_trace(
+                        (
+                            await service.get_graph_trace(
+                                profile_id=profile_id,
+                                run_id=runs[0].id,
+                            )
+                        ).model_dump(mode="json")
+                    )
+            except AutomationsServiceError as exc:
+                if exc.error_code != "automation_graph_missing":
+                    raise _automation_http_error(exc) from exc
+                graph_error = {"error_code": exc.error_code, "reason": exc.reason}
+
+        return {
+            "automation_id": automation.id,
+            "profile_id": automation.profile_id,
+            "execution_mode": automation.execution_mode,
+            "graph_available": graph_payload is not None,
+            "graph": graph_payload,
+            "validation": validation_payload,
+            "recent_runs": recent_runs,
+            "latest_trace": latest_trace,
+            "ai_handoff_present": ai_handoff_present,
+            "graph_error": graph_error,
+        }
+
     @router.post("/automations")
     async def create_automation(
         payload: AutomationCreatePayload,
@@ -1282,8 +1343,143 @@ def _serialize_automation(item: AutomationMetadata) -> dict[str, object]:
     payload = item.model_dump(mode="json")
     payload["derived"] = {
         "last_activity_at": _derive_last_activity(item),
+        "has_graph": item.execution_mode == "graph",
+        "needs_attention": (
+            item.webhook is not None and item.webhook.last_execution_status == "failed"
+        ),
     }
     return payload
+
+
+def _graph_has_ai_handoff(graph_payload: dict[str, object] | None) -> bool:
+    """Return whether the serialized graph contains one AI or subagent handoff node."""
+
+    if not graph_payload:
+        return False
+    nodes = graph_payload.get("nodes")
+    if not isinstance(nodes, list):
+        return False
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        node_kind = str(node.get("node_kind") or "").strip().lower()
+        if node_kind in {"ai", "agent"}:
+            return True
+    return False
+
+
+def _serialize_graph_preview_graph(graph_payload: dict[str, object]) -> dict[str, object]:
+    """Reduce one graph snapshot to the fields consumed by the UI preview."""
+
+    nodes = graph_payload.get("nodes")
+    edges = graph_payload.get("edges")
+    return {
+        "flow_id": graph_payload.get("flow_id"),
+        "automation_id": graph_payload.get("automation_id"),
+        "execution_mode": graph_payload.get("execution_mode"),
+        "graph_fallback_mode": graph_payload.get("graph_fallback_mode"),
+        "name": graph_payload.get("name"),
+        "version": graph_payload.get("version"),
+        "status": graph_payload.get("status"),
+        "nodes": [
+            {
+                "id": node.get("id"),
+                "key": node.get("key"),
+                "name": node.get("name"),
+                "node_kind": node.get("node_kind"),
+                "node_type": node.get("node_type"),
+                "node_version_id": node.get("node_version_id"),
+            }
+            for node in nodes
+            if isinstance(node, dict)
+        ]
+        if isinstance(nodes, list)
+        else [],
+        "edges": [
+            {
+                "id": edge.get("id"),
+                "source_key": edge.get("source_key"),
+                "target_key": edge.get("target_key"),
+                "source_port": edge.get("source_port"),
+                "target_port": edge.get("target_port"),
+            }
+            for edge in edges
+            if isinstance(edge, dict)
+        ]
+        if isinstance(edges, list)
+        else [],
+    }
+
+
+def _serialize_graph_preview_run(run_payload: dict[str, object]) -> dict[str, object]:
+    """Return one compact graph run row for the UI preview."""
+
+    return {
+        "id": run_payload.get("id"),
+        "automation_id": run_payload.get("automation_id"),
+        "trigger_type": run_payload.get("trigger_type"),
+        "status": run_payload.get("status"),
+        "parent_session_id": run_payload.get("parent_session_id"),
+        "error_code": run_payload.get("error_code"),
+        "reason": run_payload.get("reason"),
+        "started_at": run_payload.get("started_at"),
+        "completed_at": run_payload.get("completed_at"),
+        "fallback_status": run_payload.get("fallback_status"),
+    }
+
+
+def _serialize_graph_preview_validation(
+    validation_payload: dict[str, object],
+) -> dict[str, object]:
+    """Return one stable validation payload for the UI preview contract."""
+
+    errors = validation_payload.get("errors")
+    return {
+        "valid": bool(validation_payload.get("valid")),
+        "errors": [
+            str(item).strip()
+            for item in errors
+            if item is not None and str(item).strip()
+        ]
+        if isinstance(errors, list)
+        else [],
+    }
+
+
+def _serialize_graph_preview_trace(trace_payload: dict[str, object]) -> dict[str, object]:
+    """Return one compact latest-trace payload for the UI preview."""
+
+    run_payload = trace_payload.get("run")
+    nodes = trace_payload.get("nodes")
+    fallback_payload = trace_payload.get("fallback")
+    return {
+        "run": _serialize_graph_preview_run(run_payload) if isinstance(run_payload, dict) else None,
+        "nodes": [
+            {
+                "id": node.get("id"),
+                "node_id": node.get("node_id"),
+                "node_key": node.get("node_key"),
+                "status": node.get("status"),
+                "execution_index": node.get("execution_index"),
+                "selected_ports": node.get("selected_ports") if isinstance(node.get("selected_ports"), list) else [],
+                "reason": node.get("reason"),
+                "error_code": node.get("error_code"),
+                "child_session_id": node.get("child_session_id"),
+            }
+            for node in nodes
+            if isinstance(node, dict)
+        ]
+        if isinstance(nodes, list)
+        else [],
+        "fallback": {
+            "execution_index": fallback_payload.get("execution_index"),
+            "status": fallback_payload.get("status"),
+            "error_code": fallback_payload.get("error_code"),
+            "reason": fallback_payload.get("reason"),
+        }
+        if isinstance(fallback_payload, dict)
+        else None,
+    }
 
 
 def _build_summary(items: list[AutomationMetadata]) -> dict[str, int]:
@@ -1326,6 +1522,8 @@ def _matches_filters(
         item.trigger_type,
         item.status,
         item.profile_id,
+        item.execution_mode,
+        item.graph_fallback_mode,
     ]
     if item.cron is not None:
         haystack.extend((item.cron.cron_expr, item.cron.timezone))
@@ -1363,9 +1561,7 @@ def _last_activity_datetime(item: AutomationMetadata) -> datetime | None:
 
     candidates: list[datetime] = [item.updated_at, item.created_at]
     if item.cron is not None:
-        candidates.extend(
-            dt for dt in (item.cron.last_run_at, item.cron.next_run_at) if dt is not None
-        )
+        candidates.extend(dt for dt in (item.cron.last_run_at,) if dt is not None)
     if item.webhook is not None:
         candidates.extend(
             dt
