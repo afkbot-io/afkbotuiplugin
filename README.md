@@ -99,4 +99,4 @@ afk start
 
 - AFKBOT does not return live webhook bearer endpoints from ordinary `list` calls; the inspector uses an operator-only reveal path for the current endpoint
 - older webhook automations that were created before durable reveal storage was configured may still require one explicit rotate before the current URL becomes recoverable
-- version history is tracked in [CHANGELOG.md](/Users/kikasnikita/PycharmProjects/afkbotui/CHANGELOG.md)
+- version history is tracked in `CHANGELOG.md`
