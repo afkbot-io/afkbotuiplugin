@@ -32,10 +32,12 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     loading: false,
     error: "",
     flowFilter: "",
+    flowSearchQuery: "",
     dragTaskId: "",
     activeModal: "",
     modalBusy: false,
     modalError: "",
+    pendingFlowDeleteId: "",
     refreshInFlight: false,
     sessionRefreshInFlight: false,
     boardPanActive: false,
@@ -92,6 +94,31 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     state.activeModal = nextModal;
     state.modalBusy = false;
     state.modalError = "";
+    state.pendingFlowDeleteId = "";
+    if (nextModal !== "manage-flows") {
+      state.flowSearchQuery = "";
+    }
+  }
+
+  function clearTaskSelection() {
+    state.selectedTaskId = "";
+    state.selectedTaskIds.clear();
+    state.dragTaskId = "";
+    commitSelectedTaskData(null);
+    clearSessionInsights();
+    stopSessionRefreshLoop();
+  }
+
+  async function applyFlowFilter(flowId, { closeModal = false } = {}) {
+    state.flowFilter = String(flowId || "");
+    clearTaskSelection();
+    if (closeModal) {
+      setModal("");
+    } else {
+      state.modalError = "";
+      state.pendingFlowDeleteId = "";
+    }
+    await refreshAll({ force: true });
   }
 
   async function handleClick(event) {
@@ -117,8 +144,8 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
         await refreshSelectedTaskSession({ forceRender: false, incremental: false });
         return;
       }
-      if (action === "open-flow") {
-        setModal("flow");
+      if (action === "open-manage-flows") {
+        setModal("manage-flows");
         render();
         return;
       }
@@ -137,12 +164,31 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
         render();
         return;
       }
-      if (action === "open-delete-flow") {
-        if (!state.flowFilter) {
+      if (action === "apply-flow-filter") {
+        await applyFlowFilter(actionNode.dataset.flowId || "", {
+          closeModal: state.activeModal === "manage-flows",
+        });
+        return;
+      }
+      if (action === "request-delete-flow") {
+        const flowId = String(actionNode.dataset.flowId || "");
+        if (!flowId || state.modalBusy) {
           return;
         }
-        setModal("delete-flow");
+        state.pendingFlowDeleteId = flowId;
+        state.modalError = "";
         render();
+        return;
+      }
+      if (action === "cancel-delete-flow") {
+        state.pendingFlowDeleteId = "";
+        state.modalBusy = false;
+        state.modalError = "";
+        render();
+        return;
+      }
+      if (action === "confirm-delete-flow") {
+        await deleteFlow(actionNode.dataset.flowId || "", { keepModalOpen: true });
         return;
       }
       if (action === "open-delete-task") {
@@ -226,13 +272,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     }
     const form = target.closest("form");
     if (target.matches('[name="flow_filter"]')) {
-      state.flowFilter = target.value;
-      state.selectedTaskId = "";
-      state.selectedTaskIds.clear();
-      state.dragTaskId = "";
-      setModal("");
-      commitSelectedTaskData(null);
-      await refreshAll();
+      await applyFlowFilter(target.value);
       return;
     }
     if (target.matches('[data-task-checkbox]')) {
@@ -256,26 +296,34 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     }
   }
 
+  function handleInput(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
+      return;
+    }
+    if (target.name === "flow_search") {
+      state.flowSearchQuery = target.value;
+      state.pendingFlowDeleteId = "";
+      patchManageFlowsRegion();
+    }
+  }
+
   async function handleSubmit(event) {
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) {
       return;
     }
     event.preventDefault();
-    if (form.dataset.role === "taskflow-create-flow") {
-      await createFlow(form);
-      return;
-    }
     if (form.dataset.role === "taskflow-create-task") {
       await createTask(form);
       return;
     }
-    if (form.dataset.role === "taskflow-settings") {
-      await saveSettings(form);
+    if (form.dataset.role === "taskflow-manage-flows-create") {
+      await createFlow(form, { keepModalOpen: true, selectCreatedFlow: true });
       return;
     }
-    if (form.dataset.role === "taskflow-delete-flow") {
-      await deleteFlow();
+    if (form.dataset.role === "taskflow-settings") {
+      await saveSettings(form);
       return;
     }
     if (form.dataset.role === "taskflow-delete-task") {
@@ -426,9 +474,27 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     }
     const boardViewport = root.querySelector(".board-viewport");
     const inspectorBody = root.querySelector(".task-inspector__body");
+    const modalCard = root.querySelector(".modal-card");
+    const flowManagerList = root.querySelector("[data-flow-manager-list]");
+    const workspaceShell = root.closest(".workspace-shell, .workspace-main, .app-main");
+    const columnScrollTops = {};
+    for (const columnBody of root.querySelectorAll(".task-column__body")) {
+      if (!(columnBody instanceof HTMLElement)) {
+        continue;
+      }
+      const columnId = columnBody.closest("[data-column-id]")?.dataset.columnId;
+      if (!columnId) {
+        continue;
+      }
+      columnScrollTops[columnId] = columnBody.scrollTop;
+    }
     return {
       boardScrollLeft: boardViewport instanceof HTMLElement ? boardViewport.scrollLeft : 0,
       inspectorScrollTop: inspectorBody instanceof HTMLElement ? inspectorBody.scrollTop : 0,
+      modalScrollTop: modalCard instanceof HTMLElement ? modalCard.scrollTop : 0,
+      flowManagerListScrollTop: flowManagerList instanceof HTMLElement ? flowManagerList.scrollTop : 0,
+      workspaceScrollTop: workspaceShell instanceof HTMLElement ? workspaceShell.scrollTop : 0,
+      columnScrollTops,
     };
   }
 
@@ -439,13 +505,51 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     window.requestAnimationFrame(() => {
       const boardViewport = root.querySelector(".board-viewport");
       const inspectorBody = root.querySelector(".task-inspector__body");
+      const modalCard = root.querySelector(".modal-card");
+      const flowManagerList = root.querySelector("[data-flow-manager-list]");
+      const workspaceShell = root.closest(".workspace-shell, .workspace-main, .app-main");
       if (boardViewport instanceof HTMLElement) {
         boardViewport.scrollLeft = snapshot.boardScrollLeft;
       }
       if (inspectorBody instanceof HTMLElement) {
         inspectorBody.scrollTop = snapshot.inspectorScrollTop;
       }
+      if (modalCard instanceof HTMLElement) {
+        modalCard.scrollTop = snapshot.modalScrollTop;
+      }
+      if (flowManagerList instanceof HTMLElement) {
+        flowManagerList.scrollTop = snapshot.flowManagerListScrollTop;
+      }
+      if (workspaceShell instanceof HTMLElement) {
+        workspaceShell.scrollTop = snapshot.workspaceScrollTop;
+      }
+      for (const columnBody of root.querySelectorAll(".task-column__body")) {
+        if (!(columnBody instanceof HTMLElement)) {
+          continue;
+        }
+        const columnId = columnBody.closest("[data-column-id]")?.dataset.columnId;
+        if (!columnId) {
+          continue;
+        }
+        columnBody.scrollTop = Number(snapshot.columnScrollTops?.[columnId] || 0);
+      }
     });
+  }
+
+  function patchManageFlowsRegion() {
+    if (!root || state.activeModal !== "manage-flows") {
+      return;
+    }
+    const listRegion = root.querySelector("[data-flow-manager-list]");
+    const countRegion = root.querySelector("[data-flow-manager-results-count]");
+    const noteRegion = root.querySelector("[data-flow-manager-results-note]");
+    if (!(listRegion instanceof HTMLElement) || !(countRegion instanceof HTMLElement) || !(noteRegion instanceof HTMLElement)) {
+      return;
+    }
+    const visibleFlows = getVisibleFlows(state);
+    countRegion.textContent = formatProjectResultsLabel(visibleFlows.length, state.flows.length);
+    noteRegion.textContent = formatProjectResultsNote(state.flowFilter, state.flows, state.flowSearchQuery);
+    listRegion.innerHTML = renderFlowManagerList(state, visibleFlows);
   }
 
   function patchSessionRegion() {
@@ -545,19 +649,27 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       render();
     }
     try {
-      const [flowsPayload, boardPayload, reviewPayload] = await Promise.all([
-        api.listTaskFlows(profileId),
+      const flowsPayload = await api.listTaskFlows(profileId);
+      const nextFlows = flowsPayload.task_flows || [];
+      const currentFlowFilter = String(state.flowFilter || "");
+      const hasCurrentFlow = currentFlowFilter && nextFlows.some((flow) => flow.id === currentFlowFilter);
+      const activeFlowFilter = hasCurrentFlow ? currentFlowFilter : "";
+      const filterReset = Boolean(currentFlowFilter && !hasCurrentFlow);
+      if (filterReset) {
+        state.flowFilter = "";
+        clearTaskSelection();
+      }
+      const [boardPayload, reviewPayload] = await Promise.all([
         api.getTaskBoard(profileId, {
-          flow_id: state.flowFilter || undefined,
+          flow_id: activeFlowFilter || undefined,
           limit_per_column: currentConfig().task_flow_board_limit_per_column,
         }),
         api.listReviewTasks(profileId, {
-          flow_id: state.flowFilter || undefined,
+          flow_id: activeFlowFilter || undefined,
           actor_type: currentConfig().task_flow_actor_type,
           actor_ref: currentConfig().task_flow_actor_ref,
         }),
       ]);
-      const nextFlows = flowsPayload.task_flows || [];
       const nextBoard = boardPayload.board || null;
       const nextReviewTasks = reviewPayload.review_tasks || [];
       const nextFlowsSignature = flowSignature(nextFlows);
@@ -565,6 +677,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       const nextReviewSignature = reviewSignature(nextReviewTasks);
       const structureChanged = (
         force
+        || filterReset
         || !state.board
         || hadError
         || state.signatures.flows !== nextFlowsSignature
@@ -649,38 +762,117 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     await loadSelectedTask({ forceRender: true });
   }
 
-  async function createFlow(form) {
+  async function createFlow(form, { keepModalOpen = false, selectCreatedFlow = false } = {}) {
     const profileId = currentProfileId();
     const formData = new FormData(form);
-    await api.createTaskFlow(profileId, {
-      title: String(formData.get("title") || "").trim(),
-      description: String(formData.get("description") || "").trim() || null,
-      created_by_type: currentConfig().task_flow_actor_type,
-      created_by_ref: currentConfig().task_flow_actor_ref,
-      default_owner_type: String(formData.get("default_owner_type") || "") || null,
-      default_owner_ref: normalizeActorRef(
-        String(formData.get("default_owner_type") || "") || null,
-        String(formData.get("default_owner_ref") || ""),
-        currentConfig(),
-      ),
-      labels: parseCsv(formData.get("labels")),
-    });
-    setModal("");
-    notify("Task Flow created.", "success");
-    await refreshAll({ force: true });
+    const title = String(formData.get("title") || "").trim();
+    const description = String(formData.get("description") || "").trim();
+    if (!profileId) {
+      return;
+    }
+    if (!title) {
+      state.modalError = "Project title is required.";
+      render();
+      return;
+    }
+    if (title.length > 240) {
+      state.modalError = "Project title must be 240 characters or less.";
+      render();
+      return;
+    }
+    if (description.length > 2000) {
+      state.modalError = "Project description must be 2000 characters or less.";
+      render();
+      return;
+    }
+    state.modalBusy = true;
+    state.modalError = "";
+    render();
+    try {
+      const response = await api.createTaskFlow(profileId, {
+        title,
+        description: description || null,
+        created_by_type: currentConfig().task_flow_actor_type,
+        created_by_ref: currentConfig().task_flow_actor_ref,
+        default_owner_type: String(formData.get("default_owner_type") || "") || null,
+        default_owner_ref: normalizeActorRef(
+          String(formData.get("default_owner_type") || "") || null,
+          String(formData.get("default_owner_ref") || ""),
+          currentConfig(),
+        ),
+        labels: parseCsv(formData.get("labels")),
+      });
+      if (selectCreatedFlow && response?.task_flow?.id) {
+        state.flowFilter = response.task_flow.id;
+        clearTaskSelection();
+      }
+      state.flowSearchQuery = "";
+      state.pendingFlowDeleteId = "";
+      if (keepModalOpen) {
+        state.modalBusy = false;
+        state.modalError = "";
+      } else {
+        setModal("");
+      }
+      notify("Project created.", "success");
+      await refreshAll({ force: true });
+    } catch (error) {
+      state.modalBusy = false;
+      state.modalError = normalizeError(error);
+      render();
+    }
   }
 
   async function createTask(form) {
     const profileId = currentProfileId();
     const formData = new FormData(form);
+    const title = String(formData.get("title") || "").trim();
+    const prompt = String(formData.get("prompt") || "").trim();
+    const dueAtValue = String(formData.get("due_at") || "").trim();
+    const dueAt = dueAtValue ? new Date(dueAtValue) : null;
+    const priority = normalizeNumberField(formData.get("priority"), {
+      fallback: 50,
+      min: 0,
+      max: 100,
+    });
+    if (!title) {
+      state.modalError = "Task title is required.";
+      render();
+      return;
+    }
+    if (!prompt) {
+      state.modalError = "Task prompt is required.";
+      render();
+      return;
+    }
+    if (title.length > 240) {
+      state.modalError = "Task title must be 240 characters or less.";
+      render();
+      return;
+    }
+    if (prompt.length > 12000) {
+      state.modalError = "Task prompt must be 12000 characters or less.";
+      render();
+      return;
+    }
+    if (priority === null) {
+      state.modalError = "Task priority must be between 0 and 100.";
+      render();
+      return;
+    }
+    if (dueAtValue && (!dueAt || Number.isNaN(dueAt.getTime()))) {
+      state.modalError = "Due date must be a valid date and time.";
+      render();
+      return;
+    }
     const payload = {
-      title: String(formData.get("title") || "").trim(),
-      prompt: String(formData.get("prompt") || "").trim(),
+      title,
+      prompt,
       created_by_type: currentConfig().task_flow_actor_type,
       created_by_ref: currentConfig().task_flow_actor_ref,
       flow_id: String(formData.get("flow_id") || "") || null,
-      priority: Number(formData.get("priority") || 50),
-      due_at: formData.get("due_at") ? new Date(String(formData.get("due_at"))).toISOString() : null,
+      priority,
+      due_at: dueAt ? dueAt.toISOString() : null,
       owner_type: String(formData.get("owner_type") || "") || null,
       owner_ref: normalizeActorRef(
         String(formData.get("owner_type") || "") || null,
@@ -697,30 +889,67 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       requires_review: formData.get("requires_review") === "on",
       depends_on_task_ids: parseCsv(formData.get("depends_on_task_ids")),
     };
-    const response = await api.createTask(profileId, payload);
-    setModal("");
-    state.selectedTaskId = response.task.id;
-    notify("Task created.", "success");
-    await refreshAll({ force: true });
+    state.modalBusy = true;
+    state.modalError = "";
+    render();
+    try {
+      const response = await api.createTask(profileId, payload);
+      setModal("");
+      state.selectedTaskId = response.task.id;
+      notify("Task created.", "success");
+      await refreshAll({ force: true });
+    } catch (error) {
+      state.modalBusy = false;
+      state.modalError = normalizeError(error);
+      render();
+    }
   }
 
   async function saveSettings(form) {
     const formData = new FormData(form);
-    state.config = await commitConfig({
-      task_flow_poll_interval_sec: Number(formData.get("task_flow_poll_interval_sec") || 5),
-      task_flow_board_limit_per_column: Number(formData.get("task_flow_board_limit_per_column") || 20),
-      task_flow_actor_type: String(formData.get("task_flow_actor_type") || "human"),
-      task_flow_actor_ref: String(formData.get("task_flow_actor_ref") || "web-user").trim() || "web-user",
+    const pollInterval = normalizeNumberField(formData.get("task_flow_poll_interval_sec"), {
+      fallback: 5,
+      min: 1,
+      max: 300,
     });
-    setModal("");
-    notify("Task Flow settings saved.", "success");
-    syncRefreshLoop();
-    await refreshAll({ force: true });
+    const boardLimit = normalizeNumberField(formData.get("task_flow_board_limit_per_column"), {
+      fallback: 20,
+      min: 1,
+      max: 200,
+    });
+    if (pollInterval === null) {
+      state.modalError = "Poll interval must be between 1 and 300 seconds.";
+      render();
+      return;
+    }
+    if (boardLimit === null) {
+      state.modalError = "Board limit must be between 1 and 200 tasks per column.";
+      render();
+      return;
+    }
+    state.modalBusy = true;
+    state.modalError = "";
+    render();
+    try {
+      state.config = await commitConfig({
+        task_flow_poll_interval_sec: pollInterval,
+        task_flow_board_limit_per_column: boardLimit,
+        task_flow_actor_type: String(formData.get("task_flow_actor_type") || "human"),
+        task_flow_actor_ref: String(formData.get("task_flow_actor_ref") || "web-user").trim() || "web-user",
+      });
+      setModal("");
+      notify("Task Flow settings saved.", "success");
+      syncRefreshLoop();
+      await refreshAll({ force: true });
+    } catch (error) {
+      state.modalBusy = false;
+      state.modalError = normalizeError(error);
+      render();
+    }
   }
 
-  async function deleteFlow() {
+  async function deleteFlow(flowId = state.flowFilter, { keepModalOpen = false } = {}) {
     const profileId = currentProfileId();
-    const flowId = state.flowFilter;
     if (!profileId || !flowId) {
       return;
     }
@@ -729,14 +958,27 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     render();
     try {
       await api.deleteTaskFlow(profileId, flowId);
-      state.flowFilter = "";
-      state.selectedTaskId = "";
+      const deletedActiveFlow = state.flowFilter === flowId;
+      const selectedTaskInDeletedFlow = state.selectedTaskData?.task?.flow_id === flowId;
       state.selectedTaskIds.clear();
-      commitSelectedTaskData(null);
-      clearSessionInsights();
-      stopSessionRefreshLoop();
-      setModal("");
-      notify("Task Flow deleted.", "success");
+      state.dragTaskId = "";
+      state.pendingFlowDeleteId = "";
+      if (deletedActiveFlow) {
+        state.flowFilter = "";
+      }
+      if (deletedActiveFlow || selectedTaskInDeletedFlow) {
+        state.selectedTaskId = "";
+        commitSelectedTaskData(null);
+        clearSessionInsights();
+        stopSessionRefreshLoop();
+      }
+      if (keepModalOpen) {
+        state.modalBusy = false;
+        state.modalError = "";
+      } else {
+        setModal("");
+      }
+      notify("Project deleted.", "success");
       await refreshAll({ force: true });
     } catch (error) {
       state.modalBusy = false;
@@ -751,32 +993,69 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       return;
     }
     const formData = new FormData(form);
-    await api.updateTask(profileId, state.selectedTaskId, {
-      title: String(formData.get("title") || "").trim(),
-      prompt: String(formData.get("prompt") || "").trim(),
-      status: String(formData.get("status") || ""),
-      priority: Number(formData.get("priority") || 50),
-      due_at: formData.get("due_at") ? new Date(String(formData.get("due_at"))).toISOString() : null,
-      owner_type: String(formData.get("owner_type") || "") || null,
-      owner_ref: normalizeActorRef(
-        String(formData.get("owner_type") || "") || null,
-        String(formData.get("owner_ref") || ""),
-        currentConfig(),
-      ),
-      reviewer_type: String(formData.get("reviewer_type") || "") || null,
-      reviewer_ref: normalizeActorRef(
-        String(formData.get("reviewer_type") || "") || null,
-        String(formData.get("reviewer_ref") || ""),
-        currentConfig(),
-      ),
-      requires_review: formData.get("requires_review") === "on",
-      labels: parseCsv(formData.get("labels")),
-      blocked_reason_text: String(formData.get("blocked_reason_text") || "").trim() || null,
-      actor_type: currentConfig().task_flow_actor_type,
-      actor_ref: currentConfig().task_flow_actor_ref,
+    const title = String(formData.get("title") || "").trim();
+    const prompt = String(formData.get("prompt") || "").trim();
+    const dueAtValue = String(formData.get("due_at") || "").trim();
+    const dueAt = dueAtValue ? new Date(dueAtValue) : null;
+    const priority = normalizeNumberField(formData.get("priority"), {
+      fallback: 50,
+      min: 0,
+      max: 100,
     });
-    notify("Task updated.", "success");
-    await refreshAll({ force: true });
+    if (!title) {
+      notify("Task title is required.", "danger");
+      return;
+    }
+    if (!prompt) {
+      notify("Task prompt is required.", "danger");
+      return;
+    }
+    if (title.length > 240) {
+      notify("Task title must be 240 characters or less.", "danger");
+      return;
+    }
+    if (prompt.length > 12000) {
+      notify("Task prompt must be 12000 characters or less.", "danger");
+      return;
+    }
+    if (priority === null) {
+      notify("Task priority must be between 0 and 100.", "danger");
+      return;
+    }
+    if (dueAtValue && (!dueAt || Number.isNaN(dueAt.getTime()))) {
+      notify("Due date must be a valid date and time.", "danger");
+      return;
+    }
+    try {
+      await api.updateTask(profileId, state.selectedTaskId, {
+        title,
+        prompt,
+        status: String(formData.get("status") || ""),
+        priority,
+        due_at: dueAt ? dueAt.toISOString() : null,
+        owner_type: String(formData.get("owner_type") || "") || null,
+        owner_ref: normalizeActorRef(
+          String(formData.get("owner_type") || "") || null,
+          String(formData.get("owner_ref") || ""),
+          currentConfig(),
+        ),
+        reviewer_type: String(formData.get("reviewer_type") || "") || null,
+        reviewer_ref: normalizeActorRef(
+          String(formData.get("reviewer_type") || "") || null,
+          String(formData.get("reviewer_ref") || ""),
+          currentConfig(),
+        ),
+        requires_review: formData.get("requires_review") === "on",
+        labels: parseCsv(formData.get("labels")),
+        blocked_reason_text: String(formData.get("blocked_reason_text") || "").trim() || null,
+        actor_type: currentConfig().task_flow_actor_type,
+        actor_ref: currentConfig().task_flow_actor_ref,
+      });
+      notify("Task updated.", "success");
+      await refreshAll({ force: true });
+    } catch (error) {
+      notify(normalizeError(error), "danger");
+    }
   }
 
   async function deleteTask() {
@@ -853,14 +1132,18 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       notify("Comment message is required.", "danger");
       return;
     }
-    await api.addTaskComment(profileId, state.selectedTaskId, {
-      actor_type: currentConfig().task_flow_actor_type,
-      actor_ref: currentConfig().task_flow_actor_ref,
-      message,
-      comment_type: "note",
-    });
-    notify("Comment added.", "success");
-    await refreshAll({ force: true });
+    try {
+      await api.addTaskComment(profileId, state.selectedTaskId, {
+        actor_type: currentConfig().task_flow_actor_type,
+        actor_ref: currentConfig().task_flow_actor_ref,
+        message,
+        comment_type: "note",
+      });
+      notify("Comment added.", "success");
+      await refreshAll({ force: true });
+    } catch (error) {
+      notify(normalizeError(error), "danger");
+    }
   }
 
   async function approveReview() {
@@ -868,12 +1151,16 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
     if (!profileId || !state.selectedTaskId) {
       return;
     }
-    await api.approveReviewTask(profileId, state.selectedTaskId, {
-      actor_type: currentConfig().task_flow_actor_type,
-      actor_ref: currentConfig().task_flow_actor_ref,
-    });
-    notify("Review approved.", "success");
-    await refreshAll({ force: true });
+    try {
+      await api.approveReviewTask(profileId, state.selectedTaskId, {
+        actor_type: currentConfig().task_flow_actor_type,
+        actor_ref: currentConfig().task_flow_actor_ref,
+      });
+      notify("Review approved.", "success");
+      await refreshAll({ force: true });
+    } catch (error) {
+      notify(normalizeError(error), "danger");
+    }
   }
 
   async function requestChanges() {
@@ -889,19 +1176,23 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       notify("Change request reason is required.", "danger");
       return;
     }
-    await api.requestReviewChanges(profileId, state.selectedTaskId, {
-      reason_text: reasonText,
-      actor_type: currentConfig().task_flow_actor_type,
-      actor_ref: currentConfig().task_flow_actor_ref,
-      owner_type: String(ownerTypeField?.value || "") || null,
-      owner_ref: normalizeActorRef(
-        String(ownerTypeField?.value || "") || null,
-        String(ownerRefField?.value || ""),
-        currentConfig(),
-      ),
-    });
-    notify("Changes requested.", "success");
-    await refreshAll({ force: true });
+    try {
+      await api.requestReviewChanges(profileId, state.selectedTaskId, {
+        reason_text: reasonText,
+        actor_type: currentConfig().task_flow_actor_type,
+        actor_ref: currentConfig().task_flow_actor_ref,
+        owner_type: String(ownerTypeField?.value || "") || null,
+        owner_ref: normalizeActorRef(
+          String(ownerTypeField?.value || "") || null,
+          String(ownerRefField?.value || ""),
+          currentConfig(),
+        ),
+      });
+      notify("Changes requested.", "success");
+      await refreshAll({ force: true });
+    } catch (error) {
+      notify(normalizeError(error), "danger");
+    }
   }
 
   function render() {
@@ -920,8 +1211,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
           </div>
           <div class="section-actions">
             <button class="button button--ghost" data-taskflow-action="refresh" type="button">Refresh</button>
-            <button class="button button--ghost" data-taskflow-action="open-flow" type="button">New Flow</button>
-            ${activeFlow ? '<button class="button button--danger" data-taskflow-action="open-delete-flow" type="button">Delete Flow</button>' : ""}
+            <button class="button button--ghost" data-taskflow-action="open-manage-flows" type="button">Manage Projects</button>
             <button class="button button--primary" data-taskflow-action="open-task" type="button">New Task</button>
           </div>
         </div>
@@ -932,14 +1222,14 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
           <div class="board-toolbar__summary">
             <span class="badge">${escapeHtml(String(state.board?.total_count || 0))} tasks</span>
             <span class="badge">${escapeHtml(String(state.selectedTaskIds.size))} selected</span>
-            ${activeFlow ? `<span class="badge">${escapeHtml(activeFlow.title)}</span>` : '<span class="board-toolbar__hint">All flows</span>'}
+            ${activeFlow ? `<span class="badge">${escapeHtml(activeFlow.title)}</span>` : '<span class="board-toolbar__hint">All projects</span>'}
           </div>
           <div class="board-toolbar__controls">
             <div class="board-toolbar__fields board-toolbar__fields--single">
               <label class="field field--compact">
-                <span class="field__label">Flow</span>
+                <span class="field__label">Project</span>
                 <select name="flow_filter">
-                  <option value="">All Flows</option>
+                  <option value="">All Projects</option>
                   ${state.flows.map((flow) => `<option value="${escapeAttribute(flow.id)}" ${flow.id === state.flowFilter ? "selected" : ""}>${escapeHtml(flow.title)}</option>`).join("")}
                 </select>
               </label>
@@ -1001,6 +1291,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       root.classList.add("route-view", "view-surface", "view-surface--taskflow");
       root.addEventListener("click", handleClick);
       root.addEventListener("change", handleChange);
+      root.addEventListener("input", handleInput);
       root.addEventListener("submit", handleSubmit);
       root.addEventListener("mousedown", handleMouseDown);
       root.addEventListener("dragstart", handleDragStart);
@@ -1038,6 +1329,8 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       state.reviewTasks = [];
       state.selectedTaskId = "";
       state.selectedTaskIds.clear();
+      state.flowFilter = "";
+      state.flowSearchQuery = "";
       state.signatures = { flows: "", board: "", review: "", selectedTask: "", sessionInsights: "" };
       commitSelectedTaskData(null);
       clearSessionInsights();
@@ -1062,6 +1355,7 @@ export function createTaskFlowView({ api, notify, commitConfig }) {
       }
       root.removeEventListener("click", handleClick);
       root.removeEventListener("change", handleChange);
+      root.removeEventListener("input", handleInput);
       root.removeEventListener("submit", handleSubmit);
       root.removeEventListener("mousedown", handleMouseDown);
       root.removeEventListener("dragstart", handleDragStart);
@@ -1176,7 +1470,7 @@ function renderBoard(board, selectedTaskId, selectedTaskIds) {
     return `
       <div class="empty-state">
         <h3>No tasks yet</h3>
-        <p>Create a flow and add tasks. The board stays live inside the same UI instead of jumping to a separate page.</p>
+        <p>Create a project and add tasks. The board stays live inside the same UI instead of jumping to a separate page.</p>
       </div>
     `;
   }
@@ -1256,11 +1550,11 @@ function renderTaskPanel(data, profiles, config, sessionInsights, sessionFeedOpe
         <form class="editor-form" data-role="taskflow-task-edit">
           <label class="field">
             <span class="field__label">Title</span>
-            <input name="title" value="${escapeAttribute(task.title || "")}" required />
+            <input name="title" value="${escapeAttribute(task.title || "")}" required maxlength="240" />
           </label>
           <label class="field">
             <span class="field__label">Prompt</span>
-            <textarea name="prompt" rows="8" required>${escapeHtml(task.prompt || "")}</textarea>
+            <textarea name="prompt" rows="8" required maxlength="12000">${escapeHtml(task.prompt || "")}</textarea>
           </label>
           <div class="field-grid">
             <label class="field field--compact">
@@ -1482,53 +1776,8 @@ function renderModal(state, config, profiles) {
     return "";
   }
   let content = "";
-  if (state.activeModal === "flow") {
-    content = `
-      <form class="modal-card" data-role="taskflow-create-flow">
-        <div class="modal-card__head">
-          <div>
-            <p class="surface-page__eyebrow">Create Flow</p>
-            <h3>New Task Flow</h3>
-            <p class="muted">Group related work, keep the default AI owner consistent, and reuse the same workspace styling as the board.</p>
-          </div>
-          <button class="icon-button" data-taskflow-action="close-modal" type="button" aria-label="Close create flow modal">×</button>
-        </div>
-        <label class="field">
-          <span class="field__label">Title</span>
-          <input name="title" required />
-        </label>
-        <label class="field">
-          <span class="field__label">Description</span>
-          <textarea name="description" rows="4"></textarea>
-        </label>
-        <div class="field-grid">
-          <label class="field field--compact">
-            <span class="field__label">Default Owner Type</span>
-            <select name="default_owner_type">
-              <option value="">None</option>
-              <option value="ai_profile" selected>ai_profile</option>
-              <option value="human">human</option>
-            </select>
-          </label>
-          ${renderProfileRefField({
-            label: "Default Owner Ref",
-            fieldName: "default_owner_ref",
-            typeValue: AI_PROFILE_TYPE,
-            value: getProfileIdFallback(profiles),
-            profiles,
-            config,
-          })}
-        </div>
-        <label class="field">
-          <span class="field__label">Labels</span>
-          <input name="labels" placeholder="ops, review, sprint-1…" />
-        </label>
-        <div class="button-row">
-          <button class="button button--primary" type="submit">Create Flow</button>
-          <button class="button button--ghost" data-taskflow-action="close-modal" type="button">Cancel</button>
-        </div>
-      </form>
-    `;
+  if (state.activeModal === "manage-flows") {
+    content = renderManageFlowsModal(state, config, profiles);
   }
   if (state.activeModal === "task") {
     content = `
@@ -1541,22 +1790,23 @@ function renderModal(state, config, profiles) {
           </div>
           <button class="icon-button" data-taskflow-action="close-modal" type="button" aria-label="Close create task modal">×</button>
         </div>
+        ${state.modalError ? `<div class="inline-alert inline-alert--danger">${escapeHtml(state.modalError)}</div>` : ""}
         <label class="field">
           <span class="field__label">Title</span>
-          <input name="title" required />
+          <input name="title" required maxlength="240" autocomplete="off" />
         </label>
         <label class="field">
           <span class="field__label">Prompt</span>
-          <textarea name="prompt" rows="8" required></textarea>
+          <textarea name="prompt" rows="8" required maxlength="12000"></textarea>
         </label>
         <div class="field-grid">
           <label class="field field--compact">
-            <span class="field__label">Flow</span>
-            <select name="flow_id">
-              <option value="">No flow</option>
-              ${state.flows.map((flow) => `<option value="${escapeAttribute(flow.id)}">${escapeHtml(flow.title)}</option>`).join("")}
-            </select>
-          </label>
+              <span class="field__label">Project</span>
+              <select name="flow_id">
+              <option value="" ${state.flowFilter ? "" : "selected"}>No project</option>
+              ${state.flows.map((flow) => `<option value="${escapeAttribute(flow.id)}" ${flow.id === state.flowFilter ? "selected" : ""}>${escapeHtml(flow.title)}</option>`).join("")}
+              </select>
+            </label>
           <label class="field field--compact">
             <span class="field__label">Priority</span>
             <input type="number" name="priority" min="0" max="100" value="50" />
@@ -1618,8 +1868,8 @@ function renderModal(state, config, profiles) {
           <input name="depends_on_task_ids" placeholder="task-id-1, task-id-2…" />
         </label>
         <div class="button-row">
-          <button class="button button--primary" type="submit">Create Task</button>
-          <button class="button button--ghost" data-taskflow-action="close-modal" type="button">Cancel</button>
+          <button class="button button--primary" type="submit" ${state.modalBusy ? "disabled" : ""}>${state.modalBusy ? "Creating…" : "Create Task"}</button>
+          <button class="button button--ghost" data-taskflow-action="close-modal" type="button" ${state.modalBusy ? "disabled" : ""}>Cancel</button>
         </div>
       </form>
     `;
@@ -1635,6 +1885,7 @@ function renderModal(state, config, profiles) {
           </div>
           <button class="icon-button" data-taskflow-action="close-modal" type="button" aria-label="Close settings modal">×</button>
         </div>
+        ${state.modalError ? `<div class="inline-alert inline-alert--danger">${escapeHtml(state.modalError)}</div>` : ""}
         <div class="field-grid">
           <label class="field field--compact">
             <span class="field__label">Poll Interval</span>
@@ -1659,8 +1910,8 @@ function renderModal(state, config, profiles) {
           </label>
         </div>
         <div class="button-row">
-          <button class="button button--primary" type="submit">Save Settings</button>
-          <button class="button button--ghost" data-taskflow-action="close-modal" type="button">Cancel</button>
+          <button class="button button--primary" type="submit" ${state.modalBusy ? "disabled" : ""}>${state.modalBusy ? "Saving…" : "Save Settings"}</button>
+          <button class="button button--ghost" data-taskflow-action="close-modal" type="button" ${state.modalBusy ? "disabled" : ""}>Cancel</button>
         </div>
       </form>
     `;
@@ -1707,26 +1958,6 @@ function renderModal(state, config, profiles) {
       </form>
     `;
   }
-  if (state.activeModal === "delete-flow") {
-    const flow = state.flows.find((item) => item.id === state.flowFilter);
-    content = `
-      <form class="modal-card" data-role="taskflow-delete-flow">
-        <div class="modal-card__head">
-          <div>
-            <p class="surface-page__eyebrow">Delete Flow</p>
-            <h3>Delete ${escapeHtml(flow?.title || state.flowFilter)}</h3>
-            <p class="muted">This removes the flow and every task currently inside it for the selected profile.</p>
-          </div>
-          <button class="icon-button" data-taskflow-action="close-modal" type="button" aria-label="Close delete flow modal">×</button>
-        </div>
-        ${state.modalError ? `<div class="inline-alert inline-alert--danger">${escapeHtml(state.modalError)}</div>` : ""}
-        <div class="button-row">
-          <button class="button button--danger" type="submit" ${state.modalBusy ? "disabled" : ""}>${state.modalBusy ? "Deleting…" : "Delete Flow"}</button>
-          <button class="button button--ghost" data-taskflow-action="close-modal" type="button">Cancel</button>
-        </div>
-      </form>
-    `;
-  }
   if (state.activeModal === "delete-selected") {
     content = `
       <form class="modal-card" data-role="taskflow-delete-selected">
@@ -1754,11 +1985,184 @@ function renderModal(state, config, profiles) {
   `;
 }
 
+function renderManageFlowsModal(state, config, profiles) {
+  const activeFlow = state.flows.find((item) => item.id === state.flowFilter) || null;
+  const visibleFlows = getVisibleFlows(state);
+  return `
+    <div class="modal-card modal-card--wide">
+      <div class="modal-card__head">
+        <div>
+          <p class="surface-page__eyebrow">Manage Projects</p>
+          <h3>Project Library</h3>
+          <p class="muted">Projects are flow containers for related tasks. Search them quickly, open one on the board, and remove or add projects without leaving the workspace shell.</p>
+        </div>
+        <button class="icon-button" data-taskflow-action="close-modal" type="button" aria-label="Close project manager modal">×</button>
+      </div>
+      ${state.modalError ? `<div class="inline-alert inline-alert--danger">${escapeHtml(state.modalError)}</div>` : ""}
+      <div class="flow-manager">
+        <section class="flow-manager__section">
+          <div class="flow-manager__summary">
+            <div>
+              <p class="surface-page__eyebrow">Existing Projects</p>
+              <h4 class="flow-manager__title" data-flow-manager-results-count aria-live="polite">${escapeHtml(formatProjectResultsLabel(visibleFlows.length, state.flows.length))}</h4>
+              <p class="muted" data-flow-manager-results-note aria-live="polite">${escapeHtml(formatProjectResultsNote(state.flowFilter, state.flows, state.flowSearchQuery))}</p>
+            </div>
+            <button
+              class="button ${activeFlow ? "button--ghost" : "button--primary"} button--compact"
+              data-taskflow-action="apply-flow-filter"
+              data-flow-id=""
+              type="button"
+              ${state.modalBusy || !activeFlow ? "disabled" : ""}
+            >${activeFlow ? "Show All Tasks" : "Showing All Tasks"}</button>
+          </div>
+          <label class="field flow-manager__search">
+            <span class="field__label">Search Projects</span>
+            <input
+              type="search"
+              name="flow_search"
+              value="${escapeAttribute(state.flowSearchQuery)}"
+              placeholder="Search by name, id, label, description, or owner…"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
+          <div class="flow-manager__list" data-flow-manager-list>
+            ${renderFlowManagerList(state, visibleFlows)}
+          </div>
+        </section>
+        <form class="flow-manager__section flow-manager__section--form" data-role="taskflow-manage-flows-create">
+          <div class="panel-head panel-head--compact">
+            <div>
+              <p class="panel-head__eyebrow">Add Project</p>
+              <h4 class="flow-manager__title">Create a new project</h4>
+            </div>
+          </div>
+          <label class="field">
+            <span class="field__label">Title</span>
+            <input name="title" required maxlength="240" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span class="field__label">Description</span>
+            <textarea name="description" rows="4" maxlength="2000" placeholder="What work belongs in this project?"></textarea>
+          </label>
+          <div class="field-grid">
+            <label class="field field--compact">
+              <span class="field__label">Default Owner Type</span>
+              <select name="default_owner_type">
+                <option value="">None</option>
+                <option value="ai_profile" selected>ai_profile</option>
+                <option value="human">human</option>
+              </select>
+            </label>
+            ${renderProfileRefField({
+              label: "Default Owner Ref",
+              fieldName: "default_owner_ref",
+              typeValue: AI_PROFILE_TYPE,
+              value: getProfileIdFallback(profiles),
+              profiles,
+              config,
+            })}
+          </div>
+          <label class="field">
+            <span class="field__label">Labels</span>
+            <input name="labels" placeholder="ops, review, sprint-1…" />
+          </label>
+          <div class="button-row">
+            <button class="button button--primary" type="submit" ${state.modalBusy ? "disabled" : ""}>${state.modalBusy ? "Working…" : "Add Project"}</button>
+            <button class="button button--ghost" data-taskflow-action="close-modal" type="button" ${state.modalBusy ? "disabled" : ""}>Done</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
+function renderFlowManagerItem(flow, state) {
+  const isActive = flow.id === state.flowFilter;
+  const isDeletePending = flow.id === state.pendingFlowDeleteId;
+  const description = String(flow.description || "").trim() || "No description yet.";
+  const labels = Array.isArray(flow.labels) ? flow.labels : [];
+  return `
+    <article class="flow-manager__item ${isActive ? "flow-manager__item--active" : ""}">
+      <div class="flow-manager__item-head">
+        <div class="flow-manager__item-copy">
+          <h4 class="flow-manager__item-title">${escapeHtml(flow.title || flow.id)}</h4>
+          <p class="muted">${escapeHtml(description)}</p>
+        </div>
+        <div class="flow-manager__item-badges">
+          <span class="badge ${isActive ? "badge--live" : "badge--muted"}">${escapeHtml(isActive ? "Current Project" : "Available")}</span>
+          <span class="badge badge--violet">${escapeHtml(flow.id)}</span>
+        </div>
+      </div>
+      <div class="flow-manager__item-meta">
+        <span>${escapeHtml(formatFlowOwnerSummary(flow))}</span>
+        <span>${escapeHtml(formatFlowCreatorSummary(flow))}</span>
+        <span>${escapeHtml(formatFlowStatusSummary(flow))}</span>
+        ${flow.updated_at ? `<span>Updated ${escapeHtml(formatDateTime(flow.updated_at))}</span>` : ""}
+      </div>
+      ${labels.length ? `<div class="flow-manager__item-badges">${labels.map((label) => `<span class="badge">${escapeHtml(label)}</span>`).join("")}</div>` : ""}
+      <div class="flow-manager__item-actions">
+        <button
+          class="button ${isActive ? "button--primary" : "button--ghost"} button--tiny"
+          data-taskflow-action="apply-flow-filter"
+          data-flow-id="${escapeAttribute(flow.id)}"
+          type="button"
+          ${state.modalBusy ? "disabled" : ""}
+        >${isActive ? "Filtered on Board" : "Show on Board"}</button>
+        ${isDeletePending ? `
+          <div class="flow-manager__danger">
+            <p class="muted">Delete this project and every task inside it?</p>
+            <div class="flow-manager__danger-actions">
+              <button class="button button--danger button--tiny" data-taskflow-action="confirm-delete-flow" data-flow-id="${escapeAttribute(flow.id)}" type="button" ${state.modalBusy ? "disabled" : ""}>${state.modalBusy ? "Deleting…" : "Confirm Delete"}</button>
+              <button class="button button--ghost button--tiny" data-taskflow-action="cancel-delete-flow" type="button" ${state.modalBusy ? "disabled" : ""}>Cancel</button>
+            </div>
+          </div>
+        ` : `
+          <button class="button button--danger button--tiny" data-taskflow-action="request-delete-flow" data-flow-id="${escapeAttribute(flow.id)}" type="button" ${state.modalBusy ? "disabled" : ""}>Delete</button>
+        `}
+      </div>
+    </article>
+  `;
+}
+
+function renderFlowManagerList(state, visibleFlows) {
+  if (!state.flows.length) {
+    return `
+      <div class="empty-state empty-state--compact">
+        <h3>No projects yet</h3>
+        <p>Create the first project from the form on the right and it will appear here immediately.</p>
+      </div>
+    `;
+  }
+  if (!visibleFlows.length) {
+    return `
+      <div class="empty-state empty-state--compact">
+        <h3>No matching projects</h3>
+        <p>Adjust the search or clear it to see every available project again.</p>
+      </div>
+    `;
+  }
+  return visibleFlows.map((flow) => renderFlowManagerItem(flow, state)).join("");
+}
+
 function parseCsv(value) {
   return String(value || "")
     .split(",")
     .map((item) => item.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((item, index, items) => items.findIndex((candidate) => candidate.toLowerCase() === item.toLowerCase()) === index);
+}
+
+function normalizeNumberField(value, { fallback = null, min = Number.NEGATIVE_INFINITY, max = Number.POSITIVE_INFINITY } = {}) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) {
+    return fallback;
+  }
+  const nextValue = Number(normalized);
+  if (!Number.isFinite(nextValue) || nextValue < min || nextValue > max) {
+    return null;
+  }
+  return nextValue;
 }
 
 function normalizeActorRef(type, value, config) {
@@ -1783,7 +2187,7 @@ function syncConditionalFields(container) {
   const scopes = container.matches("form, .task-inspector, .detail-section, .modal-card")
     ? [container]
     : [
-      ...container.querySelectorAll('[data-role="taskflow-create-flow"]'),
+      ...container.querySelectorAll('[data-role="taskflow-manage-flows-create"]'),
       ...container.querySelectorAll('[data-role="taskflow-create-task"]'),
       ...container.querySelectorAll('[data-role="taskflow-task-edit"]'),
       ...container.querySelectorAll(".task-inspector"),
@@ -1882,10 +2286,12 @@ function flowSignature(flows) {
     (flows || []).map((flow) => ({
       id: flow.id,
       title: flow.title,
+      description: flow.description,
       status: flow.status,
       updated_at: flow.updated_at,
       default_owner_type: flow.default_owner_type,
       default_owner_ref: flow.default_owner_ref,
+      labels: flow.labels || [],
     })),
   );
 }
@@ -2304,6 +2710,152 @@ function formatTaskOwnerSummary(task) {
     return ownerRef ? `Owner: ${ownerRef}` : "Owner: Human";
   }
   return "Owner: Unassigned";
+}
+
+function formatFlowOwnerSummary(flow) {
+  const ownerType = String(flow?.default_owner_type || "").trim();
+  const ownerRef = String(flow?.default_owner_ref || "").trim();
+  if (ownerType === AI_PROFILE_TYPE) {
+    return ownerRef ? `Default owner: AI ${ownerRef}` : "Default owner: AI";
+  }
+  if (ownerType === HUMAN_ACTOR_TYPE) {
+    return ownerRef ? `Default owner: ${ownerRef}` : "Default owner: Human";
+  }
+  return "Default owner: Manual assignment";
+}
+
+function formatFlowCreatorSummary(flow) {
+  const creatorType = String(flow?.created_by_type || "").trim();
+  const creatorRef = String(flow?.created_by_ref || "").trim();
+  if (creatorType === AI_PROFILE_TYPE) {
+    return creatorRef ? `Created by: AI ${creatorRef}` : "Created by: AI";
+  }
+  if (creatorType === HUMAN_ACTOR_TYPE) {
+    return creatorRef ? `Created by: ${creatorRef}` : "Created by: Human";
+  }
+  return creatorRef ? `Created by: ${creatorRef}` : "Created by: Unknown";
+}
+
+function formatFlowStatusSummary(flow) {
+  const status = String(flow?.status || "").trim();
+  if (!status) {
+    return "Status: Active";
+  }
+  return `Status: ${capitalizeWord(status)}`;
+}
+
+function getVisibleFlows(state) {
+  const normalizedQuery = normalizeInlineText(state.flowSearchQuery || "").toLowerCase();
+  const items = normalizedQuery
+    ? state.flows.filter((flow) => buildFlowSearchText(flow).includes(normalizedQuery))
+    : [...state.flows];
+  return items.sort((left, right) => compareFlowProjects(left, right, state.flowFilter, normalizedQuery));
+}
+
+function buildFlowSearchText(flow) {
+  return [
+    flow?.title,
+    flow?.id,
+    flow?.description,
+    flow?.status,
+    ...(Array.isArray(flow?.labels) ? flow.labels : []),
+    formatFlowOwnerSummary(flow),
+    formatFlowCreatorSummary(flow),
+  ]
+    .map((value) => normalizeInlineText(value || "").toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function compareFlowProjects(left, right, activeFlowId, query = "") {
+  if (query) {
+    const leftScore = scoreFlowSearchMatch(left, query);
+    const rightScore = scoreFlowSearchMatch(right, query);
+    if (leftScore !== rightScore) {
+      return rightScore - leftScore;
+    }
+  }
+  const leftActive = left?.id === activeFlowId ? 1 : 0;
+  const rightActive = right?.id === activeFlowId ? 1 : 0;
+  if (leftActive !== rightActive) {
+    return rightActive - leftActive;
+  }
+  const leftUpdated = Date.parse(left?.updated_at || "") || 0;
+  const rightUpdated = Date.parse(right?.updated_at || "") || 0;
+  if (leftUpdated !== rightUpdated) {
+    return rightUpdated - leftUpdated;
+  }
+  return String(left?.title || left?.id || "").localeCompare(String(right?.title || right?.id || ""));
+}
+
+function scoreFlowSearchMatch(flow, query) {
+  if (!query) {
+    return 0;
+  }
+  const title = normalizeInlineText(flow?.title || "").toLowerCase();
+  const id = normalizeInlineText(flow?.id || "").toLowerCase();
+  const description = normalizeInlineText(flow?.description || "").toLowerCase();
+  const status = normalizeInlineText(flow?.status || "").toLowerCase();
+  const labels = Array.isArray(flow?.labels)
+    ? flow.labels.map((label) => normalizeInlineText(label || "").toLowerCase())
+    : [];
+  const owner = normalizeInlineText(formatFlowOwnerSummary(flow)).toLowerCase();
+  const creator = normalizeInlineText(formatFlowCreatorSummary(flow)).toLowerCase();
+
+  if (title === query || id === query) {
+    return 120;
+  }
+  if (labels.includes(query)) {
+    return 110;
+  }
+  if (title.startsWith(query) || id.startsWith(query)) {
+    return 100;
+  }
+  if (labels.some((label) => label.startsWith(query))) {
+    return 90;
+  }
+  if (title.includes(query) || id.includes(query)) {
+    return 80;
+  }
+  if (labels.some((label) => label.includes(query))) {
+    return 70;
+  }
+  if (description.includes(query)) {
+    return 60;
+  }
+  if (owner.includes(query) || creator.includes(query) || status.includes(query)) {
+    return 50;
+  }
+  return 0;
+}
+
+function formatProjectResultsLabel(visibleCount, totalCount) {
+  if (!totalCount) {
+    return "0 projects available";
+  }
+  if (visibleCount === totalCount) {
+    return `${totalCount} project${totalCount === 1 ? "" : "s"} available`;
+  }
+  return `${visibleCount} of ${totalCount} projects`;
+}
+
+function formatProjectResultsNote(activeFlowId, flows, query) {
+  const activeFlow = (flows || []).find((item) => item.id === activeFlowId) || null;
+  const projectCopy = activeFlow
+    ? `Board filtered by ${activeFlow.title}.`
+    : "The board currently shows tasks from every project.";
+  const normalizedQuery = normalizeInlineText(query || "");
+  return normalizedQuery
+    ? `${projectCopy} Search: ${normalizedQuery}.`
+    : projectCopy;
+}
+
+function capitalizeWord(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "";
+  }
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
 function statusToneClass(prefix, status) {

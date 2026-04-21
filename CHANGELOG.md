@@ -2,6 +2,15 @@
 
 All notable changes to this plugin are tracked here.
 
+## 0.4.3 - 2026-04-21
+
+- replace separate Task Flow flow creation and deletion entry points with a single project manager modal that supports inline add, search, filter, and delete flows
+- treat flows as projects in the Task Flow UI, surface richer project metadata, and improve project search ranking by title, id, labels, creator, owner, and status
+- harden Task Flow validation for project creation, task creation, task editing, and settings saves so invalid numbers, dates, and API failures return explicit UI feedback
+- reset stale project filters safely when the active profile or remote flow list changes, preventing false empty-board states after refresh or deletion
+- preserve scroll state for the project manager list alongside the board, modal, and inspector during reactive refreshes
+- sync release metadata to version `0.4.3`
+
 ## 0.4.2 - 2026-04-21
 
 - switch the automation inspector from plugin-side webhook URL caching to the core operator-side reveal path, so the current webhook URL stays visible in the open inspector without widening generic automation metadata

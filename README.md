@@ -2,9 +2,9 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, subagents, skills, and bootstrap files.
 
-Current release: `0.4.2`
+Current release: `0.4.3`
 
-## What is in 0.4.2
+## What is in 0.4.3
 
 - single shell workspace at `/plugins/afkbotui`
 - profile-aware sections for `Automations`, `Task Flow`, `Subagents`, `Skills`, and `Bootstrap`
@@ -15,6 +15,8 @@ Current release: `0.4.2`
 - task inspector session feed with recent chat turns and live activity events for the current agent session
 - unified modal-driven CRUD flows across the workspace
 - kanban-style Task Flow with inspector, comments, review actions, quick selection, delete actions, and mobile behavior
+- project-centric Task Flow flow manager with modal search, inline add/delete actions, and richer project metadata
+- stronger Task Flow validation for create/edit/settings flows, plus safer filter reset behavior when profiles or projects change
 - profile-local text libraries for subagents, skills, and bootstrap files
 - webhook automation inspector with diagnostics, copy actions, error emphasis, and URL rotation from the UI
 - inspector refresh that preserves scroll position while board and session data continue updating in the background
@@ -33,9 +35,11 @@ Current release: `0.4.2`
 ### Task Flow
 
 - embedded kanban board in the same shell
+- project manager modal with search, ranked matches, metadata visibility, and inline destructive confirmation
 - task inspector, comments, dependency and run visibility
 - quick visible-selection and bulk delete actions
 - responsive column behavior and per-column scrolling
+- preserved board, inspector, modal, and project-list scroll state during refreshes
 
 ### Profile libraries
 
@@ -58,7 +62,7 @@ Install locally into AFKBOT:
 afk plugin install ../afkbotui
 ```
 
-AFKBOT UI `0.4.2` requires AFKBOT `1.4.2` or newer because the automation inspector now depends on the core operator-side webhook reveal API for durable webhook URL display.
+AFKBOT UI `0.4.3` requires AFKBOT `1.4.2` or newer because the automation inspector now depends on the core operator-side webhook reveal API for durable webhook URL display.
 
 Optional plugin config:
 
