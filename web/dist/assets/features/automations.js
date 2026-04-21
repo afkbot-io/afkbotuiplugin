@@ -37,6 +37,7 @@ export function createAutomationsController({
   let pollTimer = null;
   let listRequestId = 0;
   let detailRequestId = 0;
+  let webhookEndpointRequestId = 0;
   let graphRequestId = 0;
 
   function buildPanelState(overrides = {}) {
@@ -44,11 +45,13 @@ export function createAutomationsController({
       open: false,
       mode: "view",
       loading: false,
+      webhookEndpointLoading: false,
       saving: false,
       rotatingToken: false,
       confirmDelete: false,
       error: "",
       automation: null,
+      webhookEndpoint: null,
       draft: null,
       createOpen: false,
       createSaving: false,
@@ -59,6 +62,23 @@ export function createAutomationsController({
       graphError: "",
       graphPreview: null,
       ...overrides,
+    };
+  }
+
+  function resolvePanelWebhook(automation) {
+    if (!automation || automation.trigger_type !== "webhook") {
+      return null;
+    }
+    const base = automation.webhook || {};
+    const endpoint = state.panel.webhookEndpoint || null;
+    return {
+      ...base,
+      webhook_url: endpoint?.webhook_url || base.webhook_url || null,
+      webhook_path: endpoint?.webhook_path || base.webhook_path || null,
+      webhook_token_masked: endpoint?.webhook_token_masked || base.webhook_token_masked || "[HIDDEN]",
+      webhook_endpoint_recoverable: typeof endpoint?.recoverable === "boolean"
+        ? endpoint.recoverable
+        : Boolean(base.webhook_endpoint_recoverable),
     };
   }
 
@@ -302,6 +322,7 @@ export function createAutomationsController({
         if (refreshed) {
           if (refreshed.trigger_type === "webhook" && state.panel.mode !== "edit") {
             panelRevealRefreshAutomationId = refreshed.id;
+            state.panel.automation = refreshed;
           } else {
             state.panel.automation = refreshed;
           }
@@ -339,7 +360,7 @@ export function createAutomationsController({
       notify("Deleted automations are view-only.", "info");
       return;
     }
-    const requestId = ++detailRequestId;
+    const requestId = ++webhookEndpointRequestId;
     state.panel = buildPanelState({
       open: true,
       mode,
@@ -362,6 +383,8 @@ export function createAutomationsController({
         open: true,
         mode,
         automation,
+        webhookEndpoint: null,
+        webhookEndpointLoading: automation.trigger_type === "webhook",
         draft: mode === "edit" ? buildDraftFromItem(automation) : null,
         createOpen: state.panel.createOpen,
         createSaving: state.panel.createSaving,
@@ -369,6 +392,9 @@ export function createAutomationsController({
         createDraft: state.panel.createDraft,
       });
       renderPanel();
+      if (automation.trigger_type === "webhook" && mode !== "edit") {
+        void loadPanelWebhookEndpoint(automation.id, { force: true, silent: true });
+      }
     } catch (error) {
       if (requestId !== detailRequestId) {
         return;
@@ -401,6 +427,12 @@ export function createAutomationsController({
       state.panel.loading = false;
       state.panel.error = "";
       state.panel.automation = automation;
+      if (automation.trigger_type !== "webhook") {
+        state.panel.webhookEndpoint = null;
+        state.panel.webhookEndpointLoading = false;
+      } else if (state.panel.mode !== "edit") {
+        void loadPanelWebhookEndpoint(automation.id, { force: true, silent: true });
+      }
       if (automation.execution_mode !== "graph") {
         state.panel.graphOpen = false;
         state.panel.graphLoading = false;
@@ -418,6 +450,50 @@ export function createAutomationsController({
         return;
       }
       state.panel.loading = false;
+      state.panel.error = normalizeError(error);
+      renderPanel();
+    }
+  }
+
+  async function loadPanelWebhookEndpoint(automationId, options = {}) {
+    const force = Boolean(options.force);
+    const silent = Boolean(options.silent);
+    const clearFirst = Boolean(options.clearFirst);
+    if (!state.panel.open || !state.panel.automation || state.panel.automation.id !== automationId) {
+      return;
+    }
+    if (state.panel.automation.trigger_type !== "webhook") {
+      state.panel.webhookEndpoint = null;
+      state.panel.webhookEndpointLoading = false;
+      return;
+    }
+    if (state.panel.webhookEndpointLoading && !force) {
+      return;
+    }
+    if (!force && state.panel.webhookEndpoint) {
+      return;
+    }
+    const requestId = ++detailRequestId;
+    state.panel.webhookEndpointLoading = true;
+    if (clearFirst) {
+      state.panel.webhookEndpoint = null;
+    }
+    if (!silent) {
+      renderPanel();
+    }
+    try {
+      const payload = await api.getAutomationWebhookEndpoint(automationId, getProfileId());
+      if (requestId !== webhookEndpointRequestId || state.panel.automation?.id !== automationId) {
+        return;
+      }
+      state.panel.webhookEndpoint = payload.webhook || null;
+      state.panel.webhookEndpointLoading = false;
+      renderPanel();
+    } catch (error) {
+      if (requestId !== webhookEndpointRequestId || state.panel.automation?.id !== automationId) {
+        return;
+      }
+      state.panel.webhookEndpointLoading = false;
       state.panel.error = normalizeError(error);
       renderPanel();
     }
@@ -553,8 +629,13 @@ export function createAutomationsController({
         open: true,
         mode: "view",
         automation,
+        webhookEndpoint: null,
+        webhookEndpointLoading: automation.trigger_type === "webhook",
       });
       render();
+      if (automation.trigger_type === "webhook") {
+        void loadPanelWebhookEndpoint(automation.id, { force: true, silent: true });
+      }
     } catch (error) {
       if (isCreate) {
         state.panel.createSaving = false;
@@ -614,9 +695,12 @@ export function createAutomationsController({
         open: true,
         mode: "view",
         automation,
+        webhookEndpoint: null,
+        webhookEndpointLoading: true,
       });
       await refresh({ silent: true });
       render();
+      await loadPanelWebhookEndpoint(automation.id, { force: true, clearFirst: true });
       notify("Webhook URL rotated. Copy the refreshed endpoint now.", "success");
     } catch (error) {
       state.panel.saving = false;
@@ -897,10 +981,14 @@ export function createAutomationsController({
       return "";
     }
     const runtime = describeRuntime(automation);
-    const webhook = automation.webhook;
+    const webhook = resolvePanelWebhook(automation);
     const showWebhookSecretNotice = automation.trigger_type === "webhook"
       && !hasVisibleWebhookEndpoint(webhook)
+      && !state.panel.webhookEndpointLoading
       && webhook?.webhook_endpoint_recoverable === false;
+    const webhookUrlDisplay = state.panel.webhookEndpointLoading && !hasVisibleWebhookEndpoint(webhook)
+      ? "Resolving current endpoint…"
+      : (webhook?.webhook_url || "Unavailable");
     const webhookErrorAlert = automation.trigger_type === "webhook" && webhook?.last_error
       ? `<div class="inline-alert inline-alert--danger">${escapeHtml(webhook.last_error)}</div>`
       : "";
@@ -935,7 +1023,7 @@ export function createAutomationsController({
             ${renderDetail("Next run", formatDateTime(automation.cron?.next_run_at))}
             ${renderDetail("Last run", formatDateTime(automation.cron?.last_run_at))}
           ` : `
-            ${renderCopyDetail("Webhook URL", webhook?.webhook_url || "Unavailable", webhook?.webhook_url || "", { full: true, mono: true, stack: true })}
+            ${renderCopyDetail("Webhook URL", webhookUrlDisplay, webhook?.webhook_url || "", { full: true, mono: true, stack: true })}
             ${renderStatusDetail("Last status", webhook?.last_execution_status || "idle", runtimeStatusBadgeClass(webhook?.last_execution_status || "idle"))}
             ${renderDetail("Last received", formatDateTime(webhook?.last_received_at))}
             ${renderDetail("Last started", formatDateTime(webhook?.last_started_at))}
