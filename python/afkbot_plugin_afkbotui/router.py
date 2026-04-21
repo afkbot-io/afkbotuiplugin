@@ -7,7 +7,7 @@ from datetime import datetime
 from functools import lru_cache
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import func, select
 
@@ -358,6 +358,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
     async def get_automation(
         automation_id: int,
         profile_id: str = "default",
+        response: Response = None,
     ) -> dict[str, object]:
         service = get_automations_service(get_settings())
         try:
@@ -377,6 +378,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 )
             except AutomationsServiceError as exc:
                 raise _automation_http_error(exc) from exc
+            _mark_private_no_store(response)
         return {"automation": payload}
 
     @router.get("/automations/{automation_id}/graph-preview")
@@ -444,6 +446,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
     async def create_automation(
         payload: AutomationCreatePayload,
         profile_id: str = "default",
+        response: Response = None,
     ) -> dict[str, object]:
         service = get_automations_service(get_settings())
         try:
@@ -479,6 +482,8 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 )
         except AutomationsServiceError as exc:
             raise _automation_http_error(exc) from exc
+        if item.trigger_type == "webhook":
+            _mark_private_no_store(response)
         return {"automation": _serialize_automation(item)}
 
     @router.patch("/automations/{automation_id}")
@@ -486,6 +491,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         automation_id: int,
         payload: AutomationPatchPayload,
         profile_id: str = "default",
+        response: Response = None,
     ) -> dict[str, object]:
         service = get_automations_service(get_settings())
         try:
@@ -501,6 +507,8 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             )
         except AutomationsServiceError as exc:
             raise _automation_http_error(exc) from exc
+        if item.trigger_type == "webhook" and bool(payload.rotate_webhook_token):
+            _mark_private_no_store(response)
         return {"automation": _serialize_automation(item)}
 
     @router.delete("/automations/{automation_id}")
@@ -1362,6 +1370,15 @@ def _serialize_automation(item: AutomationMetadata) -> dict[str, object]:
         ),
     }
     return payload
+
+
+def _mark_private_no_store(response: Response | None) -> None:
+    """Prevent browser or proxy caching for secret-bearing operator responses."""
+
+    if response is None:
+        return
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Pragma"] = "no-cache"
 
 
 def _apply_webhook_endpoint_reveal(

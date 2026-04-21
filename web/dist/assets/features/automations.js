@@ -58,7 +58,6 @@ export function createAutomationsController({
       graphLoading: false,
       graphError: "",
       graphPreview: null,
-      graphPreviewVersion: null,
       ...overrides,
     };
   }
@@ -265,35 +264,6 @@ export function createAutomationsController({
     };
   }
 
-  function mergePanelAutomation(previous, next) {
-    if (!previous || !next || previous.id !== next.id) {
-      return next;
-    }
-    if (next.trigger_type !== "webhook") {
-      return next;
-    }
-    const previousWebhook = previous.webhook || null;
-    const nextWebhook = next.webhook || null;
-    if (!previousWebhook || !nextWebhook) {
-      return next;
-    }
-    if (hasVisibleWebhookEndpoint(nextWebhook) || !hasVisibleWebhookEndpoint(previousWebhook)) {
-      return next;
-    }
-    return {
-      ...next,
-      webhook: {
-        ...nextWebhook,
-        webhook_url: previousWebhook.webhook_url || nextWebhook.webhook_url || null,
-        webhook_path: previousWebhook.webhook_path || nextWebhook.webhook_path || null,
-        webhook_token_masked: previousWebhook.webhook_token_masked || nextWebhook.webhook_token_masked,
-        webhook_endpoint_recoverable: typeof previousWebhook.webhook_endpoint_recoverable === "boolean"
-          ? previousWebhook.webhook_endpoint_recoverable
-          : nextWebhook.webhook_endpoint_recoverable,
-      },
-    };
-  }
-
   async function refresh(options = {}) {
     const silent = Boolean(options.silent);
     const profileId = getProfileId();
@@ -330,31 +300,18 @@ export function createAutomationsController({
       if (state.panel.automation) {
         const refreshed = state.items.find((item) => item.id === state.panel.automation.id);
         if (refreshed) {
-          const previousAutomation = state.panel.automation;
-          const previousPreviewVersion = state.panel.graphPreviewVersion;
-          state.panel.automation = mergePanelAutomation(previousAutomation, refreshed);
-          if (
-            refreshed.trigger_type === "webhook"
-            && String(previousAutomation.updated_at || "") !== String(refreshed.updated_at || "")
-          ) {
+          if (refreshed.trigger_type === "webhook" && state.panel.mode !== "edit") {
             panelRevealRefreshAutomationId = refreshed.id;
+          } else {
+            state.panel.automation = refreshed;
           }
           if (refreshed.execution_mode !== "graph") {
             state.panel.graphOpen = false;
             state.panel.graphLoading = false;
             state.panel.graphError = "";
             state.panel.graphPreview = null;
-            state.panel.graphPreviewVersion = null;
-          } else {
-            const nextPreviewVersion = graphPreviewVersion(refreshed);
-            if (previousPreviewVersion !== nextPreviewVersion) {
-              state.panel.graphError = "";
-              state.panel.graphPreview = null;
-              state.panel.graphPreviewVersion = null;
-              if (state.panel.graphOpen) {
-                graphRefreshAutomationId = refreshed.id;
-              }
-            }
+          } else if (state.panel.graphOpen && state.panel.mode !== "edit") {
+            graphRefreshAutomationId = refreshed.id;
           }
         }
       }
@@ -441,7 +398,6 @@ export function createAutomationsController({
         return;
       }
       const automation = payload.automation;
-      const previousPreviewVersion = state.panel.graphPreviewVersion;
       state.panel.loading = false;
       state.panel.error = "";
       state.panel.automation = automation;
@@ -450,17 +406,8 @@ export function createAutomationsController({
         state.panel.graphLoading = false;
         state.panel.graphError = "";
         state.panel.graphPreview = null;
-        state.panel.graphPreviewVersion = null;
-      } else {
-        const nextPreviewVersion = graphPreviewVersion(automation);
-        if (previousPreviewVersion !== nextPreviewVersion) {
-          state.panel.graphError = "";
-          state.panel.graphPreview = null;
-          state.panel.graphPreviewVersion = null;
-          if (state.panel.graphOpen) {
-            void loadGraphPreview(automation.id, { force: true, silent: true });
-          }
-        }
+      } else if (state.panel.graphOpen) {
+        void loadGraphPreview(automation.id, { force: true, silent: true });
       }
       renderPanel();
     } catch (error) {
@@ -482,11 +429,10 @@ export function createAutomationsController({
     }
     const force = Boolean(options.force);
     const silent = Boolean(options.silent);
-    const previewVersion = graphPreviewVersion(state.panel.automation);
     if (state.panel.graphLoading && !force) {
       return;
     }
-    if (!force && state.panel.graphPreview?.automation_id === automationId && state.panel.graphPreviewVersion === previewVersion) {
+    if (!force && state.panel.graphPreview?.automation_id === automationId) {
       return;
     }
     const requestId = ++graphRequestId;
@@ -503,7 +449,6 @@ export function createAutomationsController({
       state.panel.graphLoading = false;
       state.panel.graphError = "";
       state.panel.graphPreview = payload;
-      state.panel.graphPreviewVersion = previewVersion;
       if (force) {
         state.panel.graphOpen = true;
       }
@@ -870,7 +815,7 @@ export function createAutomationsController({
             ${isCron ? `
               <label class="field"><span class="field__label">Cron</span><input class="input" name="cron_expr" type="text" maxlength="64" value="${escapeAttribute(draft.cron_expr)}" placeholder="0 9 * * *" /></label>
               <label class="field"><span class="field__label">Timezone</span><input class="input" name="timezone_name" type="text" maxlength="64" value="${escapeAttribute(draft.timezone_name)}" placeholder="Europe/Moscow…" /></label>
-            ` : '<div class="field field--full"><span class="field__label">Webhook</span><div class="support-note">Webhook trigger stays fixed. The issued URL is only shown when the backend returns a fresh endpoint for this inspector session.</div></div>'}
+            ` : '<div class="field field--full"><span class="field__label">Webhook</span><div class="support-note">Webhook trigger stays fixed. The inspector reveals the current recoverable endpoint directly from the backend for operator copy.</div></div>'}
           </div>
           <div class="button-row">
             <button class="button button--primary" type="submit" ${state.panel.saving ? "disabled" : ""}>${state.panel.saving ? "Saving…" : "Save Changes"}</button>
@@ -909,7 +854,7 @@ export function createAutomationsController({
             ${isCron ? `
               <label class="field"><span class="field__label">Cron</span><input class="input" name="cron_expr" type="text" maxlength="64" value="${escapeAttribute(draft.cron_expr)}" placeholder="0 9 * * *" /></label>
               <label class="field"><span class="field__label">Timezone</span><input class="input" name="timezone_name" type="text" maxlength="64" value="${escapeAttribute(draft.timezone_name)}" placeholder="Europe/Moscow…" /></label>
-            ` : '<div class="field field--full"><span class="field__label">Webhook</span><div class="support-note">After creation the inspector shows the freshly issued webhook URL for immediate copy.</div></div>'}
+            ` : '<div class="field field--full"><span class="field__label">Webhook</span><div class="support-note">After creation the inspector opens with the live webhook endpoint ready for copy, and later detail views recover the current URL from the backend when durable reveal is available.</div></div>'}
           </div>
           <div class="button-row">
             <button class="button button--primary" type="submit" ${state.panel.createSaving ? "disabled" : ""}>${state.panel.createSaving ? "Saving…" : "Create Automation"}</button>
@@ -1267,24 +1212,6 @@ function describeCardDelivery(item) {
     return "Webhook endpoint";
   }
   return "Webhook trigger";
-}
-
-function graphPreviewVersion(item) {
-  if (!item || item.execution_mode !== "graph") {
-    return "";
-  }
-  return [
-    item.updated_at || "",
-    item.status || "",
-    item.derived?.last_activity_at || "",
-    item.webhook?.last_execution_status || "",
-    item.webhook?.last_received_at || "",
-    item.webhook?.last_started_at || "",
-    item.webhook?.last_succeeded_at || "",
-    item.webhook?.last_failed_at || "",
-    item.webhook?.last_session_id || "",
-    item.cron?.last_run_at || "",
-  ].join("|");
 }
 
 function renderNodeTargets(targets) {

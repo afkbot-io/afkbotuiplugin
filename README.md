@@ -97,6 +97,6 @@ afk start
 
 ## Notes
 
-- AFKBOT does not return old plaintext webhook tokens from ordinary `list/get` calls after issuance
-- the UI can reveal a fresh webhook URL only when it is newly created or rotated in the current inspector session
+- AFKBOT does not return live webhook bearer endpoints from ordinary `list` calls; the inspector uses an operator-only reveal path for the current endpoint
+- older webhook automations that were created before durable reveal storage was configured may still require one explicit rotate before the current URL becomes recoverable
 - version history is tracked in [CHANGELOG.md](/Users/kikasnikita/PycharmProjects/afkbotui/CHANGELOG.md)
