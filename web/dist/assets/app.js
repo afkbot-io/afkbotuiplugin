@@ -308,7 +308,7 @@ async function loadAuthSession() {
   } catch (error) {
     if (error?.status === 404) {
       const authError = new Error(
-        "AFKBOT UI 0.4.1 requires AFKBOT 1.3.0+ with the core /v1/auth/session endpoint available.",
+        "AFKBOT UI 0.4.2 requires AFKBOT 1.4.2+ with the core /v1/auth/session endpoint and automation webhook reveal support available.",
       );
       authError.code = "ui_auth_endpoint_missing";
       authError.status = 404;

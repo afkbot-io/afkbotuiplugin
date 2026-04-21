@@ -58,7 +58,6 @@ export function createAutomationsController({
       graphLoading: false,
       graphError: "",
       graphPreview: null,
-      graphPreviewVersion: null,
       ...overrides,
     };
   }
@@ -297,33 +296,31 @@ export function createAutomationsController({
       state.loading = false;
       state.error = "";
       let graphRefreshAutomationId = null;
+      let panelRevealRefreshAutomationId = null;
       if (state.panel.automation) {
         const refreshed = state.items.find((item) => item.id === state.panel.automation.id);
         if (refreshed) {
-          const previousPreviewVersion = state.panel.graphPreviewVersion;
-          state.panel.automation = refreshed;
+          if (refreshed.trigger_type === "webhook" && state.panel.mode !== "edit") {
+            panelRevealRefreshAutomationId = refreshed.id;
+          } else {
+            state.panel.automation = refreshed;
+          }
           if (refreshed.execution_mode !== "graph") {
             state.panel.graphOpen = false;
             state.panel.graphLoading = false;
             state.panel.graphError = "";
             state.panel.graphPreview = null;
-            state.panel.graphPreviewVersion = null;
-          } else {
-            const nextPreviewVersion = graphPreviewVersion(refreshed);
-            if (previousPreviewVersion !== nextPreviewVersion) {
-              state.panel.graphError = "";
-              state.panel.graphPreview = null;
-              state.panel.graphPreviewVersion = null;
-              if (state.panel.graphOpen) {
-                graphRefreshAutomationId = refreshed.id;
-              }
-            }
+          } else if (state.panel.graphOpen && state.panel.mode !== "edit") {
+            graphRefreshAutomationId = refreshed.id;
           }
         }
       }
       render();
       if (graphRefreshAutomationId !== null) {
         void loadGraphPreview(graphRefreshAutomationId, { force: true, silent: true });
+      }
+      if (panelRevealRefreshAutomationId !== null) {
+        void reloadPanelAutomation(panelRevealRefreshAutomationId, { silent: true });
       }
       syncPoller();
     } catch (error) {
@@ -382,17 +379,60 @@ export function createAutomationsController({
     }
   }
 
+  async function reloadPanelAutomation(automationId, options = {}) {
+    const silent = Boolean(options.silent);
+    if (!state.panel.open || !state.panel.automation || state.panel.automation.id !== automationId) {
+      return;
+    }
+    const requestId = ++detailRequestId;
+    if (!silent) {
+      state.panel.loading = true;
+      renderPanel();
+    }
+    try {
+      const payload = await api.getAutomation(automationId, getProfileId());
+      if (requestId !== detailRequestId) {
+        return;
+      }
+      if (!state.panel.automation || state.panel.automation.id !== automationId) {
+        return;
+      }
+      const automation = payload.automation;
+      state.panel.loading = false;
+      state.panel.error = "";
+      state.panel.automation = automation;
+      if (automation.execution_mode !== "graph") {
+        state.panel.graphOpen = false;
+        state.panel.graphLoading = false;
+        state.panel.graphError = "";
+        state.panel.graphPreview = null;
+      } else if (state.panel.graphOpen) {
+        void loadGraphPreview(automation.id, { force: true, silent: true });
+      }
+      renderPanel();
+    } catch (error) {
+      if (requestId !== detailRequestId) {
+        return;
+      }
+      if (!state.panel.automation || state.panel.automation.id !== automationId) {
+        return;
+      }
+      state.panel.loading = false;
+      state.panel.error = normalizeError(error);
+      renderPanel();
+    }
+  }
+
   async function loadGraphPreview(automationId, options = {}) {
     if (!state.panel.automation || state.panel.automation.id !== automationId) {
       return;
     }
     const force = Boolean(options.force);
     const silent = Boolean(options.silent);
-    const previewVersion = graphPreviewVersion(state.panel.automation);
     if (state.panel.graphLoading && !force) {
       return;
     }
-    if (!force && state.panel.graphPreview?.automation_id === automationId && state.panel.graphPreviewVersion === previewVersion) {
+    if (!force && state.panel.graphPreview?.automation_id === automationId) {
       return;
     }
     const requestId = ++graphRequestId;
@@ -409,7 +449,6 @@ export function createAutomationsController({
       state.panel.graphLoading = false;
       state.panel.graphError = "";
       state.panel.graphPreview = payload;
-      state.panel.graphPreviewVersion = previewVersion;
       if (force) {
         state.panel.graphOpen = true;
       }
@@ -706,6 +745,8 @@ export function createAutomationsController({
       const selected = state.panel.automation?.id === item.id;
       const runtime = describeRuntime(item);
       const activity = describeActivity(item);
+      const delivery = describeCardDelivery(item);
+      const sessionLabel = item.webhook?.last_session_id ? shortSessionLabel(item.webhook.last_session_id) : "";
       const lastError = item.webhook?.last_error ? `<div class="automation-card__error">${escapeHtml(truncateText(item.webhook.last_error, 120))}</div>` : "";
       return `
         <article class="card automation-card ${selected ? "card--selected" : ""}" data-automation-id="${item.id}">
@@ -719,14 +760,23 @@ export function createAutomationsController({
           </div>
           <div class="card__snippet">${escapeHtml(truncateText(item.prompt || "No prompt yet.", 160))}</div>
           ${lastError}
-          <div class="card__footer">
+          <div class="automation-card__meta-grid">
+            <div class="automation-card__meta-block">
+              <p class="automation-card__meta-label">${escapeHtml(item.trigger_type === "cron" ? "Schedule" : "Endpoint")}</p>
+              <p class="automation-card__meta-value">${escapeHtml(delivery)}</p>
+            </div>
+            <div class="automation-card__meta-block automation-card__meta-block--activity">
+              <p class="automation-card__meta-label">Last activity</p>
+              <p class="automation-card__meta-value">${escapeHtml(activity)}</p>
+            </div>
+          </div>
+          <div class="card__footer automation-card__footer">
             <div class="card__badges">
-              <span class="badge">${escapeHtml(describeSchedule(item).primary)}</span>
               <span class="badge ${runtime.className}">${escapeHtml(runtime.label)}</span>
-              ${item.webhook?.last_session_id ? `<span class="badge badge--muted">${escapeHtml(shortSessionLabel(item.webhook.last_session_id))}</span>` : ""}
+              ${sessionLabel ? `<span class="badge badge--muted">${escapeHtml(sessionLabel)}</span>` : ""}
               <span class="badge badge--muted">${escapeHtml(`#${item.id}`)}</span>
             </div>
-            <div class="tiny">${escapeHtml(activity)}</div>
+            <div class="automation-card__footer-copy">${escapeHtml(item.execution_mode === "graph" ? "Graph → AI runtime" : "Prompt → AI runtime")}</div>
           </div>
         </article>
       `;
@@ -765,7 +815,7 @@ export function createAutomationsController({
             ${isCron ? `
               <label class="field"><span class="field__label">Cron</span><input class="input" name="cron_expr" type="text" maxlength="64" value="${escapeAttribute(draft.cron_expr)}" placeholder="0 9 * * *" /></label>
               <label class="field"><span class="field__label">Timezone</span><input class="input" name="timezone_name" type="text" maxlength="64" value="${escapeAttribute(draft.timezone_name)}" placeholder="Europe/Moscow…" /></label>
-            ` : '<div class="field field--full"><span class="field__label">Webhook</span><div class="support-note">Webhook trigger stays fixed. The issued URL is only shown when the backend returns a fresh endpoint for this inspector session.</div></div>'}
+            ` : '<div class="field field--full"><span class="field__label">Webhook</span><div class="support-note">Webhook trigger stays fixed. The inspector reveals the current recoverable endpoint directly from the backend for operator copy.</div></div>'}
           </div>
           <div class="button-row">
             <button class="button button--primary" type="submit" ${state.panel.saving ? "disabled" : ""}>${state.panel.saving ? "Saving…" : "Save Changes"}</button>
@@ -804,7 +854,7 @@ export function createAutomationsController({
             ${isCron ? `
               <label class="field"><span class="field__label">Cron</span><input class="input" name="cron_expr" type="text" maxlength="64" value="${escapeAttribute(draft.cron_expr)}" placeholder="0 9 * * *" /></label>
               <label class="field"><span class="field__label">Timezone</span><input class="input" name="timezone_name" type="text" maxlength="64" value="${escapeAttribute(draft.timezone_name)}" placeholder="Europe/Moscow…" /></label>
-            ` : '<div class="field field--full"><span class="field__label">Webhook</span><div class="support-note">After creation the inspector shows the freshly issued webhook URL for immediate copy.</div></div>'}
+            ` : '<div class="field field--full"><span class="field__label">Webhook</span><div class="support-note">After creation the inspector opens with the live webhook endpoint ready for copy, and later detail views recover the current URL from the backend when durable reveal is available.</div></div>'}
           </div>
           <div class="button-row">
             <button class="button button--primary" type="submit" ${state.panel.createSaving ? "disabled" : ""}>${state.panel.createSaving ? "Saving…" : "Create Automation"}</button>
@@ -848,7 +898,9 @@ export function createAutomationsController({
     }
     const runtime = describeRuntime(automation);
     const webhook = automation.webhook;
-    const showWebhookSecretNotice = automation.trigger_type === "webhook" && !hasVisibleWebhookEndpoint(webhook);
+    const showWebhookSecretNotice = automation.trigger_type === "webhook"
+      && !hasVisibleWebhookEndpoint(webhook)
+      && webhook?.webhook_endpoint_recoverable === false;
     const webhookErrorAlert = automation.trigger_type === "webhook" && webhook?.last_error
       ? `<div class="inline-alert inline-alert--danger">${escapeHtml(webhook.last_error)}</div>`
       : "";
@@ -876,14 +928,14 @@ export function createAutomationsController({
         </section>
         <section class="panel-section">
           <div class="panel-section__header"><div class="panel-section__title">${automation.trigger_type === "cron" ? "Schedule" : "Webhook diagnostics"}</div></div>
-          ${showWebhookSecretNotice ? '<div class="support-note">Current webhook URL is hidden because the plaintext token is not stored server-side. Issue a new URL to reveal a fresh endpoint in this inspector.</div>' : ""}
+          ${showWebhookSecretNotice ? '<div class="support-note">This automation does not have a recoverable webhook URL in server storage yet. Rotate the URL only if you intentionally want a new endpoint.</div>' : ""}
           <div class="detail-grid">${automation.trigger_type === "cron" ? `
             ${renderDetail("Cron", automation.cron?.cron_expr || "Unavailable")}
             ${renderDetail("Timezone", automation.cron?.timezone || "Unavailable")}
             ${renderDetail("Next run", formatDateTime(automation.cron?.next_run_at))}
             ${renderDetail("Last run", formatDateTime(automation.cron?.last_run_at))}
           ` : `
-            ${renderCopyDetail("Webhook URL", webhook?.webhook_url || "Unavailable", webhook?.webhook_url || "")}
+            ${renderCopyDetail("Webhook URL", webhook?.webhook_url || "Unavailable", webhook?.webhook_url || "", { full: true, mono: true, stack: true })}
             ${renderStatusDetail("Last status", webhook?.last_execution_status || "idle", runtimeStatusBadgeClass(webhook?.last_execution_status || "idle"))}
             ${renderDetail("Last received", formatDateTime(webhook?.last_received_at))}
             ${renderDetail("Last started", formatDateTime(webhook?.last_started_at))}
@@ -891,7 +943,7 @@ export function createAutomationsController({
             ${renderDetail("Last failed", formatDateTime(webhook?.last_failed_at))}
             ${renderDetail("Last activity", formatDateTime(automation.derived?.last_activity_at))}
             ${renderDetail("Last session", webhook?.last_session_id || "Unavailable", "mono-inline")}
-            ${renderCopyDetail("Resume command", webhook?.chat_resume_command || "Unavailable", webhook?.chat_resume_command || "")}
+            ${renderCopyDetail("Resume command", webhook?.chat_resume_command || "Unavailable", webhook?.chat_resume_command || "", { full: true, mono: true, stack: true })}
           `}</div>
           ${webhookErrorAlert}
         </section>
@@ -1083,17 +1135,21 @@ export function createAutomationsController({
     `;
   }
 
-  function renderDetail(label, value, extraClass = "") {
-    return `<div class="detail-item"><p class="detail-item__label">${escapeHtml(label)}</p><p class="detail-item__value ${escapeAttribute(extraClass)}">${escapeHtml(value)}</p></div>`;
+  function renderDetail(label, value, extraClass = "", options = {}) {
+    const className = ["detail-item", options.full ? "detail-item--full" : ""].filter(Boolean).join(" ");
+    return `<div class="${className}"><p class="detail-item__label">${escapeHtml(label)}</p><p class="detail-item__value ${escapeAttribute(extraClass)}">${escapeHtml(value)}</p></div>`;
   }
 
   function renderStatusDetail(label, value, className) {
     return `<div class="detail-item"><p class="detail-item__label">${escapeHtml(label)}</p><div class="badge-row"><span class="badge ${escapeAttribute(className)}">${escapeHtml(value)}</span></div></div>`;
   }
 
-  function renderCopyDetail(label, displayValue, rawValue) {
+  function renderCopyDetail(label, displayValue, rawValue, options = {}) {
     const normalizedValue = String(rawValue || "").trim();
-    return `<div class="detail-item"><p class="detail-item__label">${escapeHtml(label)}</p><div class="copy-row"><p class="detail-item__value">${escapeHtml(displayValue)}</p><button class="button button--ghost button--compact" type="button" data-automation-action="copy" data-copy-value="${escapeAttribute(normalizedValue)}" ${normalizedValue ? "" : "disabled"}>Copy</button></div></div>`;
+    const className = ["detail-item", options.full ? "detail-item--full" : ""].filter(Boolean).join(" ");
+    const rowClassName = ["copy-row", options.stack ? "copy-row--stack" : ""].filter(Boolean).join(" ");
+    const valueClassName = ["detail-item__value", options.mono ? "detail-item__value--mono" : ""].join(" ");
+    return `<div class="${className}"><p class="detail-item__label">${escapeHtml(label)}</p><div class="${rowClassName}"><p class="${valueClassName}">${escapeHtml(displayValue)}</p><button class="button button--ghost button--compact" type="button" data-automation-action="copy" data-copy-value="${escapeAttribute(normalizedValue)}" ${normalizedValue ? "" : "disabled"}>Copy</button></div></div>`;
   }
 
   return {
@@ -1142,29 +1198,20 @@ function describeActivity(item) {
   if (!activityAt) {
     return "No activity recorded yet";
   }
-  const formatted = exactAndRelative(activityAt);
-  if (item.webhook?.last_session_id) {
-    return `${formatted.relative} · ${shortSessionLabel(item.webhook.last_session_id)}`;
-  }
-  return formatted.relative;
+  return exactAndRelative(activityAt).relative;
 }
 
-function graphPreviewVersion(item) {
-  if (!item || item.execution_mode !== "graph") {
-    return "";
+function describeCardDelivery(item) {
+  if (item.trigger_type === "cron" && item.cron) {
+    return `${item.cron.cron_expr} · ${item.cron.timezone}`;
   }
-  return [
-    item.updated_at || "",
-    item.status || "",
-    item.derived?.last_activity_at || "",
-    item.webhook?.last_execution_status || "",
-    item.webhook?.last_received_at || "",
-    item.webhook?.last_started_at || "",
-    item.webhook?.last_succeeded_at || "",
-    item.webhook?.last_failed_at || "",
-    item.webhook?.last_session_id || "",
-    item.cron?.last_run_at || "",
-  ].join("|");
+  if (item.webhook?.webhook_url) {
+    return "Webhook URL ready";
+  }
+  if (item.webhook?.last_execution_status === "failed") {
+    return "Webhook endpoint";
+  }
+  return "Webhook trigger";
 }
 
 function renderNodeTargets(targets) {

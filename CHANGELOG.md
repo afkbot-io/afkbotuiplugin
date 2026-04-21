@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are tracked here.
 
+## 0.4.2 - 2026-04-21
+
+- switch the automation inspector from plugin-side webhook URL caching to the core operator-side reveal path, so the current webhook URL stays visible in the open inspector without widening generic automation metadata
+- preserve revealed webhook URLs across automation list refreshes inside the open inspector while keeping list/grid payloads masked
+- require AFKBOT `1.4.2+` because the plugin now depends on the new core reveal contract and durable encrypted webhook storage
+- sync release metadata to version `0.4.2`
+
 ## 0.4.1 - 2026-04-20
 
 - add graph-aware automation inspector UI with execution mode badges, lazy graph preview, recent graph runs, latest trace summary, and explicit AI handoff visibility

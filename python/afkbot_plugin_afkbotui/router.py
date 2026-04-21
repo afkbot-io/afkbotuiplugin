@@ -7,7 +7,7 @@ from datetime import datetime
 from functools import lru_cache
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import func, select
 
@@ -358,13 +358,28 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
     async def get_automation(
         automation_id: int,
         profile_id: str = "default",
+        response: Response = None,
     ) -> dict[str, object]:
         service = get_automations_service(get_settings())
         try:
             item = await service.get(profile_id=profile_id, automation_id=automation_id)
         except AutomationsServiceError as exc:
             raise _automation_http_error(exc) from exc
-        return {"automation": _serialize_automation(item)}
+        payload = _serialize_automation(item)
+        if item.trigger_type == "webhook":
+            try:
+                endpoint = await service.reveal_webhook_endpoint(
+                    profile_id=profile_id,
+                    automation_id=automation_id,
+                )
+                payload = _apply_webhook_endpoint_reveal(
+                    payload,
+                    endpoint=endpoint.model_dump(mode="json"),
+                )
+            except AutomationsServiceError as exc:
+                raise _automation_http_error(exc) from exc
+            _mark_private_no_store(response)
+        return {"automation": payload}
 
     @router.get("/automations/{automation_id}/graph-preview")
     async def get_automation_graph_preview(
@@ -431,6 +446,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
     async def create_automation(
         payload: AutomationCreatePayload,
         profile_id: str = "default",
+        response: Response = None,
     ) -> dict[str, object]:
         service = get_automations_service(get_settings())
         try:
@@ -466,6 +482,8 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 )
         except AutomationsServiceError as exc:
             raise _automation_http_error(exc) from exc
+        if item.trigger_type == "webhook":
+            _mark_private_no_store(response)
         return {"automation": _serialize_automation(item)}
 
     @router.patch("/automations/{automation_id}")
@@ -473,6 +491,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         automation_id: int,
         payload: AutomationPatchPayload,
         profile_id: str = "default",
+        response: Response = None,
     ) -> dict[str, object]:
         service = get_automations_service(get_settings())
         try:
@@ -488,6 +507,8 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             )
         except AutomationsServiceError as exc:
             raise _automation_http_error(exc) from exc
+        if item.trigger_type == "webhook" and bool(payload.rotate_webhook_token):
+            _mark_private_no_store(response)
         return {"automation": _serialize_automation(item)}
 
     @router.delete("/automations/{automation_id}")
@@ -1349,6 +1370,45 @@ def _serialize_automation(item: AutomationMetadata) -> dict[str, object]:
         ),
     }
     return payload
+
+
+def _mark_private_no_store(response: Response | None) -> None:
+    """Prevent browser or proxy caching for secret-bearing operator responses."""
+
+    if response is None:
+        return
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Pragma"] = "no-cache"
+
+
+def _apply_webhook_endpoint_reveal(
+    payload: dict[str, object],
+    *,
+    endpoint: dict[str, object] | None,
+) -> dict[str, object]:
+    """Merge operator-only webhook endpoint reveal data into one automation payload."""
+
+    if str(payload.get("trigger_type") or "").strip() != "webhook":
+        return payload
+    webhook = payload.get("webhook")
+    if not isinstance(webhook, dict):
+        return payload
+    endpoint_payload = endpoint if isinstance(endpoint, dict) else {}
+    return {
+        **payload,
+        "webhook": {
+            **webhook,
+            "webhook_path": endpoint_payload.get("webhook_path") or webhook.get("webhook_path"),
+            "webhook_url": endpoint_payload.get("webhook_url") or webhook.get("webhook_url"),
+            "webhook_token_masked": endpoint_payload.get("webhook_token_masked")
+            or webhook.get("webhook_token_masked"),
+            "webhook_endpoint_recoverable": bool(
+                endpoint_payload.get("recoverable")
+                or webhook.get("webhook_path")
+                or webhook.get("webhook_url")
+            ),
+        },
+    }
 
 
 def _graph_has_ai_handoff(graph_payload: dict[str, object] | None) -> bool:
