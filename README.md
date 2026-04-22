@@ -1,58 +1,73 @@
 # AFKBOT UI Plugin
 
-Unified AFKBOT workspace plugin for automations, Task Flow, subagents, skills, and bootstrap files.
+Unified AFKBOT workspace plugin for automations, Task Flow, and profile-local text libraries.
 
-Current release: `0.4.3`
+Current release: `0.5.1`
 
-## What is in 0.4.3
+## Overview
 
-- single shell workspace at `/plugins/afkbotui`
-- profile-aware sections for `Automations`, `Task Flow`, `Subagents`, `Skills`, and `Bootstrap`
-- core-level operator auth integration through AFKBOT `afk auth ...`, with login redirect, session badge, and logout support
-- safer automation inspector behavior: webhook URLs are no longer cached in browser storage after issuance
-- graph-aware automation inspector with runtime path, lazy graph preview, recent runs, and latest trace summary
-- reactive Task Flow board without full page refreshes
-- task inspector session feed with recent chat turns and live activity events for the current agent session
-- unified modal-driven CRUD flows across the workspace
-- kanban-style Task Flow with inspector, comments, review actions, quick selection, delete actions, and mobile behavior
-- project-centric Task Flow flow manager with modal search, inline add/delete actions, and richer project metadata
-- stronger Task Flow validation for create/edit/settings flows, plus safer filter reset behavior when profiles or projects change
-- profile-local text libraries for subagents, skills, and bootstrap files
-- webhook automation inspector with diagnostics, copy actions, error emphasis, and URL rotation from the UI
-- inspector refresh that preserves scroll position while board and session data continue updating in the background
-- UI polish pass for card previews, owner visibility, tighter bulk actions, card-based automation layout, and cleaner spacing below the workspace header
+AFKBOT UI is an embedded AFKBOT plugin mounted at `/plugins/afkbotui`. It ships a prebuilt React workspace shell backed by the plugin API at `/v1/plugins/afkbotui`.
 
-## Highlights
+Current frontend/runtime contract:
+
+- React 19 + TypeScript + Vite for development
+- LESS styling with the `afkbotweb`-aligned visual system and self-hosted fonts
+- production payload served from `web/dist`
+- operator auth handled by AFKBOT core via `/v1/auth/session`
+- webhook endpoint reveal handled through a dedicated operator-only API route
+
+The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*` or `web/dist/assets/features/*` payloads.
+
+## What Is In 0.5.1
+
+- single-shell workspace with `Automations`, `Task Flow`, `Subagents`, `Skills`, and `Bootstrap`
+- React-native route surfaces for every section, with shared loaders, dialogs, async buttons, and responsive layout primitives
+- self-hosted `Inter`, `Unbounded`, and `JetBrains Mono` assets so install and release builds do not depend on Google Fonts
+- `afkbotweb`-aligned theme: tighter shell geometry, updated buttons/selects, branded loaders, compact mobile nav, and tablet-safe layouts
+- operator auth integration with login redirect, session badge, logout, and fail-closed handling when AFKBOT auth endpoints are missing
+- masked webhook metadata in ordinary automation list/detail payloads, with reveal only through `/automations/{id}/webhook-endpoint`
+- automation inspector with cron/webhook diagnostics, copy actions, graph preview, runtime path, and webhook URL rotation
+- Task Flow board with flow management modal, per-flow filtering, inspector, review flows, comments, dependencies, runs, session activity, and live chat-style activity modal
+- profile-local CRUD surfaces for subagents, skills, and bootstrap files
+- release-contract checks that verify version sync and shipped `web/dist` integrity
+- browser smoke coverage for desktop, mobile, auth, mutations, and responsive shell behavior
+
+## Feature Summary
 
 ### Automations
 
-- cron and webhook automation management inside the workspace
-- create, edit, delete, filter, and inspect flows without leaving the page
-- webhook diagnostics include URL, execution timestamps, last session, resume command, and clearer failure state
-- graph automations expose a lazy `View Graph` preview so operators can inspect nodes, edges, recent runs, and AI handoff presence without leaving the inspector
-- existing webhook tokens can be rotated directly from the UI
+- create, edit, delete, filter, and inspect cron and webhook automations
+- masked webhook URLs in normal payloads, with reveal fetched only when the inspector opens a webhook automation
+- rotate webhook URLs directly from the inspector
+- graph preview with nodes, edges, recent runs, and latest trace summary
 
 ### Task Flow
 
-- embedded kanban board in the same shell
-- project manager modal with search, ranked matches, metadata visibility, and inline destructive confirmation
-- task inspector, comments, dependency and run visibility
-- quick visible-selection and bulk delete actions
-- responsive column behavior and per-column scrolling
-- preserved board, inspector, modal, and project-list scroll state during refreshes
+- kanban-style board inside the same workspace shell
+- flow library modal with search, add, delete, and quick selection
+- task inspector with create/edit/delete, comments, dependencies, runs, review actions, and live session activity
+- polling that pauses around active edits and resumes without full-page reloads
 
-### Profile libraries
+### Profile Libraries
 
-- `Subagents`: profile-local markdown files for agent definitions
+- `Subagents`: profile-local markdown definitions
 - `Skills`: profile-local `SKILL.md` assets
 - `Bootstrap`: profile-local bootstrap files for the active profile
 
-### Operator auth
+### Operator Auth
 
-- when AFKBOT core auth is enabled, the workspace redirects to `/auth/login` before any UI or plugin API access is granted
-- the shell shows the current signed-in operator and provides logout in the top bar
-- the plugin now fails closed against missing core auth endpoints instead of silently booting without protection
-- no auth state is stored in plugin config; enforcement and secrets stay in AFKBOT core
+- when AFKBOT core auth is enabled, the workspace redirects to `/auth/login` before UI access
+- the shell shows the current signed-in operator and supports logout
+- auth state stays in AFKBOT core; plugin config does not store session state or secrets
+
+## Requirements
+
+- AFKBOT UI `0.5.1`
+- AFKBOT `>=1.4.2,<2.0.0`
+- current AFKBOT `1.x` auth/chat runtime surface, including:
+  - `/v1/auth/session`
+  - `/v1/auth/logout`
+  - operator-side automation webhook reveal support
 
 ## Install
 
@@ -61,8 +76,6 @@ Install locally into AFKBOT:
 ```bash
 afk plugin install ../afkbotui
 ```
-
-AFKBOT UI `0.4.3` requires AFKBOT `1.4.2` or newer because the automation inspector now depends on the core operator-side webhook reveal API for durable webhook URL display.
 
 Optional plugin config:
 
@@ -77,17 +90,55 @@ Start the runtime:
 afk start
 ```
 
-## Routes
+At install/runtime time AFKBOT uses the embedded plugin bundle:
 
-- API: `/v1/plugins/afkbotui/...`
+- python entrypoint from `python/`
+- static web payload from `web/dist`
+- local font assets from the shipped bundle
+
+Operators do not need Node.js during install or runtime.
+
+## Development
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Useful commands:
+
+```bash
+npm run dev
+npm run build
+npm run typecheck
+npm test
+npm run test:e2e
+npm run release:check
+```
+
+Development happens in `web/src`. Production always serves the generated `web/dist` bundle.
+
+Release preparation, `dist` integrity checks, and version-sync rules are documented in [docs/release.md](docs/release.md).
+
+## Mounts
+
 - UI: `/plugins/afkbotui`
+- API: `/v1/plugins/afkbotui`
 
-## Current API surface
+## Current API Surface
 
+### Core
+
+- `GET /v1/plugins/afkbotui/health`
 - `GET /v1/plugins/afkbotui/config`
+- `GET /v1/plugins/afkbotui/ui-config`
 - `PATCH /v1/plugins/afkbotui/config`
 - `DELETE /v1/plugins/afkbotui/config`
 - `GET /v1/plugins/afkbotui/profiles`
+
+### Automations
+
 - `GET /v1/plugins/afkbotui/automations`
 - `GET /v1/plugins/afkbotui/automations/{id}`
 - `GET /v1/plugins/afkbotui/automations/{id}/webhook-endpoint`
@@ -95,13 +146,51 @@ afk start
 - `POST /v1/plugins/afkbotui/automations`
 - `PATCH /v1/plugins/afkbotui/automations/{id}`
 - `DELETE /v1/plugins/afkbotui/automations/{id}`
-- `GET /v1/plugins/afkbotui/task-flow/...`
-- `GET /v1/plugins/afkbotui/subagents/...`
-- `GET /v1/plugins/afkbotui/skills/...`
-- `GET /v1/plugins/afkbotui/bootstrap-files/...`
+
+### Task Flow
+
+- `GET /v1/plugins/afkbotui/task-flow/flows`
+- `POST /v1/plugins/afkbotui/task-flow/flows`
+- `DELETE /v1/plugins/afkbotui/task-flow/flows/{flow_id}`
+- `GET /v1/plugins/afkbotui/task-flow/board`
+- `GET /v1/plugins/afkbotui/task-flow/sessions/activity`
+- `POST /v1/plugins/afkbotui/task-flow/tasks`
+- `GET /v1/plugins/afkbotui/task-flow/tasks/{task_id}`
+- `GET /v1/plugins/afkbotui/task-flow/tasks/{task_id}/session`
+- `PATCH /v1/plugins/afkbotui/task-flow/tasks/{task_id}`
+- `DELETE /v1/plugins/afkbotui/task-flow/tasks/{task_id}`
+- `POST /v1/plugins/afkbotui/task-flow/tasks/bulk-update`
+- `POST /v1/plugins/afkbotui/task-flow/tasks/bulk-delete`
+- `GET /v1/plugins/afkbotui/task-flow/tasks/{task_id}/comments`
+- `POST /v1/plugins/afkbotui/task-flow/tasks/{task_id}/comments`
+- `GET /v1/plugins/afkbotui/task-flow/tasks/{task_id}/dependencies`
+- `GET /v1/plugins/afkbotui/task-flow/tasks/{task_id}/events`
+- `GET /v1/plugins/afkbotui/task-flow/tasks/{task_id}/runs`
+- `GET /v1/plugins/afkbotui/task-flow/review`
+- `POST /v1/plugins/afkbotui/task-flow/tasks/{task_id}/review/approve`
+- `POST /v1/plugins/afkbotui/task-flow/tasks/{task_id}/review/request-changes`
+
+### Profile Libraries
+
+- `GET /v1/plugins/afkbotui/subagents`
+- `GET /v1/plugins/afkbotui/subagents/{name}`
+- `POST /v1/plugins/afkbotui/subagents`
+- `PATCH /v1/plugins/afkbotui/subagents/{name}`
+- `DELETE /v1/plugins/afkbotui/subagents/{name}`
+- `GET /v1/plugins/afkbotui/skills`
+- `GET /v1/plugins/afkbotui/skills/{name}`
+- `POST /v1/plugins/afkbotui/skills`
+- `PATCH /v1/plugins/afkbotui/skills/{name}`
+- `DELETE /v1/plugins/afkbotui/skills/{name}`
+- `GET /v1/plugins/afkbotui/bootstrap-files`
+- `GET /v1/plugins/afkbotui/bootstrap-files/{file_name}`
+- `POST /v1/plugins/afkbotui/bootstrap-files`
+- `PATCH /v1/plugins/afkbotui/bootstrap-files/{file_name}`
+- `DELETE /v1/plugins/afkbotui/bootstrap-files/{file_name}`
 
 ## Notes
 
-- AFKBOT does not return live webhook bearer endpoints from ordinary `list` or generic detail calls; the inspector uses a dedicated operator-only reveal path for the current endpoint
-- older webhook automations that were created before durable reveal storage was configured may still require one explicit rotate before the current URL becomes recoverable
+- ordinary automation list/detail responses do not expose live webhook bearer endpoints
+- the inspector fetches the current webhook URL through the dedicated operator-only reveal route
+- older webhook automations may require one explicit rotate before the current URL becomes recoverable
 - version history is tracked in `CHANGELOG.md`
