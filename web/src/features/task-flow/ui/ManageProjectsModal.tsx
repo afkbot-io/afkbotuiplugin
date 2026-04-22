@@ -1,3 +1,5 @@
+import { useEffect, useMemo, useState } from "react";
+
 import { ActorRefField } from "@/features/task-flow/ui/ActorRefField";
 import {
   formatFlowCreatorSummary,
@@ -27,6 +29,7 @@ type ManageProjectsModalProps = {
   onCancel: () => void;
   onCancelDelete: () => void;
   onConfirmDelete: (flowId: string) => void;
+  onConfirmDeleteSelected: (flowIds: string[]) => Promise<{ deleted_flow_ids?: string[]; error_count?: number } | void>;
   onDraftChange: (draft: TaskFlowProjectDraft) => void;
   onFilter: (flowId: string) => void;
   onRequestDelete: (flowId: string) => void;
@@ -49,6 +52,7 @@ export function ManageProjectsModal({
   onCancel,
   onCancelDelete,
   onConfirmDelete,
+  onConfirmDeleteSelected,
   onDraftChange,
   onFilter,
   onRequestDelete,
@@ -60,6 +64,69 @@ export function ManageProjectsModal({
 }: ManageProjectsModalProps) {
   const visibleFlows = getVisibleProjects(flows, activeFlowId, flowSearchQuery);
   const activeFlow = flows.find((item) => item.id === activeFlowId) || null;
+  const [selectedFlowIds, setSelectedFlowIds] = useState<Set<string>>(() => new Set());
+  const [bulkDeleteArmed, setBulkDeleteArmed] = useState(false);
+  const selectedCount = selectedFlowIds.size;
+  const visibleSelectedCount = useMemo(
+    () => visibleFlows.filter((flow) => selectedFlowIds.has(flow.id)).length,
+    [selectedFlowIds, visibleFlows],
+  );
+
+  useEffect(() => {
+    if (open) {
+      return;
+    }
+    setSelectedFlowIds(new Set());
+    setBulkDeleteArmed(false);
+  }, [open]);
+
+  useEffect(() => {
+    setSelectedFlowIds((current) => {
+      const availableIds = new Set(flows.map((flow) => flow.id));
+      const next = new Set([...current].filter((flowId) => availableIds.has(flowId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [flows]);
+
+  const handleToggleSelected = (flowId: string, checked: boolean) => {
+    setSelectedFlowIds((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(flowId);
+      } else {
+        next.delete(flowId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectVisible = () => {
+    setSelectedFlowIds(new Set(visibleFlows.map((flow) => flow.id)));
+    setBulkDeleteArmed(false);
+  };
+
+  const handleClearSelected = () => {
+    setSelectedFlowIds(new Set());
+    setBulkDeleteArmed(false);
+  };
+
+  const handleConfirmSelectedDelete = async () => {
+    if (!selectedCount) {
+      return;
+    }
+    const result = await onConfirmDeleteSelected([...selectedFlowIds]);
+    const deletedIds = result?.deleted_flow_ids || [];
+    if (deletedIds.length) {
+      setSelectedFlowIds((current) => {
+        const next = new Set(current);
+        deletedIds.forEach((flowId) => next.delete(flowId));
+        return next;
+      });
+    }
+    if (!result?.error_count) {
+      setBulkDeleteArmed(false);
+    }
+  };
 
   return (
     <ModalDialog
@@ -80,16 +147,71 @@ export function ManageProjectsModal({
                 <p className="surface-page__eyebrow">Existing Flows</p>
                 <h4 className="flow-manager__title">{formatProjectResultsLabel(visibleFlows.length, flows.length)}</h4>
                 <p className="muted">{formatProjectResultsNote(activeFlowId, flows, flowSearchQuery)}</p>
+                <div className="flow-manager__bulk-summary">
+                  <span className="badge badge--muted">{selectedCount ? `${selectedCount} selected` : "No selection"}</span>
+                  {visibleFlows.length ? (
+                    <span className="flow-manager__bulk-copy">
+                      {visibleSelectedCount === visibleFlows.length
+                        ? "Every visible flow is selected."
+                        : "Select visible flows to delete in one pass."}
+                    </span>
+                  ) : null}
+                </div>
               </div>
-              <button
-                className={`button ${activeFlow ? "button--ghost" : "button--primary"} button--compact`}
-                disabled={busy || !activeFlow}
-                onClick={() => onFilter("")}
-                type="button"
-              >
-                {activeFlow ? "Show All Tasks" : "Showing All Tasks"}
-              </button>
+              <div className="flow-manager__summary-actions">
+                <button
+                  className={`button ${activeFlow ? "button--ghost" : "button--primary"} button--compact`}
+                  disabled={busy || !activeFlow}
+                  onClick={() => onFilter("")}
+                  type="button"
+                >
+                  {activeFlow ? "Show All Tasks" : "Showing All Tasks"}
+                </button>
+                {visibleFlows.length ? (
+                  <button className="button button--ghost button--compact" disabled={busy} onClick={handleSelectVisible} type="button">
+                    Select Visible
+                  </button>
+                ) : null}
+                {selectedCount ? (
+                  <>
+                    <button className="button button--ghost button--compact" disabled={busy} onClick={handleClearSelected} type="button">
+                      Clear
+                    </button>
+                    <button
+                      className="button button--danger button--compact"
+                      disabled={busy}
+                      onClick={() => setBulkDeleteArmed(true)}
+                      type="button"
+                    >
+                      Delete Selected
+                    </button>
+                  </>
+                ) : null}
+              </div>
             </div>
+            {bulkDeleteArmed && selectedCount ? (
+              <div className="flow-manager__bulk-danger">
+                <div>
+                  <p className="surface-page__eyebrow">Delete Selected Flows</p>
+                  <p className="muted">
+                    Delete {selectedCount} selected flow{selectedCount === 1 ? "" : "s"} and every task inside them?
+                  </p>
+                </div>
+                <div className="flow-manager__danger-actions">
+                  <AsyncButton
+                    className="button button--danger button--compact"
+                    idleLabel="Confirm Delete"
+                    loading={busy}
+                    onClick={handleConfirmSelectedDelete}
+                    pendingLabel="Deleting…"
+                    type="button"
+                  />
+                  <button className="button button--ghost button--compact" disabled={busy} onClick={() => setBulkDeleteArmed(false)} type="button">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <label className="field flow-manager__search">
               <span className="field__label">Search Flows</span>
               <input
@@ -107,11 +229,25 @@ export function ManageProjectsModal({
                   visibleFlows.map((flow) => {
                     const isActive = flow.id === activeFlowId;
                     const isDeletePending = flow.id === pendingDeleteId;
+                    const isSelected = selectedFlowIds.has(flow.id);
 
                     return (
-                      <article className={`flow-manager__item ${isActive ? "flow-manager__item--active" : ""}`} key={flow.id}>
+                      <article
+                        className={`flow-manager__item ${isActive ? "flow-manager__item--active" : ""}${isSelected ? " flow-manager__item--selected" : ""}`}
+                        key={flow.id}
+                      >
                         <div className="flow-manager__item-head">
                           <div className="flow-manager__item-copy">
+                            <label className="checkbox-row checkbox-row--compact flow-manager__item-select">
+                              <input
+                                aria-label={`Select ${flow.title || flow.id}`}
+                                checked={isSelected}
+                                disabled={busy}
+                                onChange={(event) => handleToggleSelected(flow.id, event.target.checked)}
+                                type="checkbox"
+                              />
+                              <span>Select flow</span>
+                            </label>
                             <h4 className="flow-manager__item-title">{flow.title || flow.id}</h4>
                             <p className="muted">{flow.description || "No description yet."}</p>
                           </div>
@@ -146,7 +282,7 @@ export function ManageProjectsModal({
                           >
                             {isActive ? "Filtered on Board" : "Show on Board"}
                           </button>
-                          {isDeletePending ? (
+                            {isDeletePending ? (
                             <div className="flow-manager__danger">
                               <p className="muted">Delete this flow and every task inside it?</p>
                               <div className="flow-manager__danger-actions">
@@ -163,7 +299,15 @@ export function ManageProjectsModal({
                               </div>
                             </div>
                           ) : (
-                            <button className="button button--danger button--tiny" disabled={busy} onClick={() => onRequestDelete(flow.id)} type="button">
+                            <button
+                              className="button button--danger button--tiny"
+                              disabled={busy}
+                              onClick={() => {
+                                setBulkDeleteArmed(false);
+                                onRequestDelete(flow.id);
+                              }}
+                              type="button"
+                            >
                               Delete
                             </button>
                           )}

@@ -17,7 +17,6 @@ export function TextLibraryGrid({
   items,
   loading,
   onOpen,
-  refreshing,
   selectedId,
   ui,
 }: {
@@ -26,7 +25,6 @@ export function TextLibraryGrid({
   items: TextLibraryItem[];
   loading: boolean;
   onOpen: (itemId: string) => void;
-  refreshing: boolean;
   selectedId: string;
   ui: TextLibraryUiDefinition;
 }) {
@@ -44,7 +42,6 @@ export function TextLibraryGrid({
   return (
     <>
       {loading ? <SurfaceLoader message={ui.loadingListLabel} title="Loading…" /> : null}
-      {refreshing ? <SurfaceLoader message="Refreshing library…" variant="inline" /> : null}
       {items.map((item) => (
         <button
           className={`card ${cardClass} card--button${selectedId === item.id ? " card--selected" : ""}`}
@@ -56,7 +53,7 @@ export function TextLibraryGrid({
             <div className="card__title">{item.id}</div>
             <div className="chip-row">{renderBadges(item.cardBadges)}</div>
           </div>
-          <div className="card__snippet">{item.summary || ui.emptySummaryLabel}</div>
+          <div className="card__snippet text-library-card__snippet">{item.summary || ui.emptySummaryLabel}</div>
           <div className="card__footer">
             <div className="card__badges">{item.path ? <span className="badge">{item.path}</span> : null}</div>
           </div>

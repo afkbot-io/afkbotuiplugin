@@ -214,21 +214,31 @@ function createApi({
     getTaskBoard: vi.fn(async (_profileId: string, params: Record<string, unknown> = {}) => ({
       board: (() => {
         const flowId = String(params.flow_id || "");
+        const limitPerColumn = Number(params.limit_per_column || 200);
         const filteredTasks = Array.from(tasks.values()).filter((taskItem) => !flowId || taskItem.flow_id === flowId);
+        const todoTasks = filteredTasks.filter((taskItem) => taskItem.status === "todo");
+        const reviewTasks = filteredTasks.filter((taskItem) => taskItem.status === "review");
+        const runningTasks = filteredTasks.filter((taskItem) => taskItem.status === "running");
 
         return {
           columns: [
             {
               id: "todo",
               title: "To Do",
-              count: filteredTasks.filter((taskItem) => taskItem.status === "todo").length,
-              tasks: filteredTasks.filter((taskItem) => taskItem.status === "todo"),
+              count: todoTasks.length,
+              tasks: todoTasks.slice(0, limitPerColumn),
             },
             {
               id: "review",
               title: "Review",
-              count: filteredTasks.filter((taskItem) => taskItem.status === "review").length,
-              tasks: filteredTasks.filter((taskItem) => taskItem.status === "review"),
+              count: reviewTasks.length,
+              tasks: reviewTasks.slice(0, limitPerColumn),
+            },
+            {
+              id: "running",
+              title: "Running",
+              count: runningTasks.length,
+              tasks: runningTasks.slice(0, limitPerColumn),
             },
           ],
           total_count: filteredTasks.length,
@@ -281,7 +291,17 @@ function renderWithClient(node: ReactElement) {
 function renderTaskFlowPage({
   active = true,
   api = createApi(),
-}: { active?: boolean; api?: ReturnType<typeof createApi> } = {}) {
+  config: configOverrides = {},
+}: {
+  active?: boolean;
+  api?: ReturnType<typeof createApi>;
+  config?: Partial<{
+    task_flow_actor_ref: string;
+    task_flow_actor_type: string;
+    task_flow_board_limit_per_column: number;
+    task_flow_poll_interval_sec: number;
+  }>;
+} = {}) {
   const notify = vi.fn();
   const updateConfig = vi.fn(async (patch: Record<string, unknown>) => patch);
 
@@ -294,6 +314,7 @@ function renderTaskFlowPage({
         task_flow_actor_type: "human",
         task_flow_board_limit_per_column: 20,
         task_flow_poll_interval_sec: 5,
+        ...configOverrides,
       }}
       notify={notify}
       profileId="default"
@@ -601,6 +622,350 @@ describe("TaskFlowPage", () => {
       expect(api.bulkDeleteTasks).toHaveBeenCalled();
       expect(notify).toHaveBeenCalledWith("Deleted 1 tasks.", "success");
     });
+  });
+
+  it("selects every available task in one column and deletes them together", async () => {
+    const user = userEvent.setup();
+    const api = createApi({
+      taskItems: [
+        buildTask({
+          id: "task-1",
+          status: "todo",
+          title: "Fix planner output",
+        }),
+        buildTask({
+          id: "task-2",
+          status: "todo",
+          title: "Ship follow-up patch",
+        }),
+        buildTask({
+          id: "task-review",
+          status: "review",
+          title: "Review copy",
+        }),
+      ],
+    });
+
+    renderTaskFlowPage({ api });
+
+    expect(await screen.findByText("Fix planner output")).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "Select all tasks in To Do" }));
+    await user.click(screen.getByRole("button", { name: /Delete 2/i }));
+    await user.click(await screen.findByRole("button", { name: "Delete Selected" }));
+
+    await waitFor(() => {
+      expect(api.bulkDeleteTasks).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          task_ids: expect.arrayContaining(["task-1", "task-2"]),
+        }),
+      );
+    });
+  });
+
+  it("fetches the full column before selecting all tasks for a truncated board", async () => {
+    const user = userEvent.setup();
+    const api = createApi({
+      taskItems: [
+        buildTask({
+          id: "task-1",
+          status: "todo",
+          title: "Fix planner output",
+        }),
+        buildTask({
+          id: "task-2",
+          status: "todo",
+          title: "Ship follow-up patch",
+        }),
+        buildTask({
+          id: "task-3",
+          status: "todo",
+          title: "Prepare release notes",
+        }),
+      ],
+    });
+
+    renderTaskFlowPage({
+      api,
+      config: {
+        task_flow_board_limit_per_column: 1,
+      },
+    });
+
+    expect(await screen.findByText("Fix planner output")).toBeInTheDocument();
+    expect(screen.queryByText("Ship follow-up patch")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "Select all tasks in To Do" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Delete 3/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: /Delete 3/i }));
+    await user.click(await screen.findByRole("button", { name: "Delete Selected" }));
+
+    await waitFor(() => {
+      expect(api.getTaskBoard).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          limit_per_column: 3,
+        }),
+      );
+      expect(api.bulkDeleteTasks).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          task_ids: expect.arrayContaining(["task-1", "task-2", "task-3"]),
+        }),
+      );
+    });
+  });
+
+  it("lets operators clear a column selection and never exposes a select-all toggle for running tasks", async () => {
+    const user = userEvent.setup();
+    const api = createApi({
+      taskItems: [
+        buildTask({
+          id: "task-1",
+          status: "todo",
+          title: "Fix planner output",
+        }),
+        buildTask({
+          active_session: {
+            dialog_active: true,
+            latest_activity_at: "2026-04-21T11:18:00.000Z",
+            queued_turn_count: 0,
+            running_turn_count: 1,
+            session_id: "session-running",
+            session_profile_id: "default",
+          },
+          id: "task-running",
+          requires_review: false,
+          status: "running",
+          title: "Ship runtime fix",
+        }),
+      ],
+    });
+
+    renderTaskFlowPage({ api });
+
+    expect(await screen.findByText("Fix planner output")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Select all tasks in Running" })).not.toBeInTheDocument();
+
+    const selectTodoColumn = screen.getByRole("checkbox", { name: "Select all tasks in To Do" });
+    await user.click(selectTodoColumn);
+    expect(await screen.findByRole("button", { name: /Delete 1/i })).toBeInTheDocument();
+
+    await user.click(selectTodoColumn);
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /Delete 1/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it("lets operators select visible flows and remove them in one batch", async () => {
+    const user = userEvent.setup();
+    const api = createApi({
+      flowItems: [
+        {
+          id: "flow-alpha",
+          title: "Alpha Project",
+          description: "Primary delivery track.",
+          default_owner_type: "ai_profile",
+          default_owner_ref: "default",
+          created_by_type: "human",
+          created_by_ref: "web-user",
+          labels: ["ops"],
+          status: "active",
+          updated_at: "2026-04-21T10:00:00.000Z",
+        },
+        {
+          id: "flow-beta",
+          title: "Beta Project",
+          description: "Secondary delivery track.",
+          default_owner_type: "human",
+          default_owner_ref: "web-user",
+          created_by_type: "human",
+          created_by_ref: "web-user",
+          labels: ["review"],
+          status: "active",
+          updated_at: "2026-04-21T11:00:00.000Z",
+        },
+      ],
+    });
+
+    renderTaskFlowPage({ api });
+
+    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Flows" }));
+    expect(await screen.findByRole("dialog", { name: "Flow Library" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Select Visible" }));
+    await user.click(screen.getByRole("button", { name: "Delete Selected" }));
+    await user.click(await screen.findByRole("button", { name: "Confirm Delete" }));
+
+    await waitFor(() => {
+      expect(api.deleteTaskFlow).toHaveBeenCalledTimes(2);
+      expect(api.deleteTaskFlow.mock.calls.map(([, flowId]) => flowId).sort()).toEqual(["flow-alpha", "flow-beta"]);
+    });
+  });
+
+  it("clears task selection after removing flows in bulk", async () => {
+    const user = userEvent.setup();
+    const api = createApi({
+      flowItems: [
+        {
+          id: "flow-alpha",
+          title: "Alpha Project",
+          description: "Primary delivery track.",
+          default_owner_type: "ai_profile",
+          default_owner_ref: "default",
+          created_by_type: "human",
+          created_by_ref: "web-user",
+          labels: ["ops"],
+          status: "active",
+          updated_at: "2026-04-21T10:00:00.000Z",
+        },
+      ],
+      taskItems: [
+        buildTask({
+          id: "task-1",
+          status: "todo",
+          title: "Fix planner output",
+          flow_id: "flow-alpha",
+        }),
+      ],
+    });
+
+    renderTaskFlowPage({ api });
+
+    expect(await screen.findByText("Fix planner output")).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: /select fix planner output/i }));
+    expect(await screen.findByRole("button", { name: /Delete 1/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Flows" }));
+    await user.click(await screen.findByRole("button", { name: "Select Visible" }));
+    await user.click(screen.getByRole("button", { name: "Delete Selected" }));
+    await user.click(await screen.findByRole("button", { name: "Confirm Delete" }));
+
+    await waitFor(() => {
+      expect(api.deleteTaskFlow).toHaveBeenCalledWith("default", "flow-alpha");
+      expect(screen.queryByRole("button", { name: /Delete 1/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows a danger toast when every selected flow delete fails", async () => {
+    const user = userEvent.setup();
+    const api = createApi({
+      flowItems: [
+        {
+          id: "flow-alpha",
+          title: "Alpha Project",
+          description: "Primary delivery track.",
+          default_owner_type: "ai_profile",
+          default_owner_ref: "default",
+          created_by_type: "human",
+          created_by_ref: "web-user",
+          labels: ["ops"],
+          status: "active",
+          updated_at: "2026-04-21T10:00:00.000Z",
+        },
+      ],
+    });
+    api.deleteTaskFlow.mockRejectedValueOnce(new Error("flow delete exploded"));
+
+    const { notify } = renderTaskFlowPage({ api });
+
+    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Flows" }));
+    await user.click(await screen.findByRole("button", { name: "Select Visible" }));
+    await user.click(screen.getByRole("button", { name: "Delete Selected" }));
+    await user.click(await screen.findByRole("button", { name: "Confirm Delete" }));
+
+    await waitFor(() => {
+      expect(notify).toHaveBeenCalledWith("Unable to delete selected flows.", "danger");
+    });
+    expect(notify).not.toHaveBeenCalledWith("Deleted 0 flows.", "info");
+  });
+
+  it("keeps failed flows selected after a mixed-result bulk delete", async () => {
+    const user = userEvent.setup();
+    const api = createApi({
+      flowItems: [
+        {
+          id: "flow-alpha",
+          title: "Alpha Project",
+          description: "Primary delivery track.",
+          default_owner_type: "ai_profile",
+          default_owner_ref: "default",
+          created_by_type: "human",
+          created_by_ref: "web-user",
+          labels: ["ops"],
+          status: "active",
+          updated_at: "2026-04-21T10:00:00.000Z",
+        },
+        {
+          id: "flow-beta",
+          title: "Beta Project",
+          description: "Secondary delivery track.",
+          default_owner_type: "human",
+          default_owner_ref: "web-user",
+          created_by_type: "human",
+          created_by_ref: "web-user",
+          labels: ["review"],
+          status: "active",
+          updated_at: "2026-04-21T11:00:00.000Z",
+        },
+      ],
+    });
+    api.deleteTaskFlow.mockImplementation(async (_profileId: string, flowId: string) => {
+      if (flowId === "flow-beta") {
+        throw new Error("beta delete exploded");
+      }
+      return { ok: true };
+    });
+    const { notify } = renderTaskFlowPage({ api });
+
+    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Flows" }));
+    await user.click(await screen.findByRole("button", { name: "Select Visible" }));
+    await user.click(screen.getByRole("button", { name: "Delete Selected" }));
+    await user.click(await screen.findByRole("button", { name: "Confirm Delete" }));
+
+    await waitFor(() => {
+      expect(notify).toHaveBeenCalledWith("Deleted 1 flow. 1 failed.", "info");
+    });
+
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    expect(screen.getByText("Delete 1 selected flow and every task inside them?")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Beta Project" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Select Alpha Project" })).not.toBeChecked();
+  });
+
+  it("refuses to select a column when the API still cannot return the whole set", async () => {
+    const user = userEvent.setup();
+    const taskItems = Array.from({ length: 250 }, (_, index) =>
+      buildTask({
+        id: `task-${index + 1}`,
+        status: "todo",
+        title: `Task ${index + 1}`,
+      }),
+    );
+    const api = createApi({ taskItems });
+    const { notify } = renderTaskFlowPage({
+      api,
+      config: {
+        task_flow_board_limit_per_column: 1,
+      },
+    });
+
+    expect(await screen.findByText("Task 1")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "Select all tasks in To Do" }));
+
+    await waitFor(() => {
+      expect(notify).toHaveBeenCalledWith(
+        "Too many tasks are waiting in To Do. Narrow the board first before selecting the entire column.",
+        "danger",
+      );
+    });
+    expect(screen.queryByRole("button", { name: /Delete \d+/i })).not.toBeInTheDocument();
   });
 
   it("opens live activity in a modal chat view instead of rendering the full feed inline", async () => {
@@ -1139,6 +1504,98 @@ describe("TaskFlowPage", () => {
       expect(api.listTaskFlows).toHaveBeenCalled();
       expect(api.getTaskBoard).toHaveBeenCalled();
       expect(api.listReviewTasks).toHaveBeenCalled();
+    });
+  });
+
+  it("keeps the rendered board visible during a background refresh", async () => {
+    const user = userEvent.setup();
+    const boardRefresh = deferred<{
+      board: {
+        columns: Array<{ count: number; id: string; tasks: Array<ReturnType<typeof buildTask>>; title: string }>;
+        total_count: number;
+      };
+    }>();
+    const api = createApi();
+    api.getTaskBoard.mockImplementationOnce(async (_profileId: string, params: Record<string, unknown> = {}) => ({
+      board: {
+        columns: [
+          {
+            id: "todo",
+            title: "To Do",
+            count: 1,
+            tasks: [buildTask()],
+          },
+          {
+            id: "review",
+            title: "Review",
+            count: 1,
+            tasks: [
+              buildTask({
+                id: "task-review",
+                status: "review",
+                title: "Review copy",
+                prompt: "Check the final reviewer copy.",
+              }),
+            ],
+          },
+          {
+            id: "running",
+            title: "Running",
+            count: 0,
+            tasks: [],
+          },
+        ],
+        total_count: 2,
+      },
+    }));
+
+    renderTaskFlowPage({ api });
+
+    expect(await screen.findByText("Fix planner output")).toBeInTheDocument();
+
+    api.getTaskBoard.mockImplementationOnce(async () => boardRefresh.promise);
+
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+
+    expect(screen.getByText("Fix planner output")).toBeInTheDocument();
+    expect(screen.queryByText("Refreshing Task Flow data.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refreshing…" })).toBeInTheDocument();
+
+    boardRefresh.resolve({
+      board: {
+        columns: [
+          {
+            id: "todo",
+            title: "To Do",
+            count: 1,
+            tasks: [buildTask()],
+          },
+          {
+            id: "review",
+            title: "Review",
+            count: 1,
+            tasks: [
+              buildTask({
+                id: "task-review",
+                status: "review",
+                title: "Review copy",
+                prompt: "Check the final reviewer copy.",
+              }),
+            ],
+          },
+          {
+            id: "running",
+            title: "Running",
+            count: 0,
+            tasks: [],
+          },
+        ],
+        total_count: 2,
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
     });
   });
 });

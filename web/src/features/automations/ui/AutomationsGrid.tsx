@@ -14,7 +14,6 @@ type AutomationsGridProps = {
   items: Automation[];
   loading: boolean;
   onOpen: (automationId: number) => void;
-  refreshing: boolean;
   selectedId: number | null;
 };
 
@@ -74,7 +73,7 @@ function AutomationCard({
   );
 }
 
-export function AutomationsGrid({ items, loading, onOpen, refreshing, selectedId }: AutomationsGridProps) {
+export function AutomationsGrid({ items, loading, onOpen, selectedId }: AutomationsGridProps) {
   if (!items.length && !loading) {
     return (
       <div className="empty-surface">
@@ -89,7 +88,6 @@ export function AutomationsGrid({ items, loading, onOpen, refreshing, selectedId
   return (
     <>
       {loading ? <SurfaceLoader message="Loading automations…" title="Loading…" /> : null}
-      {refreshing ? <SurfaceLoader message="Refreshing workspace…" variant="inline" /> : null}
       <div className="automation-grid">
         {items.map((automation) => (
           <AutomationCard

@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { resolveTextLibraryErrorMessage } from "@/features/text-library/model/text-library.errors";
 import type { TextLibraryDefinition } from "@/features/text-library/model/text-library.types";
@@ -23,6 +23,7 @@ type TextLibraryPageProps = {
   api: unknown;
   definition: TextLibraryDefinition;
   notify: (message: string, kind?: string) => void;
+  onReadyChange?: (ready: boolean) => void;
   profileId: string;
 };
 
@@ -32,6 +33,7 @@ export const TextLibraryPage = forwardRef<TextLibraryPageHandle, TextLibraryPage
     api,
     definition,
     notify,
+    onReadyChange,
     profileId,
   },
   ref,
@@ -40,6 +42,7 @@ export const TextLibraryPage = forwardRef<TextLibraryPageHandle, TextLibraryPage
     definition,
     profileId,
   });
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   const profileIdRef = useRef(profileId);
   const previousActiveRef = useRef(active);
   const previousPanelRef = useRef({
@@ -90,6 +93,13 @@ export const TextLibraryPage = forwardRef<TextLibraryPageHandle, TextLibraryPage
       : "";
 
   useEffect(() => {
+    if (!active) {
+      return;
+    }
+    onReadyChange?.(!listQuery.isLoading);
+  }, [active, listQuery.isLoading, onReadyChange]);
+
+  useEffect(() => {
     if (!previousActiveRef.current && active) {
       void listQuery.refetch();
       if (state.panel.open && state.panel.itemId) {
@@ -135,6 +145,18 @@ export const TextLibraryPage = forwardRef<TextLibraryPageHandle, TextLibraryPage
     ...draft,
     id: draft.id.trim(),
   });
+
+  const handleManualRefresh = async () => {
+    setManualRefreshing(true);
+    try {
+      await listQuery.refetch();
+      if (state.panel.open && state.panel.itemId) {
+        await detailQuery.refetch();
+      }
+    } finally {
+      setManualRefreshing(false);
+    }
+  };
 
   useImperativeHandle(
     ref,
@@ -234,13 +256,8 @@ export const TextLibraryPage = forwardRef<TextLibraryPageHandle, TextLibraryPage
     <section className="route-page tl-page">
       <TextLibraryHeader
         onCreate={state.openCreateModal}
-        onRefresh={async () => {
-          await listQuery.refetch();
-          if (state.panel.open && state.panel.itemId) {
-            await detailQuery.refetch();
-          }
-        }}
-        refreshing={Boolean(listQuery.isFetching && items.length)}
+        onRefresh={handleManualRefresh}
+        refreshing={manualRefreshing}
         ui={definition.ui}
       />
 
@@ -263,7 +280,6 @@ export const TextLibraryPage = forwardRef<TextLibraryPageHandle, TextLibraryPage
               items={items}
               loading={Boolean(listQuery.isFetching && !items.length)}
               onOpen={state.openPanel}
-              refreshing={Boolean(listQuery.isFetching && items.length)}
               selectedId={state.panel.itemId}
               ui={definition.ui}
             />

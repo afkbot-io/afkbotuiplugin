@@ -570,6 +570,49 @@ describe("TextLibraryPage", () => {
     expect(screen.queryByText("No Items")).not.toBeInTheDocument();
   });
 
+  it("keeps the visible cards mounted during a same-profile background refresh", async () => {
+    const listRequest = deferred<TextLibraryItem[]>();
+    const { api } = createApi();
+    const ref = createRef<TextLibraryPageHandle>();
+
+    renderWithClient(
+      <TextLibraryPage
+        ref={ref}
+        api={api}
+        definition={createDefinition()}
+        notify={vi.fn()}
+        profileId="default"
+      />,
+    );
+
+    expect(await screen.findByText("alpha")).toBeInTheDocument();
+
+    api.list.mockImplementationOnce(() => listRequest.promise);
+
+    await act(async () => {
+      void ref.current?.refresh();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("alpha")).toBeInTheDocument();
+    expect(screen.queryByText("Loading items…")).not.toBeInTheDocument();
+
+    listRequest.resolve([
+      {
+        cardBadges: [{ text: "skill", className: "badge badge--accent" }],
+        content: "Alpha content",
+        detailBadges: [{ text: "skill", className: "badge badge--accent" }],
+        id: "alpha",
+        path: "profiles/default/alpha.md",
+        summary: "Alpha summary",
+      },
+    ]);
+
+    await waitFor(() => {
+      expect(api.list).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it("trims id fields before validation and mutation calls", async () => {
     const user = userEvent.setup();
     const { api } = createApi();

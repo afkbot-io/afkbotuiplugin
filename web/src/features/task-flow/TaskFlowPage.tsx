@@ -34,8 +34,10 @@ import {
   validateProjectDraft,
   validateSettingsDraft,
   validateTaskDraft,
+  bulkDeleteTaskProjects,
   bulkMoveTaskItems,
   bulkDeleteTaskItems,
+  listSelectableTaskIdsForBoardColumn,
   requestTaskReviewChanges,
 } from "@/features/task-flow/model/task-flow.api";
 import {
@@ -62,6 +64,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     api,
     config,
     notify,
+    onReadyChange,
     profileId,
     profiles,
     updateConfig,
@@ -78,6 +81,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   const [editorError, setEditorError] = useState("");
   const [savingTask, setSavingTask] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   const [refreshingSessionKeys, setRefreshingSessionKeys] = useState<Set<string>>(() => new Set());
   const [sessionInsights, setSessionInsights] = useState<TaskSessionInsights | null>(null);
   const [sessionError, setSessionError] = useState("");
@@ -91,7 +95,10 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   });
   const previousActiveRef = useRef(active);
   const profileIdRef = useRef(profileId);
+  const flowFilterRef = useRef(state.flowFilter);
   const selectedTaskIdRef = useRef(state.selectedTaskId);
+  const selectedTaskIdsRef = useRef(state.selectedTaskIds);
+  const selectedTaskFlowMapRef = useRef<Map<string, string>>(new Map());
   const sessionRefreshRef = useRef<{ key: string; promise: Promise<void> | null }>({
     key: "",
     promise: null,
@@ -165,8 +172,53 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     [refreshingSessionKeys, sessionRequestKey],
   );
   profileIdRef.current = profileId;
+  flowFilterRef.current = state.flowFilter;
   selectedTaskIdRef.current = state.selectedTaskId;
+  selectedTaskIdsRef.current = state.selectedTaskIds;
   currentSessionRequestKeyRef.current = sessionRequestKey;
+
+  useEffect(() => {
+    const nextMap = new Map<string, string>();
+    state.selectedTaskIds.forEach((taskId) => {
+      const mappedFlowId = selectedTaskFlowMapRef.current.get(taskId);
+      if (mappedFlowId) {
+        nextMap.set(taskId, mappedFlowId);
+        return;
+      }
+      const boardTask = findBoardTask(board, taskId);
+      const flowId = String(boardTask?.flow_id || "").trim();
+      if (flowId) {
+        nextMap.set(taskId, flowId);
+      }
+    });
+    selectedTaskFlowMapRef.current = nextMap;
+  }, [board, state.selectedTaskIds]);
+
+  const pruneDeletedFlowSelections = useCallback(
+    (deletedFlowIds: string[]) => {
+      const normalizedDeletedFlowIds = new Set(deletedFlowIds.map((flowId) => String(flowId || "").trim()).filter(Boolean));
+      if (!normalizedDeletedFlowIds.size) {
+        return;
+      }
+      const nextTaskIds = new Set<string>();
+      const nextFlowMap = new Map<string, string>();
+      selectedTaskIdsRef.current.forEach((taskId) => {
+        const flowId = String(
+          selectedTaskFlowMapRef.current.get(taskId) || findBoardTask(board, taskId)?.flow_id || "",
+        ).trim();
+        if (flowId && normalizedDeletedFlowIds.has(flowId)) {
+          return;
+        }
+        nextTaskIds.add(taskId);
+        if (flowId) {
+          nextFlowMap.set(taskId, flowId);
+        }
+      });
+      selectedTaskFlowMapRef.current = nextFlowMap;
+      state.setSelectedTaskIds(nextTaskIds);
+    },
+    [board, state],
+  );
 
   const refreshSession = useCallback(
     async ({ incremental = false }: { incremental?: boolean } = {}) => {
@@ -342,6 +394,13 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     }
   }, [state, state.selectedTaskId]);
 
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    onReadyChange?.(!projectsQuery.isLoading && !boardQuery.isLoading && !reviewQuery.isLoading);
+  }, [active, boardQuery.isLoading, onReadyChange, projectsQuery.isLoading, reviewQuery.isLoading]);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -510,6 +569,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         if (state.flowFilter === flowId) {
           state.setFlowFilter("");
         }
+        pruneDeletedFlowSelections([flowId]);
         if (detail?.task?.flow_id === flowId) {
           state.selectTask("");
           state.setSessionFeedOpen(false);
@@ -522,6 +582,55 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
           return;
         }
         state.setDeleteError(resolveTaskFlowError(error));
+      } finally {
+        state.setModalBusy(false);
+      }
+    },
+    [api, detail?.task?.flow_id, notify, profileId, refreshAll, state],
+  );
+
+  const handleDeleteSelectedFlows = useCallback(
+    async (flowIds: string[]) => {
+      const selectedFlowIds = [...new Set(flowIds.map((flowId) => String(flowId || "").trim()).filter(Boolean))];
+      if (!selectedFlowIds.length) {
+        return {
+          deleted_flow_ids: [],
+          error_count: 0,
+        };
+      }
+      state.setDeleteError("");
+      state.setModalBusy(true);
+      try {
+        const response = await bulkDeleteTaskProjects(api, profileId, selectedFlowIds);
+        if (profileIdRef.current !== profileId) {
+          return response;
+        }
+        if (response.deleted_flow_ids.includes(state.flowFilter)) {
+          state.setFlowFilter("");
+        }
+        if (response.deleted_flow_ids.length) {
+          pruneDeletedFlowSelections(response.deleted_flow_ids);
+        }
+        if (detail?.task?.flow_id && response.deleted_flow_ids.includes(detail.task.flow_id)) {
+          state.selectTask("");
+          state.setSessionFeedOpen(false);
+          setSessionInsights(null);
+        }
+        if (response.error_count) {
+          state.setDeleteError(response.errors?.[0]?.reason || "Some flows could not be deleted.");
+        }
+        if (!response.deleted_count && response.error_count) {
+          notify("Unable to delete selected flows.", "danger");
+        } else if (response.error_count) {
+          notify(
+            `Deleted ${response.deleted_count} flow${response.deleted_count === 1 ? "" : "s"}. ${response.error_count} failed.`,
+            "info",
+          );
+        } else {
+          notify(`Deleted ${response.deleted_count} flow${response.deleted_count === 1 ? "" : "s"}.`, "success");
+        }
+        await refreshAll(false);
+        return response;
       } finally {
         state.setModalBusy(false);
       }
@@ -652,6 +761,74 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     }
   }, [api, notify, profileId, refreshAll, state]);
 
+  const handleToggleColumn = useCallback(
+    async (columnId: string, checked: boolean) => {
+      const column = board?.columns.find((item) => item.id === columnId);
+      if (!column) {
+        return;
+      }
+      const requestProfileId = profileId;
+      const requestFlowId = state.flowFilter;
+      try {
+        const selection = await listSelectableTaskIdsForBoardColumn(
+          api,
+          profileId,
+          requestFlowId,
+          columnId,
+          taskFlowConfig,
+          column,
+        );
+        if (profileIdRef.current !== requestProfileId || flowFilterRef.current !== requestFlowId) {
+          return;
+        }
+        const selectableIds = selection.task_ids;
+        if (!selectableIds.length) {
+          return;
+        }
+        if (!selection.fully_loaded) {
+          notify(
+            `Too many tasks are waiting in ${column.title}. Narrow the board first before selecting the entire column.`,
+            "danger",
+          );
+          return;
+        }
+        const nextTaskIds = new Set(selectedTaskIdsRef.current);
+        const nextFlowMap = new Map(selectedTaskFlowMapRef.current);
+        const selectedTasksById = new Map(selection.tasks.map((task) => [task.id, task]));
+        selectableIds.forEach((taskId) => {
+          if (checked) {
+            nextTaskIds.add(taskId);
+            const matchedTask = selectedTasksById.get(taskId);
+            const flowId = String(matchedTask?.flow_id || "").trim();
+            if (flowId) {
+              nextFlowMap.set(taskId, flowId);
+            }
+          } else {
+            nextTaskIds.delete(taskId);
+            nextFlowMap.delete(taskId);
+          }
+        });
+        selectedTaskFlowMapRef.current = nextFlowMap;
+        state.setSelectedTaskIds(nextTaskIds);
+      } catch (error) {
+        if (profileIdRef.current !== requestProfileId || flowFilterRef.current !== requestFlowId) {
+          return;
+        }
+        notify(resolveTaskFlowError(error), "danger");
+      }
+    },
+    [api, board, notify, profileId, state, taskFlowConfig],
+  );
+
+  const handleManualRefresh = useCallback(async () => {
+    setManualRefreshing(true);
+    try {
+      await refreshAll(false);
+    } finally {
+      setManualRefreshing(false);
+    }
+  }, [refreshAll]);
+
   const handleSubmitComment = useCallback(
     async (message: string) => {
       if (!state.selectedTaskId) {
@@ -738,8 +915,8 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         onManageFlows={state.openManageProjectsModal}
         onOpenReview={state.openReviewModal}
         onOpenSettings={state.openSettingsModal}
-        onRefresh={() => void refreshAll(false)}
-        refreshing={Boolean(boardQuery.isFetching && board)}
+        onRefresh={() => void handleManualRefresh()}
+        refreshing={manualRefreshing}
         reviewCount={reviewTasks.length}
         selectedCount={state.selectedTaskIds.size}
       />
@@ -752,7 +929,6 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
             board={board}
             boardRef={boardRef}
             loading={Boolean(boardQuery.isFetching && !board)}
-            refreshing={Boolean(boardQuery.isFetching && board)}
             onBoardMouseDown={handleBoardMouseDown}
             onDragEnd={() => {
               dragTaskIdRef.current = "";
@@ -766,6 +942,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
               closeSessionFeed();
               setSessionInsights(null);
             }}
+            onToggleColumn={handleToggleColumn}
             onToggleTask={(taskId, checked) => state.toggleTaskSelection(taskId, checked)}
             selectedTaskId={state.selectedTaskId}
             selectedTaskIds={state.selectedTaskIds}
@@ -823,6 +1000,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         onCancel={state.closeModal}
         onCancelDelete={state.clearPendingProjectDelete}
         onConfirmDelete={(flowId) => void handleDeleteProject(flowId)}
+        onConfirmDeleteSelected={handleDeleteSelectedFlows}
         onDraftChange={state.setCreateProjectDraft}
         onFilter={(flowId) => {
           handleFlowFilterChange(flowId);

@@ -1,3 +1,5 @@
+import { RabbitMascot } from "@/shared/ui/branding/RabbitMascot";
+
 const BOOT_LINES = [
   "Preparing workspace shell",
   "Syncing profiles and route state",
@@ -21,6 +23,12 @@ export function WorkspaceLoader() {
             self-hosted workspace
           </span>
           <span className="workspace-loader__status-copy">dist runtime online</span>
+        </div>
+        <div aria-hidden="true" className="workspace-loader__mascot">
+          <div className="workspace-loader__mascot-ring workspace-loader__mascot-ring--one" />
+          <div className="workspace-loader__mascot-ring workspace-loader__mascot-ring--two" />
+          <div className="workspace-loader__mascot-ring workspace-loader__mascot-ring--three" />
+          <RabbitMascot size={118} variant="default" />
         </div>
         <div className="workspace-loader__terminal">
           <div className="workspace-loader__terminal-head">

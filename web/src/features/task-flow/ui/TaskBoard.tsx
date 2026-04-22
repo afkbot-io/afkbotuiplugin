@@ -18,12 +18,12 @@ type TaskBoardProps = {
   board: TaskFlowBoard | null;
   boardRef: RefObject<HTMLDivElement | null>;
   loading: boolean;
-  refreshing: boolean;
   onBoardMouseDown: (event: MouseEvent<HTMLElement>) => void;
   onDragEnd: () => void;
   onDragStart: (taskId: string) => void;
   onDropStatus: (status: string) => void;
   onOpenTask: (taskId: string) => void;
+  onToggleColumn: (columnId: string, checked: boolean) => void | Promise<void>;
   onToggleTask: (taskId: string, checked: boolean) => void;
   selectedTaskId: string;
   selectedTaskIds: Set<string>;
@@ -33,12 +33,12 @@ export function TaskBoard({
   board,
   boardRef,
   loading,
-  refreshing,
   onBoardMouseDown,
   onDragEnd,
   onDragStart,
   onDropStatus,
   onOpenTask,
+  onToggleColumn,
   onToggleTask,
   selectedTaskId,
   selectedTaskIds,
@@ -71,42 +71,64 @@ export function TaskBoard({
           </div>
         </>
       ) : null}
-      {refreshing ? <SurfaceLoader message="Refreshing board…" variant="inline" /> : null}
       <div className="board-grid">
-        {board.columns.map((column) => (
-          <section
-            className={`task-column ${statusToneClass("task-column", column.id)}`}
-            data-column-id={column.id}
-            key={column.id}
-            onDragOver={handleDragOver}
-            onDrop={() => onDropStatus(column.id)}
-          >
-            <header className="task-column__head">
-              <h3 className="task-column__title">{column.title}</h3>
-              <span className="task-column__count">{column.count}</span>
-            </header>
-            <div className="task-column__body">
-              {(column.tasks || []).length ? (
-                column.tasks.map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    onDragEnd={onDragEnd}
-                    onDragStart={onDragStart}
-                    onOpen={onOpenTask}
-                    onToggle={onToggleTask}
-                    selectedTaskId={selectedTaskId}
-                    selectedTaskIds={selectedTaskIds}
-                    task={task}
-                  />
-                ))
-              ) : (
-                <div className="empty-state empty-state--compact">
-                  <h3>No tasks</h3>
+        {board.columns.map((column) => {
+          const selectableTaskIds = (column.tasks || [])
+            .filter((task) => !isActiveRuntimeStatus(task.status))
+            .map((task) => task.id);
+          const selectedCount = selectableTaskIds.filter((taskId) => selectedTaskIds.has(taskId)).length;
+          const allSelected = Boolean(selectableTaskIds.length) && selectedCount === selectableTaskIds.length;
+
+          return (
+            <section
+              className={`task-column ${statusToneClass("task-column", column.id)}`}
+              data-column-id={column.id}
+              key={column.id}
+              onDragOver={handleDragOver}
+              onDrop={() => onDropStatus(column.id)}
+            >
+              <header className="task-column__head">
+                <div className="task-column__heading">
+                  <h3 className="task-column__title">{column.title}</h3>
+                  <span className="task-column__count">{column.count}</span>
                 </div>
-              )}
-            </div>
-          </section>
-        ))}
+                {selectableTaskIds.length ? (
+                  <label className="checkbox-row checkbox-row--compact task-column__select-all">
+                    <input
+                      aria-label={`Select all tasks in ${column.title}`}
+                      checked={allSelected}
+                      onChange={(event) => {
+                        void onToggleColumn(column.id, event.target.checked);
+                      }}
+                      type="checkbox"
+                    />
+                    <span>{allSelected ? "Selected" : `Pick all${selectedCount ? ` (${selectedCount})` : ""}`}</span>
+                  </label>
+                ) : null}
+              </header>
+              <div className="task-column__body">
+                {(column.tasks || []).length ? (
+                  column.tasks.map((task) => (
+                    <TaskCard
+                      key={task.id}
+                      onDragEnd={onDragEnd}
+                      onDragStart={onDragStart}
+                      onOpen={onOpenTask}
+                      onToggle={onToggleTask}
+                      selectedTaskId={selectedTaskId}
+                      selectedTaskIds={selectedTaskIds}
+                      task={task}
+                    />
+                  ))
+                ) : (
+                  <div className="empty-state empty-state--compact">
+                    <h3>No tasks</h3>
+                  </div>
+                )}
+              </div>
+            </section>
+          );
+        })}
       </div>
     </div>
   );

@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { apiMethods, authSessionState, routeRenderSpies, scheduleWindowRedirect } = vi.hoisted(() => {
+const { apiMethods, authSessionState, routeReadySignals, routeRenderSpies, scheduleWindowRedirect } = vi.hoisted(() => {
   const authSessionState = {
     auth: {
       configured: true,
@@ -49,6 +49,10 @@ const { apiMethods, authSessionState, routeRenderSpies, scheduleWindowRedirect }
   return {
     apiMethods,
     authSessionState,
+    routeReadySignals: {
+      automations: null as null | { promise: Promise<void>; resolve: () => void },
+      skills: null as null | { promise: Promise<void>; resolve: () => void },
+    },
     routeRenderSpies: {
       automations: vi.fn(),
       skills: vi.fn(),
@@ -84,12 +88,33 @@ vi.mock("@/app/routes", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
 
   function createRouteComponent(
+    routeId: "automations" | "skills",
     label: string,
     renderSpy: typeof routeRenderSpies.automations,
   ) {
-    return React.forwardRef<{ refresh: () => Promise<void> }, { active: boolean; profileId: string }>(
-      function MockRoute({ active, profileId }, _ref) {
+    return React.forwardRef<{ refresh: () => Promise<void> }, { active: boolean; onReadyChange?: (ready: boolean) => void; profileId: string }>(
+      function MockRoute({ active, onReadyChange, profileId }, _ref) {
         renderSpy({ active, profileId });
+        const wasActiveRef = React.useRef(false);
+        React.useEffect(() => {
+          if (!active) {
+            wasActiveRef.current = false;
+            return;
+          }
+          if (wasActiveRef.current) {
+            return;
+          }
+          wasActiveRef.current = true;
+          onReadyChange?.(false);
+          const readySignal = routeReadySignals[routeId];
+          if (readySignal) {
+            void readySignal.promise.then(() => {
+              onReadyChange?.(true);
+            });
+            return;
+          }
+          onReadyChange?.(true);
+        }, [active, onReadyChange]);
         return React.createElement("div", null, `${label} ${profileId}`);
       },
     );
@@ -98,12 +123,12 @@ vi.mock("@/app/routes", async () => {
   return {
     routeConfigs: [
       {
-        component: createRouteComponent("Automations route", routeRenderSpies.automations),
+        component: createRouteComponent("automations", "Automations route", routeRenderSpies.automations),
         id: "automations",
         label: "Automations",
       },
       {
-        component: createRouteComponent("Skills route", routeRenderSpies.skills),
+        component: createRouteComponent("skills", "Skills route", routeRenderSpies.skills),
         id: "skills",
         label: "Skills",
       },
@@ -170,6 +195,8 @@ describe("App", () => {
     apiMethods.logout.mockReset();
     apiMethods.logout.mockImplementation(async () => ({ ok: true }));
     scheduleWindowRedirect.mockReset();
+    routeReadySignals.automations = null;
+    routeReadySignals.skills = null;
     authSessionState.authenticated = true;
     authSessionState.session = createAuthenticatedSession().session;
   });
@@ -214,6 +241,59 @@ describe("App", () => {
       ).toBe(true);
     });
     expect(window.location.search).toContain("tab=automations");
+  });
+
+  it("shows the route transition loader immediately when opening another section", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <AppProviders>
+        <App />
+      </AppProviders>,
+    );
+
+    await screen.findByText("Signed in as tester", { selector: "#workspace-auth-status" });
+    await user.click(screen.getByRole("link", { name: "Automations" }));
+
+    expect(await screen.findByText("Opening Automations. Holding the current workspace shell while the next section settles.")).toBeInTheDocument();
+  });
+
+  it("keeps the route transition loader visible for the minimum route timing window", async () => {
+    const user = userEvent.setup();
+    let resolveReady!: () => void;
+    routeReadySignals.automations = {
+      promise: new Promise<void>((resolve) => {
+        resolveReady = resolve;
+      }),
+      resolve: () => resolveReady(),
+    };
+
+    const { container } = render(
+      <AppProviders>
+        <App />
+      </AppProviders>,
+    );
+
+    await screen.findByText("Signed in as tester", { selector: "#workspace-auth-status" });
+    await user.click(screen.getByRole("link", { name: "Automations" }));
+
+    await waitFor(() => {
+      expect(container.querySelector(".route-transition--visible")).not.toBeNull();
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 720));
+    });
+    expect(container.querySelector(".route-transition--visible")).not.toBeNull();
+
+    await act(async () => {
+      routeReadySignals.automations?.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector(".route-transition--visible")).toBeNull();
+    }, { timeout: 2_000 });
   });
 
   it("shows a danger flash on logout failure and still enters redirect state", async () => {
@@ -280,32 +360,47 @@ describe("App", () => {
     apiMethods.getConfig.mockImplementationOnce(() => configRequest.promise);
     apiMethods.listProfiles.mockImplementationOnce(() => profilesRequest.promise);
 
-    render(
+    const { container } = render(
       <AppProviders>
         <App />
       </AppProviders>,
     );
+    const bootPanel = container.querySelector("#workspace-boot");
 
-    expect(await screen.findByText("Preparing workspace shell")).toBeInTheDocument();
+    expect(screen.getByText("Preparing workspace shell")).toBeInTheDocument();
     expect(screen.queryByText("Skills route blue")).not.toBeInTheDocument();
+    expect(container.querySelector(".workspace-loader__mascot")).not.toBeNull();
+    expect(bootPanel).not.toHaveAttribute("hidden");
 
-    configRequest.resolve({
-      config: {
-        default_profile_id: "default",
-        poll_interval_sec: 5,
-        task_flow_actor_ref: "web-user",
-        task_flow_actor_type: "human",
-        task_flow_board_limit_per_column: 20,
-        task_flow_poll_interval_sec: 5,
-      },
+    await act(async () => {
+      configRequest.resolve({
+        config: {
+          default_profile_id: "default",
+          poll_interval_sec: 5,
+          task_flow_actor_ref: "web-user",
+          task_flow_actor_type: "human",
+          task_flow_board_limit_per_column: 20,
+          task_flow_poll_interval_sec: 5,
+        },
+      });
+      profilesRequest.resolve({
+        profiles: [
+          { id: "default", title: "Default" },
+          { id: "blue", title: "Blue" },
+        ],
+      });
+      await Promise.resolve();
     });
-    profilesRequest.resolve({
-      profiles: [
-        { id: "default", title: "Default" },
-        { id: "blue", title: "Blue" },
-      ],
-    });
+    expect(screen.getByText("Preparing workspace shell")).toBeInTheDocument();
 
-    await screen.findByText("Skills route blue");
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 150));
+    });
+    expect(bootPanel).not.toHaveAttribute("hidden");
+
+    await waitFor(() => {
+      expect(bootPanel).toHaveAttribute("hidden");
+    }, { timeout: 2_000 });
+    expect(await screen.findByText("Skills route blue")).toBeInTheDocument();
   });
 });

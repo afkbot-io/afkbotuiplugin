@@ -274,6 +274,80 @@ export async function deleteTaskProject(api: unknown, profileId: string, flowId:
   await coerceTaskFlowApi(api).deleteTaskFlow(profileId, flowId);
 }
 
+const MAX_TASK_FLOW_COLUMN_FETCH = 200;
+
+export async function listSelectableTaskIdsForBoardColumn(
+  api: unknown,
+  profileId: string,
+  flowId: string,
+  columnId: string,
+  config: TaskFlowConfig,
+  loadedColumn: TaskFlowBoard["columns"][number],
+) {
+  const loadedTasks = Array.isArray(loadedColumn.tasks) ? loadedColumn.tasks : [];
+  const needsExpandedFetch = Number(loadedColumn.count ?? loadedTasks.length) > loadedTasks.length;
+
+  let resolvedColumn = loadedColumn;
+
+  if (needsExpandedFetch) {
+    const requestedLimit = Math.min(
+      MAX_TASK_FLOW_COLUMN_FETCH,
+      Math.max(Number(loadedColumn.count ?? 0), loadedTasks.length, config.task_flow_board_limit_per_column),
+    );
+    const payload = await coerceTaskFlowApi(api).getTaskBoard(profileId, {
+      flow_id: flowId || undefined,
+      limit_per_column: requestedLimit,
+    });
+    const expandedBoard = normalizeTaskFlowBoard(payload.board);
+    resolvedColumn = expandedBoard.columns.find((column) => column.id === columnId) || loadedColumn;
+  }
+
+  const taskIds = (resolvedColumn.tasks || [])
+    .filter((task) => !["claimed", "running"].includes(String(task.status || "").trim()))
+    .map((task) => ({ ...task }));
+
+  return {
+    fully_loaded: Number(resolvedColumn.count ?? taskIds.length) <= (resolvedColumn.tasks || []).length,
+    task_ids: taskIds.map((task) => task.id),
+    tasks: taskIds,
+  };
+}
+
+export async function bulkDeleteTaskProjects(api: unknown, profileId: string, flowIds: string[]) {
+  const uniqueFlowIds = [...new Set(flowIds.map((flowId) => String(flowId || "").trim()).filter(Boolean))];
+  const results = await Promise.all(
+    uniqueFlowIds.map(async (flowId) => {
+      try {
+        await deleteTaskProject(api, profileId, flowId);
+        return {
+          flowId,
+          ok: true,
+          reason: "",
+        };
+      } catch (error) {
+        return {
+          flowId,
+          ok: false,
+          reason: resolveTaskFlowError(error),
+        };
+      }
+    }),
+  );
+
+  const deletedFlowIds = results.filter((result) => result.ok).map((result) => result.flowId);
+  const errors = results.filter((result) => !result.ok);
+
+  return {
+    deleted_count: deletedFlowIds.length,
+    deleted_flow_ids: deletedFlowIds,
+    error_count: errors.length,
+    errors: errors.map((result) => ({
+      flow_id: result.flowId,
+      reason: result.reason,
+    })),
+  };
+}
+
 export async function bulkMoveTaskItems(
   api: unknown,
   profileId: string,

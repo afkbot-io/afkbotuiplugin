@@ -5,6 +5,7 @@ import { AppShell } from "@/app/AppShell";
 import { routeConfigs } from "@/app/routes";
 import { ApiClient } from "@/shared/api/client";
 import { useRouteState } from "@/shared/hooks/use-route-state";
+import { useMinimumLoadingState } from "@/shared/hooks/use-minimum-loading-state";
 import { buildLoginUrl, readCurrentUiUrl, scheduleWindowRedirect } from "@/shared/lib/url-state";
 import { SurfaceLoader } from "@/shared/ui/SurfaceLoader";
 import {
@@ -27,6 +28,11 @@ export function App() {
   const [globalError, setGlobalError] = useState("");
   const [configState, setConfigState] = useState(defaultConfig);
   const [mountedRoutes, setMountedRoutes] = useState(() => new Set([routeState.route]));
+  const [transitioningRouteId, setTransitioningRouteId] = useState("");
+  const [routeTransitionTarget, setRouteTransitionTarget] = useState(routeState.route);
+  const [routeReadyState, setRouteReadyState] = useState<Record<string, boolean>>(() => ({
+    [routeState.route]: true,
+  }));
   const [selectedProfileId, setSelectedProfileId] = useState(routeState.profileId);
   const [flash, setFlash] = useState<FlashState | null>(null);
   const flashTimerRef = useRef<number | null>(null);
@@ -134,6 +140,15 @@ export function App() {
     });
   }, [routeState.route]);
 
+  useEffect(() => {
+    if (!transitioningRouteId) {
+      return;
+    }
+    if (routeState.route === transitioningRouteId && routeReadyState[transitioningRouteId]) {
+      setTransitioningRouteId("");
+    }
+  }, [routeReadyState, routeState.route, transitioningRouteId]);
+
   const updateConfigMutation = useMutation({
     mutationFn: async (patch: Record<string, unknown>) => {
       const response = await api.updateConfig(patch);
@@ -156,6 +171,11 @@ export function App() {
   const booting =
     !authRedirecting &&
     (authQuery.isLoading || (authQuery.isSuccess && !authEndpointMissing && (configQuery.isLoading || profilesQuery.isLoading)));
+  const bootLoaderVisible = useMinimumLoadingState(booting, 1_020);
+  const routeTransitionBusy = Boolean(
+    transitioningRouteId && (routeState.route !== transitioningRouteId || !routeReadyState[transitioningRouteId]),
+  );
+  const routeTransitionVisible = useMinimumLoadingState(routeTransitionBusy, 680);
 
   useEffect(() => {
     if (authQuery.error || configQuery.error || profilesQuery.error) {
@@ -204,6 +224,21 @@ export function App() {
       if (await requireInteractiveAuth()) {
         return;
       }
+      if (nextRoute === routeState.route) {
+        return;
+      }
+      setMountedRoutes((current) => {
+        if (current.has(nextRoute)) {
+          return current;
+        }
+        return new Set([...current, nextRoute]);
+      });
+      setRouteReadyState((current) => ({
+        ...current,
+        [nextRoute]: false,
+      }));
+      setRouteTransitionTarget(nextRoute);
+      setTransitioningRouteId(nextRoute);
       startTransition(() => {
         routeState.setRoute(nextRoute);
       });
@@ -248,12 +283,23 @@ export function App() {
             key={route.id}
           >
             {mountedRoutes.has(route.id) ? (
-              <Suspense fallback={<SurfaceLoader message="Loading route…" variant="inline" />}>
+              <Suspense fallback={<SurfaceLoader center message="Loading the selected workspace section…" title="Switching section" />}>
                 <route.component
                   active={active}
                   api={api}
                   config={configState}
                   notify={showToast}
+                  onReadyChange={(ready) => {
+                    setRouteReadyState((current) => {
+                      if (current[route.id] === ready) {
+                        return current;
+                      }
+                      return {
+                        ...current,
+                        [route.id]: ready,
+                      };
+                    });
+                  }}
                   profileId={selectedProfileId}
                   profiles={profiles}
                   updateConfig={async (patch) => updateConfigMutation.mutateAsync(patch)}
@@ -269,7 +315,7 @@ export function App() {
     <AppShell
       authConfigured={authState.configured}
       authLabel={authLabel}
-      booting={booting}
+      booting={bootLoaderVisible}
       flash={flash}
       globalError={globalError}
       onLogout={handleLogout}
@@ -278,6 +324,8 @@ export function App() {
       profileDisabled={!profiles.length || !appReady || authRedirecting}
       profiles={profiles}
       route={routeState.route}
+      routeTransitioning={!bootLoaderVisible && routeTransitionVisible && appReady}
+      routeTransitionLabel={routeConfigs.find((item) => item.id === routeTransitionTarget)?.label || "workspace section"}
       routeViews={routeViews}
       selectedProfileId={selectedProfileId}
     />

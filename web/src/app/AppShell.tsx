@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent, type React
 
 import { routeConfigs } from "@/app/routes";
 import { WorkspaceLoader } from "@/app/WorkspaceLoader";
+import { PointerCursor } from "@/shared/ui/branding/PointerCursor";
+import { SurfaceLoader } from "@/shared/ui/SurfaceLoader";
 
 type Profile = {
   id?: string | null;
@@ -25,6 +27,8 @@ type AppShellProps = {
   profileDisabled: boolean;
   profiles: Profile[];
   route: (typeof routeConfigs)[number]["id"];
+  routeTransitioning: boolean;
+  routeTransitionLabel: string;
   routeViews: ReactNode;
   selectedProfileId: string;
 };
@@ -41,6 +45,8 @@ export function AppShell({
   profileDisabled,
   profiles,
   route,
+  routeTransitioning,
+  routeTransitionLabel,
   routeViews,
   selectedProfileId,
 }: AppShellProps) {
@@ -121,6 +127,7 @@ export function AppShell({
 
   return (
     <div className="unified-shell" onPointerLeave={handlePointerLeave} onPointerMove={handlePointerMove} ref={shellRef}>
+      <PointerCursor />
       <div aria-hidden="true" className="workspace-ambient">
         <span className="workspace-ambient__glow workspace-ambient__glow--pointer" />
         <span className="workspace-ambient__glow workspace-ambient__glow--orange" />
@@ -262,6 +269,17 @@ export function AppShell({
         <section className="boot-panel glass-panel" hidden={!booting} id="workspace-boot">
           <WorkspaceLoader />
         </section>
+        <div
+          aria-hidden={!routeTransitioning}
+          className={`route-transition${routeTransitioning ? " route-transition--visible" : ""}`}
+        >
+          <div className="route-transition__surface">
+            <SurfaceLoader
+              message={`Opening ${routeTransitionLabel}. Holding the current workspace shell while the next section settles.`}
+              title="Switching section"
+            />
+          </div>
+        </div>
         {routeViews}
       </main>
 

@@ -12,6 +12,7 @@ export type AppRouteProps = {
   api: unknown;
   config: Record<string, unknown>;
   notify: (message: string, kind?: string) => void;
+  onReadyChange?: (ready: boolean) => void;
   profileId: string;
   profiles: Array<{ id?: string | null; title?: string | null }>;
   updateConfig: (patch: Record<string, unknown>) => Promise<Record<string, unknown>>;

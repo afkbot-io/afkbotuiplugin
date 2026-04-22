@@ -29,6 +29,7 @@ export const AutomationsPage = forwardRef<RouteHandle, AppRouteProps>(function A
     api,
     config,
     notify,
+    onReadyChange,
     profileId,
   },
   ref,
@@ -184,6 +185,13 @@ export const AutomationsPage = forwardRef<RouteHandle, AppRouteProps>(function A
   const saving =
     mutations.updateMutation.isPending || mutations.deleteMutation.isPending || mutations.rotateWebhookMutation.isPending;
 
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    onReadyChange?.(!listQuery.isLoading);
+  }, [active, listQuery.isLoading, onReadyChange]);
+
   const handleCopy = useCallback(
     async (value: string) => {
       try {
@@ -334,7 +342,6 @@ export const AutomationsPage = forwardRef<RouteHandle, AppRouteProps>(function A
             items={items}
             loading={Boolean(listQuery.isFetching && !items.length)}
             onOpen={handleOpenPanel}
-            refreshing={Boolean(listQuery.isFetching && items.length)}
             selectedId={state.panel.itemId}
           />
         </div>
