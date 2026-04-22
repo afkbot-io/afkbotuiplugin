@@ -2,6 +2,24 @@
 
 All notable changes to this plugin are tracked here.
 
+## 0.5.1 - 2026-04-22
+
+- match `afkbotweb` more closely by bundling the same local font assets and removing runtime Google Fonts dependency from the React workspace
+- replace the squeezed mobile topbar rail with a compact profile switcher plus burger-sheet navigation, and drop the redundant global refresh action from the shell
+- simplify `Automations` header actions, stack the mobile filter form correctly, and fix the narrow-screen checkbox/select/button layout regressions reported in browser review
+- tighten nav control geometry and inspector spacing so the workspace shell, selects, buttons, and automation title rhythm sit closer to the new AFKBOT visual contract
+- remove obsolete pre-React `web/dist/assets/core/*` and legacy feature bundle outputs from the shipped plugin payload, plus clear stale local coverage and Playwright artifacts from the repo tree
+- expand browser coverage with explicit mobile navigation and automation-filter layout assertions
+- sync release metadata to version `0.5.1`
+
+## 0.5.0 - 2026-04-21
+
+- extract shared React primitives for modal shells, pending buttons, and loading surfaces so async UX stays consistent across the workspace
+- split Task Flow model helpers into form/service modules and extract shared task form fields from create/edit flows
+- add pending-state coverage for automation create, task save/comment, text-library create, and boot loader startup sequencing
+- strengthen release checks with source mount validation and repo artifact ignore enforcement
+- sync release metadata to version `0.5.0`
+
 ## 0.4.3 - 2026-04-21
 
 - replace separate Task Flow flow creation and deletion entry points with a single project manager modal that supports inline add, search, filter, and delete flows
@@ -9,6 +27,9 @@ All notable changes to this plugin are tracked here.
 - harden Task Flow validation for project creation, task creation, task editing, and settings saves so invalid numbers, dates, and API failures return explicit UI feedback
 - reset stale project filters safely when the active profile or remote flow list changes, preventing false empty-board states after refresh or deletion
 - preserve scroll state for the project manager list alongside the board, modal, and inspector during reactive refreshes
+- tighten dialog semantics and keyboard focus handling across text-library create/delete modals, and improve inline error accessibility
+- compact the mobile workspace shell, add safe-area-aware overlays/toasts, and make inspector/modal layouts behave better on narrow devices
+- expand verification with mobile/browser Playwright coverage, mutation smoke flows, and an explicit release-contract integrity check for `web/dist`
 - sync release metadata to version `0.4.3`
 
 ## 0.4.2 - 2026-04-21

@@ -1,5 +1,9 @@
-__pycache__/
-*.py[cod]
-.DS_Store
+node_modules/
+web/coverage/
+.coverage
+.pytest_cache/
 .playwright-cli/
 output/
+playwright-report/
+test-results/
+**/__pycache__/

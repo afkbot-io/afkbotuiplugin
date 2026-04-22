@@ -2,12 +2,18 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, subagents, skills, and bootstrap files.
 
-Current release: `0.4.3`
+Current release: `0.5.1`
 
-## What is in 0.4.3
+## What is in 0.5.1
 
 - single shell workspace at `/plugins/afkbotui`
 - profile-aware sections for `Automations`, `Task Flow`, `Subagents`, `Skills`, and `Bootstrap`
+- self-hosted `Inter`, `Unbounded`, and `JetBrains Mono` font assets aligned with `afkbotweb`, so install and release builds do not depend on Google Fonts
+- compact mobile top bar with burger-sheet navigation instead of squeezed inline tabs on phone widths
+- cleaner `Automations` header with one primary action, stacked mobile filters, and fixed checkbox/select/button layout on narrow screens
+- tighter nav/profile control geometry to better match the `afkbotweb` radius, button, and select contract
+- calmer automation inspector heading rhythm and spacing below the title/status badges
+- removed obsolete pre-React `web/dist/assets/core/*` and legacy feature bundles from the shipped plugin payload
 - core-level operator auth integration through AFKBOT `afk auth ...`, with login redirect, session badge, and logout support
 - safer automation inspector behavior: webhook URLs are no longer cached in browser storage after issuance
 - graph-aware automation inspector with runtime path, lazy graph preview, recent runs, and latest trace summary
@@ -15,12 +21,18 @@ Current release: `0.4.3`
 - task inspector session feed with recent chat turns and live activity events for the current agent session
 - unified modal-driven CRUD flows across the workspace
 - kanban-style Task Flow with inspector, comments, review actions, quick selection, delete actions, and mobile behavior
+- compact mobile shell layout with safe-area-aware overlays, modals, and toast positioning
 - project-centric Task Flow flow manager with modal search, inline add/delete actions, and richer project metadata
 - stronger Task Flow validation for create/edit/settings flows, plus safer filter reset behavior when profiles or projects change
 - profile-local text libraries for subagents, skills, and bootstrap files
+- release-contract checks that verify manifest version sync and the integrity of the shipped `web/dist` asset graph
 - webhook automation inspector with diagnostics, copy actions, error emphasis, and URL rotation from the UI
 - inspector refresh that preserves scroll position while board and session data continue updating in the background
 - UI polish pass for card previews, owner visibility, tighter bulk actions, card-based automation layout, and cleaner spacing below the workspace header
+- shared React modal, loader, and pending-button primitives with consistent in-flight locking across Automations, Task Flow, and profile libraries
+- split Task Flow model helpers into focused form/service modules and extract shared task form fields to cut duplication between create and inspector flows
+- stronger release-contract checks for source mount drift and repo artifact ignores, plus direct Vitest coverage for those checks
+- more explicit pending/loading tests for boot, modal submit flows, inspector saves, comment submission, responsive shell layout, and mobile navigation/filter behavior
 
 ## Highlights
 
@@ -62,7 +74,9 @@ Install locally into AFKBOT:
 afk plugin install ../afkbotui
 ```
 
-AFKBOT UI `0.4.3` requires AFKBOT `1.4.2` or newer because the automation inspector now depends on the core operator-side webhook reveal API for durable webhook URL display.
+AFKBOT UI `0.5.1` requires AFKBOT `1.4.2` or newer and targets the current AFKBOT `1.x` chat/auth runtime surface, including `/v1/auth/session` and the operator-side webhook reveal API used by the React workspace shell.
+
+This plugin is shipped as an AFKBOT source bundle with a prebuilt `web/dist`; operators do not need Node.js or live font CDNs during install. Release preparation and `dist` integrity checks are documented in [docs/release.md](docs/release.md).
 
 Optional plugin config:
 

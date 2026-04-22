@@ -1786,7 +1786,7 @@ def _plugin_http_error(exc: PluginServiceError) -> HTTPException:
 
 
 def _normalize_config_payload(payload: object) -> dict[str, object]:
-    """Normalize legacy config keys into the runtime UI config shape."""
+    """Normalize config payload into the runtime UI config shape."""
 
     if not isinstance(payload, dict):
         return {}
@@ -1796,7 +1796,7 @@ def _normalize_config_payload(payload: object) -> dict[str, object]:
         "default_profile_id": payload.get("default_profile_id", "default"),
         "task_flow_poll_interval_sec": payload.get(
             "task_flow_poll_interval_sec",
-            payload.get("poll_interval_sec", 5),
+            5,
         ),
         "task_flow_board_limit_per_column": payload.get(
             "task_flow_board_limit_per_column",

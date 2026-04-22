@@ -1,0 +1,46 @@
+{
+  "name": "afkbotui",
+  "version": "0.5.1",
+  "description": "Unified AFKBOT workspace plugin for automations, Task Flow, subagents, skills, and bootstrap files.",
+  "private": true,
+  "type": "module",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "release:check": "node scripts/check-release-contract.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "npm run build && playwright test",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@tanstack/react-query": "^5.99.2",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react-swc": "^3.7.0",
+    "@vitest/coverage-v8": "^1.6.1",
+    "jsdom": "^24.1.3",
+    "less": "^4.6.4",
+    "typescript": "^6.0.3",
+    "vite": "^5.4.19",
+    "vitest": "^1.6.1"
+  }
+}
