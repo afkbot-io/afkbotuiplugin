@@ -6,6 +6,7 @@ import { useAutomationGraphPreview } from "@/features/automations/hooks/use-auto
 import { useAutomationMutations } from "@/features/automations/hooks/use-automation-mutations";
 import { useAutomationPageState } from "@/features/automations/hooks/use-automation-page-state";
 import { useAutomationPolling } from "@/features/automations/hooks/use-automation-polling";
+import { useAutomationWebhookEndpoint } from "@/features/automations/hooks/use-automation-webhook-endpoint";
 import { useAutomationsList } from "@/features/automations/hooks/use-automations-list";
 import {
   browserTimeZone,
@@ -63,7 +64,27 @@ export const AutomationsPage = forwardRef<RouteHandle, AppRouteProps>(function A
     enabled: state.panel.open && state.panel.mode !== "edit",
     profileId,
   });
-  const automation = detailQuery.data || selectedListItem;
+  const baseAutomation = detailQuery.data || selectedListItem;
+  const webhookAutomationId = baseAutomation?.trigger_type === "webhook" ? baseAutomation.id : null;
+  const webhookEndpointQuery = useAutomationWebhookEndpoint({
+    active,
+    api,
+    automationId: webhookAutomationId,
+    enabled: state.panel.open && state.panel.mode !== "edit",
+    profileId,
+  });
+  const automation = useMemo(() => {
+    if (!baseAutomation || baseAutomation.trigger_type !== "webhook" || !webhookEndpointQuery.data) {
+      return baseAutomation;
+    }
+    return {
+      ...baseAutomation,
+      webhook: {
+        ...(baseAutomation.webhook || {}),
+        ...webhookEndpointQuery.data,
+      },
+    };
+  }, [baseAutomation, webhookEndpointQuery.data]);
   const graphQuery = useAutomationGraphPreview({
     active,
     api,
@@ -85,11 +106,25 @@ export const AutomationsPage = forwardRef<RouteHandle, AppRouteProps>(function A
     await listQuery.refetch();
     if (state.panel.open && state.panel.itemId && state.panel.mode !== "edit") {
       await detailQuery.refetch();
+      if (webhookAutomationId !== null) {
+        await webhookEndpointQuery.refetch();
+      }
       if (state.panel.graphOpen && automation?.execution_mode === "graph") {
         await graphQuery.refetch();
       }
     }
-  }, [automation?.execution_mode, detailQuery, graphQuery, listQuery, state.panel.graphOpen, state.panel.itemId, state.panel.mode, state.panel.open]);
+  }, [
+    automation?.execution_mode,
+    detailQuery,
+    graphQuery,
+    listQuery,
+    state.panel.graphOpen,
+    state.panel.itemId,
+    state.panel.mode,
+    state.panel.open,
+    webhookAutomationId,
+    webhookEndpointQuery,
+  ]);
 
   useEffect(() => {
     if (!previousActiveRef.current && active) {
@@ -145,6 +180,7 @@ export const AutomationsPage = forwardRef<RouteHandle, AppRouteProps>(function A
   const pageError = listQuery.error && !listQuery.isFetching ? normalizeError(listQuery.error) : "";
   const inspectorError = state.panel.error || (detailQuery.error ? normalizeError(detailQuery.error) : "");
   const graphError = graphQuery.error ? normalizeError(graphQuery.error) : "";
+  const webhookEndpointError = webhookEndpointQuery.error ? normalizeError(webhookEndpointQuery.error) : "";
   const saving =
     mutations.updateMutation.isPending || mutations.deleteMutation.isPending || mutations.rotateWebhookMutation.isPending;
 
@@ -267,6 +303,7 @@ export const AutomationsPage = forwardRef<RouteHandle, AppRouteProps>(function A
         return;
       }
       state.syncPanelAutomation(nextAutomation);
+      await webhookEndpointQuery.refetch();
       notify("Webhook URL rotated. Copy the refreshed endpoint now.", "success");
     } catch (error) {
       if (requestProfileId !== profileIdRef.current) {
@@ -325,6 +362,8 @@ export const AutomationsPage = forwardRef<RouteHandle, AppRouteProps>(function A
             onStopEdit={state.stopEdit}
             rotatingToken={mutations.rotateWebhookMutation.isPending}
             saving={saving}
+            webhookEndpointError={webhookEndpointError}
+            webhookEndpointLoading={Boolean(webhookEndpointQuery.isFetching && webhookAutomationId !== null)}
           />
         </aside>
       </div>

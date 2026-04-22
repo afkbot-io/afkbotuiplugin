@@ -35,6 +35,7 @@ let automations = [
     updated_at: "2026-04-21T09:45:00.000Z",
   },
 ];
+const automationWebhookEndpoints = new Map();
 
 let taskFlows = [
   {
@@ -305,7 +306,7 @@ function matchApiRoute(pathname, requestUrl = "/") {
 
   if (pathname === "/v1/plugins/afkbotui/automations") {
     return {
-      automations,
+      automations: automations.map(maskAutomationWebhook),
       filtered_count: automations.length,
       summary: {
         active: 1,
@@ -320,7 +321,8 @@ function matchApiRoute(pathname, requestUrl = "/") {
   }
 
   if (pathname === "/v1/plugins/afkbotui/automations/11") {
-    return { automation: automations.find((item) => item.id === 11) || null };
+    const automation = automations.find((item) => item.id === 11) || null;
+    return { automation: automation ? maskAutomationWebhook(automation) : null };
   }
 
   if (/^\/v1\/plugins\/afkbotui\/automations\/\d+$/u.test(pathname)) {
@@ -329,7 +331,23 @@ function matchApiRoute(pathname, requestUrl = "/") {
     if (!automation) {
       return null;
     }
-    return { automation };
+    return { automation: maskAutomationWebhook(automation) };
+  }
+
+  if (/^\/v1\/plugins\/afkbotui\/automations\/\d+\/webhook-endpoint$/u.test(pathname)) {
+    const automationId = Number(pathname.split("/").at(-2));
+    const automation = automations.find((item) => item.id === automationId);
+    if (!automation || automation.trigger_type !== "webhook") {
+      return null;
+    }
+    return {
+      webhook: automationWebhookEndpoints.get(automationId) || {
+        recoverable: false,
+        webhook_path: null,
+        webhook_token_masked: automation.webhook?.webhook_token_masked || null,
+        webhook_url: null,
+      },
+    };
   }
 
   if (pathname === "/v1/plugins/afkbotui/task-flow/flows") {
@@ -481,6 +499,20 @@ async function serveStatic(pathname, response) {
   await sendFile(response, path.resolve(distRoot, "index.html"));
 }
 
+function maskAutomationWebhook(automation) {
+  if (automation.trigger_type !== "webhook" || !automation.webhook) {
+    return automation;
+  }
+  return {
+    ...automation,
+    webhook: {
+      ...automation.webhook,
+      webhook_path: null,
+      webhook_url: null,
+    },
+  };
+}
+
 async function handleMutation(request, response, pathname) {
   const method = (request.method || "GET").toUpperCase();
 
@@ -505,12 +537,15 @@ async function handleMutation(request, response, pathname) {
           },
       webhook: payload?.trigger_type === "webhook"
         ? {
-            webhook_url: "https://example.test/hooks/mock",
+            webhook_endpoint_recoverable: true,
             last_execution_status: "idle",
             last_error: "",
             last_received_at: null,
             last_session_id: null,
             chat_resume_command: null,
+            webhook_path: null,
+            webhook_token_masked: "mock...hook",
+            webhook_url: null,
           }
         : null,
       derived: {
@@ -520,14 +555,30 @@ async function handleMutation(request, response, pathname) {
       },
       updated_at: "2026-04-21T12:00:00.000Z",
     };
+    if (nextAutomation.trigger_type === "webhook") {
+      automationWebhookEndpoints.set(nextAutomation.id, {
+        recoverable: true,
+        webhook_path: "/hooks/mock",
+        webhook_token_masked: "mock...hook",
+        webhook_url: "https://example.test/hooks/mock",
+      });
+    }
     automations = [nextAutomation, ...automations];
-    sendJson(response, 200, { automation: nextAutomation });
+    sendJson(response, 200, { automation: maskAutomationWebhook(nextAutomation) });
     return true;
   }
 
   if (/^\/v1\/plugins\/afkbotui\/automations\/\d+$/u.test(pathname) && method === "PATCH") {
     const payload = await readJsonBody(request);
     const automationId = Number(pathname.split("/").at(-1));
+    if (payload?.rotate_webhook_token) {
+      automationWebhookEndpoints.set(automationId, {
+        recoverable: true,
+        webhook_path: "/hooks/rotated",
+        webhook_token_masked: "hook...ated",
+        webhook_url: "https://example.test/hooks/rotated",
+      });
+    }
     automations = automations.map((item) =>
       item.id === automationId
         ? {
@@ -542,18 +593,30 @@ async function handleMutation(request, response, pathname) {
                   timezone: payload?.timezone_name ? String(payload.timezone_name) : item.cron.timezone,
                 }
               : item.cron,
+            webhook: item.webhook
+              ? {
+                  ...item.webhook,
+                  webhook_endpoint_recoverable: true,
+                  webhook_path: null,
+                  webhook_token_masked: payload?.rotate_webhook_token
+                    ? "hook...ated"
+                    : item.webhook.webhook_token_masked,
+                  webhook_url: null,
+                }
+              : item.webhook,
             updated_at: "2026-04-21T12:05:00.000Z",
           }
         : item,
     );
     const automation = automations.find((item) => item.id === automationId);
-    sendJson(response, 200, { automation });
+    sendJson(response, 200, { automation: automation ? maskAutomationWebhook(automation) : null });
     return true;
   }
 
   if (/^\/v1\/plugins\/afkbotui\/automations\/\d+$/u.test(pathname) && method === "DELETE") {
     const automationId = Number(pathname.split("/").at(-1));
     automations = automations.filter((item) => item.id !== automationId);
+    automationWebhookEndpoints.delete(automationId);
     sendJson(response, 200, { ok: true });
     return true;
   }

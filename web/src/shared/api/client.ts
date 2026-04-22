@@ -177,6 +177,12 @@ export class ApiClient {
     });
   }
 
+  async getAutomationWebhookEndpoint(automationId: number, profileId: string) {
+    return this.request<Record<string, unknown>>(`/automations/${automationId}/webhook-endpoint`, {
+      params: { profile_id: profileId },
+    });
+  }
+
   async getAutomationGraphPreview(automationId: number, profileId: string, limit = 6) {
     return this.request<Record<string, unknown>>(`/automations/${automationId}/graph-preview`, {
       params: { limit, profile_id: profileId },

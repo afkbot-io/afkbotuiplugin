@@ -28,6 +28,9 @@ export function useAutomationMutations({
         queryKey: automationsKeys.detailRoot(profileId),
       }),
       queryClient.invalidateQueries({
+        queryKey: automationsKeys.endpointRoot(profileId),
+      }),
+      queryClient.invalidateQueries({
         queryKey: automationsKeys.graphRoot(profileId),
       }),
     ]);
@@ -53,6 +56,9 @@ export function useAutomationMutations({
       queryClient.removeQueries({
         queryKey: automationsKeys.graph(profileId, automationId),
       });
+      queryClient.removeQueries({
+        queryKey: automationsKeys.endpoint(profileId, automationId),
+      });
       if (automation?.id) {
         queryClient.setQueryData(automationsKeys.detail(profileId, automation.id), automation);
       }
@@ -65,6 +71,9 @@ export function useAutomationMutations({
     onSuccess: async (automation, automationId) => {
       queryClient.removeQueries({
         queryKey: automationsKeys.detail(profileId, automationId),
+      });
+      queryClient.removeQueries({
+        queryKey: automationsKeys.endpoint(profileId, automationId),
       });
       if (automation?.id) {
         queryClient.setQueryData(automationsKeys.detail(profileId, automation.id), automation);
@@ -84,6 +93,9 @@ export function useAutomationMutations({
       });
       queryClient.removeQueries({
         queryKey: automationsKeys.graph(profileId, automationId),
+      });
+      queryClient.removeQueries({
+        queryKey: automationsKeys.endpoint(profileId, automationId),
       });
       await invalidateFamily();
     },

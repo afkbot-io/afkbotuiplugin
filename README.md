@@ -104,6 +104,7 @@ afk start
 - `GET /v1/plugins/afkbotui/profiles`
 - `GET /v1/plugins/afkbotui/automations`
 - `GET /v1/plugins/afkbotui/automations/{id}`
+- `GET /v1/plugins/afkbotui/automations/{id}/webhook-endpoint`
 - `GET /v1/plugins/afkbotui/automations/{id}/graph-preview`
 - `POST /v1/plugins/afkbotui/automations`
 - `PATCH /v1/plugins/afkbotui/automations/{id}`
@@ -115,6 +116,6 @@ afk start
 
 ## Notes
 
-- AFKBOT does not return live webhook bearer endpoints from ordinary `list` calls; the inspector uses an operator-only reveal path for the current endpoint
+- AFKBOT does not return live webhook bearer endpoints from ordinary `list` or generic detail calls; the inspector uses a dedicated operator-only reveal path for the current endpoint
 - older webhook automations that were created before durable reveal storage was configured may still require one explicit rotate before the current URL becomes recoverable
 - version history is tracked in `CHANGELOG.md`

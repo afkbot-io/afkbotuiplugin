@@ -6,6 +6,7 @@ import type {
   AutomationFilters,
   AutomationGraphPreview,
   AutomationSummary,
+  AutomationWebhook,
   AutomationsListResult,
 } from "./automations.types";
 
@@ -13,6 +14,10 @@ type AutomationsApi = {
   createAutomation: (profileId: string, payload: Record<string, unknown>) => Promise<{ automation?: Automation }>;
   deleteAutomation: (profileId: string, automationId: number) => Promise<unknown>;
   getAutomation: (automationId: number, profileId: string) => Promise<{ automation?: Automation }>;
+  getAutomationWebhookEndpoint: (
+    automationId: number,
+    profileId: string,
+  ) => Promise<{ webhook?: Record<string, unknown> }>;
   getAutomationGraphPreview: (
     automationId: number,
     profileId: string,
@@ -111,6 +116,20 @@ export async function listAutomations(api: unknown, profileId: string, filters: 
 export async function getAutomation(api: unknown, profileId: string, automationId: number) {
   const payload = await coerceAutomationsApi(api).getAutomation(automationId, profileId);
   return payload.automation as Automation;
+}
+
+export async function getAutomationWebhookEndpoint(api: unknown, profileId: string, automationId: number) {
+  const payload = await coerceAutomationsApi(api).getAutomationWebhookEndpoint(automationId, profileId);
+  const webhook = payload.webhook || {};
+  return {
+    webhook_endpoint_recoverable:
+      typeof webhook.recoverable === "boolean"
+        ? webhook.recoverable
+        : (webhook.webhook_endpoint_recoverable as boolean | null | undefined) ?? null,
+    webhook_path: (webhook.webhook_path as string | null | undefined) ?? null,
+    webhook_token_masked: (webhook.webhook_token_masked as string | null | undefined) ?? null,
+    webhook_url: (webhook.webhook_url as string | null | undefined) ?? null,
+  } satisfies Partial<AutomationWebhook>;
 }
 
 export async function getAutomationGraphPreview(api: unknown, profileId: string, automationId: number) {

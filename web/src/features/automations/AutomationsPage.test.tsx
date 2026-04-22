@@ -33,6 +33,16 @@ function buildAutomation(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function buildWebhookEndpoint(overrides: Record<string, unknown> = {}) {
+  return {
+    recoverable: true,
+    webhook_path: "/hooks/digest",
+    webhook_token_masked: "hook...gest",
+    webhook_url: "https://example.test/hooks/digest",
+    ...overrides,
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -48,6 +58,7 @@ function createApi(overrides: Record<string, unknown> = {}) {
   let detailAutomation = buildAutomation({
     prompt: "Send the full daily digest.",
   });
+  let webhookEndpoint = buildWebhookEndpoint();
 
   return {
     createAutomation: vi.fn(async (_profileId: string, payload: Record<string, unknown>) => {
@@ -68,10 +79,11 @@ function createApi(overrides: Record<string, unknown> = {}) {
         webhook:
           payload.trigger_type === "webhook"
             ? {
-                webhook_url: "https://example.test/hooks/new",
-                webhook_path: "/hooks/new",
                 webhook_endpoint_recoverable: true,
                 last_execution_status: "idle",
+                webhook_path: null,
+                webhook_token_masked: "hook.../new",
+                webhook_url: null,
               }
             : null,
       });
@@ -92,19 +104,42 @@ function createApi(overrides: Record<string, unknown> = {}) {
         webhook:
           payload.trigger_type === "webhook"
             ? {
-                webhook_url: "https://example.test/hooks/new",
-                webhook_path: "/hooks/new",
                 webhook_endpoint_recoverable: true,
                 last_execution_status: "idle",
+                webhook_path: null,
+                webhook_token_masked: "hook.../new",
+                webhook_url: null,
               }
             : null,
       });
+      if (payload.trigger_type === "webhook") {
+        webhookEndpoint = buildWebhookEndpoint({
+          webhook_path: "/hooks/new",
+          webhook_token_masked: "hook.../new",
+          webhook_url: "https://example.test/hooks/new",
+        });
+      }
       return { automation };
     }),
     deleteAutomation: vi.fn(async () => ({ ok: true })),
     getAutomation: vi.fn(async () => ({
       automation: detailAutomation,
     })),
+    getAutomationWebhookEndpoint: vi.fn(async () => {
+      const detailWebhook = (detailAutomation.webhook || null) as Record<string, unknown> | null;
+      return {
+        webhook:
+          detailAutomation.trigger_type === "webhook"
+            ? buildWebhookEndpoint({
+                recoverable: (detailWebhook?.webhook_endpoint_recoverable as boolean | null | undefined) ?? webhookEndpoint.recoverable,
+                webhook_path: (detailWebhook?.webhook_path as string | null | undefined) || webhookEndpoint.webhook_path,
+                webhook_token_masked:
+                  (detailWebhook?.webhook_token_masked as string | null | undefined) || webhookEndpoint.webhook_token_masked,
+                webhook_url: (detailWebhook?.webhook_url as string | null | undefined) || webhookEndpoint.webhook_url,
+              })
+            : null,
+      };
+    }),
     getAutomationGraphPreview: vi.fn(async () => ({
       ai_handoff_present: true,
       automation_id: 11,
@@ -182,13 +217,21 @@ function createApi(overrides: Record<string, unknown> = {}) {
             : detailAutomation.cron,
         webhook: payload.rotate_webhook_token
           ? {
-              webhook_url: "https://example.test/hooks/rotated",
-              webhook_path: "/hooks/rotated",
               webhook_endpoint_recoverable: true,
               last_execution_status: "idle",
+              webhook_path: null,
+              webhook_token_masked: "hook...ated",
+              webhook_url: null,
             }
           : detailAutomation.webhook,
       });
+      if (payload.rotate_webhook_token) {
+        webhookEndpoint = buildWebhookEndpoint({
+          webhook_path: "/hooks/rotated",
+          webhook_token_masked: "hook...ated",
+          webhook_url: "https://example.test/hooks/rotated",
+        });
+      }
       return { automation: detailAutomation };
     }),
     ...overrides,
@@ -402,6 +445,14 @@ describe("AutomationsPage", () => {
       getAutomation: vi.fn(async () => ({
         automation: deletedAutomation,
       })),
+      getAutomationWebhookEndpoint: vi.fn(async () => ({
+        webhook: {
+          recoverable: false,
+          webhook_path: null,
+          webhook_token_masked: "[HIDDEN]",
+          webhook_url: null,
+        },
+      })),
       listAutomations: vi.fn(async () => ({
         automations: [deletedAutomation],
         filtered_count: 1,
@@ -510,14 +561,30 @@ describe("AutomationsPage", () => {
         chat_resume_command: "/resume",
         last_execution_status: "idle",
         webhook_endpoint_recoverable: true,
-        webhook_path: "/hooks/digest",
-        webhook_url: "https://example.test/hooks/digest",
+        webhook_path: null,
+        webhook_token_masked: "hook...gest",
+        webhook_url: null,
       },
+    });
+    let endpointCalls = 0;
+    const getAutomationWebhookEndpoint = vi.fn(async () => {
+      endpointCalls += 1;
+      if (endpointCalls === 1) {
+        return { webhook: buildWebhookEndpoint() };
+      }
+      return {
+        webhook: buildWebhookEndpoint({
+          webhook_path: "/hooks/rotated",
+          webhook_token_masked: "hook...ated",
+          webhook_url: "https://example.test/hooks/rotated",
+        }),
+      };
     });
     const api = createApi({
       getAutomation: vi.fn(async () => ({
         automation: webhookAutomation,
       })),
+      getAutomationWebhookEndpoint,
       listAutomations: vi.fn(async () => ({
         automations: [webhookAutomation],
         filtered_count: 1,
@@ -536,6 +603,7 @@ describe("AutomationsPage", () => {
     renderAutomationsPage({ api });
 
     await user.click(await screen.findByText("Daily Digest"));
+    expect(await screen.findByText("https://example.test/hooks/digest")).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "Issue New URL" }));
 
     await waitFor(() => {
@@ -543,6 +611,8 @@ describe("AutomationsPage", () => {
         rotate_webhook_token: true,
       });
     });
+    expect(await screen.findByText("https://example.test/hooks/rotated")).toBeInTheDocument();
+    expect(getAutomationWebhookEndpoint.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
   it("shows pending state while creating an automation and blocks closing actions", async () => {

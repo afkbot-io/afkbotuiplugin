@@ -13,7 +13,6 @@ from afkbot.services.automations.contracts import (
     AutomationWebhookMetadata,
 )
 from afkbot_plugin_afkbotui.router import (
-    _apply_webhook_endpoint_reveal,
     _last_activity_datetime,
     _serialize_graph_preview_trace,
     _serialize_graph_preview_validation,
@@ -120,31 +119,7 @@ def test_last_activity_ignores_future_cron_next_run() -> None:
     assert _last_activity_datetime(item) == now - timedelta(minutes=30)
 
 
-def test_apply_webhook_endpoint_reveal_merges_operator_endpoint_payload() -> None:
-    payload = {
-        "id": 8,
-        "profile_id": "github",
-        "trigger_type": "webhook",
-        "webhook": {
-            "webhook_url": None,
-            "webhook_path": None,
-            "webhook_token_masked": "[HIDDEN]",
-        },
-    }
-    endpoint = {
-        "recoverable": True,
-        "webhook_url": "https://example.com/v1/automations/github/webhook/token-1",
-        "webhook_path": "/v1/automations/github/webhook/token-1",
-        "webhook_token_masked": "toke...en-1",
-    }
-    merged = _apply_webhook_endpoint_reveal(payload, endpoint=endpoint)
-    assert merged["webhook"]["webhook_url"] == endpoint["webhook_url"]
-    assert merged["webhook"]["webhook_path"] == endpoint["webhook_path"]
-    assert merged["webhook"]["webhook_token_masked"] == endpoint["webhook_token_masked"]
-    assert merged["webhook"]["webhook_endpoint_recoverable"] is True
-
-
-def test_automation_detail_route_reveals_endpoint_but_list_stays_masked(monkeypatch) -> None:
+def test_automation_webhook_endpoint_route_is_separate_from_masked_detail(monkeypatch) -> None:
     now = datetime.now(timezone.utc)
     masked = AutomationMetadata(
         id=8,
@@ -230,10 +205,20 @@ def test_automation_detail_route_reveals_endpoint_but_list_stays_masked(monkeypa
         params={"profile_id": "default"},
     )
     assert detail_response.status_code == 200
-    assert detail_response.headers["cache-control"] == "private, no-store"
-    assert detail_response.headers["pragma"] == "no-cache"
     detail_payload = detail_response.json()
-    assert detail_payload["automation"]["webhook"]["webhook_url"] == revealed.webhook_url
-    assert detail_payload["automation"]["webhook"]["webhook_path"] == revealed.webhook_path
-    assert detail_payload["automation"]["webhook"]["webhook_token_masked"] == revealed.webhook_token_masked
-    assert detail_payload["automation"]["webhook"]["webhook_endpoint_recoverable"] is True
+    assert detail_payload["automation"]["webhook"]["webhook_url"] is None
+    assert detail_payload["automation"]["webhook"]["webhook_path"] is None
+    assert detail_payload["automation"]["webhook"]["webhook_token_masked"] == "[HIDDEN]"
+
+    endpoint_response = client.get(
+        "/v1/plugins/afkbotui/automations/8/webhook-endpoint",
+        params={"profile_id": "default"},
+    )
+    assert endpoint_response.status_code == 200
+    assert endpoint_response.headers["cache-control"] == "private, no-store"
+    assert endpoint_response.headers["pragma"] == "no-cache"
+    endpoint_payload = endpoint_response.json()
+    assert endpoint_payload["webhook"]["webhook_url"] == revealed.webhook_url
+    assert endpoint_payload["webhook"]["webhook_path"] == revealed.webhook_path
+    assert endpoint_payload["webhook"]["webhook_token_masked"] == revealed.webhook_token_masked
+    assert endpoint_payload["webhook"]["recoverable"] is True

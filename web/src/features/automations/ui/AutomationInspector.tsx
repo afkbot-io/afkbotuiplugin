@@ -40,6 +40,8 @@ type AutomationInspectorProps = {
   onStopEdit: () => void;
   rotatingToken: boolean;
   saving: boolean;
+  webhookEndpointError: string;
+  webhookEndpointLoading: boolean;
 };
 
 export function AutomationInspector({
@@ -65,6 +67,8 @@ export function AutomationInspector({
   onStopEdit,
   rotatingToken,
   saving,
+  webhookEndpointError,
+  webhookEndpointLoading,
 }: AutomationInspectorProps) {
   if (!automation && !detailLoading) {
     return (
@@ -131,6 +135,7 @@ export function AutomationInspector({
   const runtime = describeRuntime(automation);
   const hideActions = shouldHideMutationActions(automation);
   const showWebhookRecovery = hasWebhookRecoveryWarning(automation);
+  const webhookUrlValue = webhookEndpointLoading ? "Loading current endpoint…" : formatDetailValue(automation.webhook?.webhook_url);
 
   return (
     <div className="task-pane">
@@ -177,6 +182,8 @@ export function AutomationInspector({
               This automation does not have a recoverable webhook URL in server storage yet. Rotate the URL only if
               you intentionally want a new endpoint.
             </p>
+          ) : automation.trigger_type === "webhook" && webhookEndpointLoading ? (
+            <p className="field__hint">Revealing the current operator webhook endpoint…</p>
           ) : null}
           <div className="detail-grid">
             {automation.trigger_type === "cron" ? (
@@ -193,7 +200,7 @@ export function AutomationInspector({
                   mono
                   onCopy={onCopy}
                   stack
-                  value={formatDetailValue(automation.webhook?.webhook_url)}
+                  value={webhookUrlValue}
                 />
                 <StatusDetail
                   badgeClass={runtimeStatusBadgeClass(automation.webhook?.last_execution_status || "idle")}
@@ -217,6 +224,9 @@ export function AutomationInspector({
               </>
             )}
           </div>
+          {automation.trigger_type === "webhook" && webhookEndpointError ? (
+            <div className="inline-alert inline-alert--danger" role="alert">{webhookEndpointError}</div>
+          ) : null}
           {automation.trigger_type === "webhook" && automation.webhook?.last_error ? (
             <div className="inline-alert inline-alert--danger" role="alert">{automation.webhook.last_error}</div>
           ) : null}
@@ -300,7 +310,7 @@ function CopyDetail({
   value: string;
 }) {
   const normalizedValue = String(value || "").trim();
-  const unavailable = normalizedValue === "Unavailable";
+  const unavailable = normalizedValue === "Unavailable" || normalizedValue === "Loading current endpoint…";
 
   return (
     <div className={`detail-item${full ? " detail-item--full" : ""}`}>

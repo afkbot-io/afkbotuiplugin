@@ -123,6 +123,21 @@ describe("ApiClient text-library resources", () => {
     );
   });
 
+  it("supports automation webhook reveal endpoints", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ webhook: { webhook_url: "https://example.test/hook" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("/v1/plugins/afkbotui");
+
+    await client.getAutomationWebhookEndpoint(11, "default");
+    const origin = window.location.origin;
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${origin}/v1/plugins/afkbotui/automations/11/webhook-endpoint?profile_id=default`,
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("invokes onUnauthorized when the auth session probe returns ui_auth_required", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       errorResponse(401, {
