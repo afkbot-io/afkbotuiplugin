@@ -31,6 +31,7 @@ export type TaskFlowSession = {
   running_turn_count?: number | null;
   session_id?: string | null;
   session_profile_id?: string | null;
+  started_at?: string | null;
 };
 
 export type TaskFlowTask = {

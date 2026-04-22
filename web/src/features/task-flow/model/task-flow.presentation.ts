@@ -311,6 +311,37 @@ export function formatTaskSessionCounts(activity: TaskFlowSession | null | undef
   return parts.join(" • ") || "Idle";
 }
 
+export function formatTaskRunningElapsed(task: TaskFlowTask, now = Date.now()) {
+  if (String(task.status || "").trim() !== "running") {
+    return "";
+  }
+  const session = getTaskActiveSession(task);
+  // Prefer an explicit runtime start when present; fall back to latest activity until the
+  // task-session contract exposes a dedicated running-since timestamp everywhere.
+  const anchor = String(session?.started_at || session?.latest_activity_at || "").trim();
+  if (!anchor) {
+    return "";
+  }
+  const startedAt = Date.parse(anchor);
+  if (Number.isNaN(startedAt)) {
+    return "";
+  }
+  const diffMs = Math.max(0, now - startedAt);
+  const diffMinutes = Math.floor(diffMs / 60000);
+  if (diffMinutes < 1) {
+    return "now";
+  }
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m`;
+  }
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `${diffHours}h`;
+  }
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d`;
+}
+
 export function formatSessionEventTitle(event: TaskSessionProgressEvent) {
   const eventType = String(event.event_type || "").trim();
   if (eventType === "tool.call") {

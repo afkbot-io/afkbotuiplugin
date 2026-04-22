@@ -1,6 +1,7 @@
 import type { DragEvent, MouseEvent, RefObject } from "react";
 
 import {
+  formatTaskRunningElapsed,
   formatStatusLabel,
   formatTaskOwnerSummary,
   isActiveRuntimeStatus,
@@ -132,6 +133,7 @@ function TaskCard({
   const previewCopy = task.last_comment_message || task.prompt || "No prompt yet.";
   const ownerSummary = formatTaskOwnerSummary(task);
   const activeSession = task.active_session?.dialog_active;
+  const runningElapsed = formatTaskRunningElapsed(task);
   const disabled = isActiveRuntimeStatus(task.status);
 
   return (
@@ -151,6 +153,7 @@ function TaskCard({
             <div className="task-card__meta-row">
               <p className="task-card__meta">{ownerSummary}</p>
               {activeSession ? <span className="badge badge--live">Active</span> : null}
+              {runningElapsed ? <span className="badge badge--running">{runningElapsed}</span> : null}
             </div>
           </div>
         </button>

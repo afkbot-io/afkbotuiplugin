@@ -25,6 +25,7 @@ import {
   formatProjectResultsNote,
   formatSessionEventCopy,
   formatSessionEventTitle,
+  formatTaskRunningElapsed,
   formatTaskOwnerSummary,
   formatTaskSessionCounts,
   formatStatusLabel,
@@ -378,6 +379,31 @@ describe("task-flow presentation helpers", () => {
     expect(getRenderedTaskSessionInsights(task, insights)).toBe(insights);
     expect(shouldAutoRefreshTaskSession(task, insights)).toBe(true);
     expect(formatTaskSessionCounts(insights.session)).toBe("1 running • 2 queued");
+    expect(
+      formatTaskRunningElapsed(
+        {
+          ...task,
+          active_session: {
+            dialog_active: true,
+            started_at: "2026-04-21T10:45:00.000Z",
+          },
+        },
+        Date.parse("2026-04-21T11:00:00.000Z"),
+      ),
+    ).toBe("15m");
+    expect(
+      formatTaskRunningElapsed(
+        {
+          ...task,
+          active_session: {
+            dialog_active: true,
+            latest_activity_at: "2026-04-21T10:55:00.000Z",
+          },
+        },
+        Date.parse("2026-04-21T11:00:00.000Z"),
+      ),
+    ).toBe("5m");
+    expect(formatTaskRunningElapsed(task, Date.parse("2026-04-21T11:00:00.000Z"))).toBe("");
     expect(formatSessionEventTitle({ event_type: "tool.call", tool_name: "planner" })).toBe("Calling planner");
     expect(
       formatSessionEventCopy({

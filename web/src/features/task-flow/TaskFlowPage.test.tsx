@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TaskFlowPage } from "@/features/task-flow/TaskFlowPage";
 import type { TaskFlowProject } from "@/features/task-flow/model/task-flow.types";
@@ -26,6 +26,10 @@ function buildTask(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function buildSessionInsights(overrides: Record<string, unknown> = {}) {
   return {
@@ -302,6 +306,49 @@ function renderTaskFlowPage({
 }
 
 describe("TaskFlowPage", () => {
+  it("shows elapsed runtime badges for running tasks with an active session", async () => {
+    const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(new Date("2026-04-21T11:20:00.000Z").getTime());
+    const runningTask = buildTask({
+      active_session: {
+        dialog_active: true,
+        latest_activity_at: "2026-04-21T11:18:00.000Z",
+        queued_turn_count: 0,
+        running_turn_count: 1,
+        session_id: "session-running",
+        session_profile_id: "default",
+        started_at: "2026-04-21T11:05:00.000Z",
+      },
+      id: "task-running",
+      requires_review: false,
+      status: "running",
+      title: "Ship runtime fix",
+    });
+    const api = createApi({
+      taskItems: [runningTask],
+    });
+    api.getTaskBoard = vi.fn(async (_profileId: string) => ({
+      board: {
+        columns: [
+          {
+            id: "running",
+            title: "Running",
+            count: 1,
+            tasks: [runningTask],
+          },
+        ],
+        total_count: 1,
+      },
+    }));
+
+    renderTaskFlowPage({ api });
+
+    const card = (await screen.findByText("Ship runtime fix")).closest(".task-card");
+    expect(card).not.toBeNull();
+    expect(within(card as HTMLElement).getByText("Active")).toBeInTheDocument();
+    expect(within(card as HTMLElement).getByText("15m")).toBeInTheDocument();
+    dateNowSpy.mockRestore();
+  });
+
   it("renders the board, opens the inspector, saves the task, and posts a comment", async () => {
     const user = userEvent.setup();
     const { api, notify } = renderTaskFlowPage();
