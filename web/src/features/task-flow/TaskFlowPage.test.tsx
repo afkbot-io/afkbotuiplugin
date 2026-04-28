@@ -5,24 +5,24 @@ import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TaskFlowPage } from "@/features/task-flow/TaskFlowPage";
-import type { TaskFlowProject } from "@/features/task-flow/model/task-flow.types";
+import type { TaskFlowProject, TaskFlowTask } from "@/features/task-flow/model/task-flow.types";
 
-function buildTask(overrides: Record<string, unknown> = {}) {
+function buildTask(overrides: Partial<TaskFlowTask> = {}): TaskFlowTask {
   return {
-    id: "task-1",
-    title: "Fix planner output",
-    prompt: "Improve the planner response quality.",
-    status: "todo",
-    priority: 50,
-    profile_id: "default",
-    flow_id: "flow-alpha",
+    description: "Improve the planner response quality.",
     due_at: "2026-04-22T10:00:00.000Z",
+    flow_id: "flow-alpha",
+    id: "task-1",
+    labels: ["ops"],
     owner_type: "ai_profile",
     owner_ref: "default",
-    reviewer_type: "",
-    reviewer_ref: "",
+    priority: 50,
+    profile_id: "default",
     requires_review: true,
-    labels: ["ops"],
+    reviewer_ref: "",
+    reviewer_type: "",
+    status: "todo",
+    title: "Fix planner output",
     ...overrides,
   };
 }
@@ -123,7 +123,7 @@ function createApi({
       id: "task-review",
       status: "review",
       title: "Review copy",
-      prompt: "Check the final reviewer copy.",
+      description: "Check the final reviewer copy.",
     }),
   ];
   const tasks = new Map<string, ReturnType<typeof buildTask>>(initialTasks.map((taskItem) => [taskItem.id, taskItem]));
@@ -172,7 +172,7 @@ function createApi({
       const nextTask = buildTask({
         id: "task-2",
         title: String(payload.title || "New task"),
-        prompt: String(payload.prompt || "New prompt"),
+        description: String(payload.description || "New prompt"),
         flow_id: String(payload.flow_id || ""),
       });
       tasks.set(nextTask.id, nextTask);
@@ -256,8 +256,8 @@ function createApi({
       const currentTask = tasks.get(taskId) || buildTask({ id: taskId });
       const nextTask = buildTask({
         ...currentTask,
-        title: payload.title || currentTask.title,
-        prompt: payload.prompt || currentTask.prompt,
+        description: String(payload.description || currentTask.description || ""),
+        title: String(payload.title || currentTask.title),
       });
       tasks.set(taskId, nextTask);
       return { task: nextTask };
@@ -624,7 +624,7 @@ describe("TaskFlowPage", () => {
           id: "task-review",
           status: "review",
           title: "Review copy",
-          prompt: "Check the final reviewer copy.",
+          description: "Check the final reviewer copy.",
         }),
       ],
     });
@@ -696,7 +696,7 @@ describe("TaskFlowPage", () => {
             id: "task-review",
             status: "review",
             title: "Review copy",
-            prompt: "Check the final reviewer copy.",
+            description: "Check the final reviewer copy.",
           }),
         ],
       });
@@ -764,7 +764,7 @@ describe("TaskFlowPage", () => {
         buildTask({
           id: "task-2",
           title: "Resolve modal race",
-          prompt: "Make sure the second session stays isolated.",
+          description: "Make sure the second session stays isolated.",
           active_session: {
             dialog_active: true,
             latest_activity_at: "2026-04-21T11:02:00.000Z",
@@ -780,7 +780,7 @@ describe("TaskFlowPage", () => {
           id: "task-review",
           status: "review",
           title: "Review copy",
-          prompt: "Check the final reviewer copy.",
+          description: "Check the final reviewer copy.",
         }),
       ],
     });
@@ -930,7 +930,7 @@ describe("TaskFlowPage", () => {
         buildTask({
           id: "task-2",
           title: "Resolve modal race",
-          prompt: "Keep the second refresh isolated.",
+          description: "Keep the second refresh isolated.",
           active_session: {
             dialog_active: true,
             latest_activity_at: "2026-04-21T11:02:00.000Z",
@@ -946,7 +946,7 @@ describe("TaskFlowPage", () => {
           id: "task-review",
           status: "review",
           title: "Review copy",
-          prompt: "Check the final reviewer copy.",
+          description: "Check the final reviewer copy.",
         }),
       ],
     });

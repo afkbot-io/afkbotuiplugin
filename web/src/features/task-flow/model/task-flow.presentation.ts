@@ -10,7 +10,7 @@ import type {
 
 const AI_PROFILE_TYPE = "ai_profile";
 const HUMAN_ACTOR_TYPE = "human";
-const TONE_STATUS_OPTIONS = new Set(["todo", "blocked", "running", "review", "completed", "failed", "cancelled"]);
+const TONE_STATUS_OPTIONS = new Set(["plan", "todo", "blocked", "claimed", "running", "review", "completed", "failed", "cancelled"]);
 
 export function isActiveRuntimeStatus(status: string | null | undefined) {
   return ["claimed", "running"].includes(String(status || "").trim());
@@ -32,6 +32,9 @@ export function taskStatusBadgeClass(status: string | null | undefined) {
   const normalized = String(status || "").trim();
   if (normalized === "running") {
     return "badge--running";
+  }
+  if (normalized === "plan") {
+    return "badge--accent";
   }
   if (normalized === "blocked") {
     return "badge--warning";

@@ -222,3 +222,65 @@ def test_automation_webhook_endpoint_route_is_separate_from_masked_detail(monkey
     assert endpoint_payload["webhook"]["webhook_path"] == revealed.webhook_path
     assert endpoint_payload["webhook"]["webhook_token_masked"] == revealed.webhook_token_masked
     assert endpoint_payload["webhook"]["recoverable"] is True
+
+
+def test_task_flow_task_routes_map_prompt_payload_to_description(monkeypatch) -> None:
+    observed: dict[str, dict[str, object]] = {}
+
+    class DumpableTask:
+        def model_dump(self, *, mode: str) -> dict[str, object]:
+            assert mode == "json"
+            return {
+                "description": "Write the route contract.",
+                "id": "task-1",
+                "status": "todo",
+                "title": "Route task",
+            }
+
+    class FakeTaskFlowService:
+        async def create_task(self, **kwargs: object) -> DumpableTask:
+            observed["create"] = kwargs
+            assert "prompt" not in kwargs
+            assert kwargs["description"] == "Write the route contract."
+            return DumpableTask()
+
+        async def update_task(self, **kwargs: object) -> DumpableTask:
+            observed["update"] = kwargs
+            assert "prompt" not in kwargs
+            assert kwargs["description"] == "Update the route contract."
+            return DumpableTask()
+
+    class FakeRegistry:
+        def read_config(self) -> dict[str, object]:
+            return {}
+
+        def write_config(self, payload: dict[str, object]) -> None:
+            del payload
+
+        def reset_config(self) -> None:
+            pass
+
+    monkeypatch.setattr(router_module, "get_settings", lambda: object())
+    monkeypatch.setattr(router_module, "get_task_flow_service", lambda _settings: FakeTaskFlowService())
+
+    app = FastAPI()
+    app.include_router(
+        router_module.build_router(api_prefix="/v1/plugins/afkbotui", registry=FakeRegistry())
+    )
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/v1/plugins/afkbotui/task-flow/tasks",
+        json={"prompt": "Write the route contract.", "title": "Route task"},
+        params={"profile_id": "default"},
+    )
+    assert create_response.status_code == 200
+    assert observed["create"]["profile_id"] == "default"
+
+    update_response = client.patch(
+        "/v1/plugins/afkbotui/task-flow/tasks/task-1",
+        json={"prompt": "Update the route contract."},
+        params={"profile_id": "default"},
+    )
+    assert update_response.status_code == 200
+    assert observed["update"]["task_id"] == "task-1"

@@ -106,7 +106,8 @@ class TaskCreatePayload(BaseModel):
     """Request body for one task create action."""
 
     title: str = Field(min_length=1, max_length=240)
-    prompt: str = Field(min_length=1, max_length=12000)
+    description: str | None = Field(default=None, min_length=1, max_length=12000)
+    prompt: str | None = Field(default=None, min_length=1, max_length=12000)
     created_by_type: str = Field(default="human", min_length=1)
     created_by_ref: str = Field(default="web-user", min_length=1)
     flow_id: str | None = None
@@ -137,7 +138,8 @@ class TaskPatchPayload(BaseModel):
     """Request body for one task update."""
 
     title: str | None = None
-    prompt: str | None = None
+    description: str | None = Field(default=None, max_length=12000)
+    prompt: str | None = Field(default=None, max_length=12000)
     status: str | None = None
     priority: int | None = None
     due_at: datetime | None = None
@@ -253,6 +255,12 @@ class BootstrapFilePatchPayload(BaseModel):
 
     file_name: str | None = Field(default=None, min_length=1, max_length=128)
     content: str | None = Field(default=None, max_length=200000)
+
+
+def _task_payload_description(payload: TaskCreatePayload | TaskPatchPayload) -> str | None:
+    """Return canonical Task Flow description from new or legacy UI payloads."""
+
+    return payload.description if payload.description is not None else payload.prompt
 
 
 def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRouter:
@@ -632,7 +640,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             item = await service.create_task(
                 profile_id=profile_id,
                 title=payload.title,
-                prompt=payload.prompt,
+                description=_task_payload_description(payload),
                 created_by_type=payload.created_by_type,
                 created_by_ref=payload.created_by_ref,
                 flow_id=payload.flow_id,
@@ -748,7 +756,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 "profile_id": profile_id,
                 "task_id": task_id,
                 "title": payload.title,
-                "prompt": payload.prompt,
+                "description": _task_payload_description(payload),
                 "status": payload.status,
                 "priority": payload.priority,
                 "due_at": payload.due_at,

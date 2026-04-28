@@ -42,13 +42,13 @@ export function TaskFormFields({
         <input maxLength={240} onChange={(event) => handleFieldChange("title", event.target.value)} required value={draft.title} />
       </label>
       <label className="field">
-        <span className="field__label">Prompt</span>
+        <span className="field__label">Description</span>
         <textarea
           maxLength={12000}
-          onChange={(event) => handleFieldChange("prompt", event.target.value)}
+          onChange={(event) => handleFieldChange("description", event.target.value)}
           required
           rows={8}
-          value={draft.prompt}
+          value={draft.description}
         />
       </label>
       <div className="field-grid">

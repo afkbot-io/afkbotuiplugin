@@ -1,6 +1,7 @@
 export type TaskFlowActorType = "ai_profile" | "human" | string;
 
 export type TaskFlowStatus =
+  | "plan"
   | "todo"
   | "blocked"
   | "claimed"
@@ -38,6 +39,7 @@ export type TaskFlowTask = {
   active_session?: TaskFlowSession | null;
   blocked_reason_code?: string | null;
   blocked_reason_text?: string | null;
+  description?: string | null;
   due_at?: string | null;
   flow_id?: string | null;
   id: string;
@@ -175,7 +177,7 @@ export type TaskFlowTaskDraft = {
   owner_ref: string;
   owner_type: string;
   priority: string;
-  prompt: string;
+  description: string;
   requires_review: boolean;
   reviewer_ref: string;
   reviewer_type: string;

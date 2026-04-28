@@ -8,7 +8,7 @@ import type {
   TaskFlowTaskDraft,
 } from "@/features/task-flow/model/task-flow.types";
 
-export const TASK_FLOW_STATUS_OPTIONS = ["todo", "blocked", "review", "completed", "failed", "cancelled"] as const;
+export const TASK_FLOW_STATUS_OPTIONS = ["plan", "todo", "blocked", "running", "review", "completed", "failed", "cancelled"] as const;
 
 export function normalizeTaskFlowConfig(config: Record<string, unknown>): TaskFlowConfig {
   return {
@@ -40,7 +40,7 @@ export function defaultTaskDraft(config: TaskFlowConfig, profiles: TaskFlowProfi
     owner_ref: getProfileIdFallback(profiles),
     owner_type: "ai_profile",
     priority: "50",
-    prompt: "",
+    description: "",
     requires_review: true,
     reviewer_ref: "",
     reviewer_type: "",
@@ -59,7 +59,7 @@ export function taskDraftFromTask(task: TaskFlowTask): TaskFlowTaskDraft {
     owner_ref: String(task.owner_ref || ""),
     owner_type: String(task.owner_type || ""),
     priority: String(task.priority ?? 50),
-    prompt: String(task.prompt || ""),
+    description: String(task.description || task.prompt || ""),
     requires_review: Boolean(task.requires_review),
     reviewer_ref: String(task.reviewer_ref || ""),
     reviewer_type: String(task.reviewer_type || ""),
@@ -102,18 +102,18 @@ export function validateProjectDraft(draft: TaskFlowProjectDraft) {
 
 export function validateTaskDraft(draft: TaskFlowTaskDraft) {
   const title = draft.title.trim();
-  const prompt = draft.prompt.trim();
+  const description = draft.description.trim();
   if (!title) {
     return "Task title is required.";
   }
-  if (!prompt) {
-    return "Task prompt is required.";
+  if (!description) {
+    return "Task description is required.";
   }
   if (title.length > 240) {
     return "Task title must be 240 characters or less.";
   }
-  if (prompt.length > 12000) {
-    return "Task prompt must be 12000 characters or less.";
+  if (description.length > 12000) {
+    return "Task description must be 12000 characters or less.";
   }
   if (normalizeNumberField(draft.priority, { fallback: null, min: 0, max: 100 }) === null) {
     return "Task priority must be between 0 and 100.";
