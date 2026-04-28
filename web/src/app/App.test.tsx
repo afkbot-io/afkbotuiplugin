@@ -133,6 +133,7 @@ describe("App", () => {
   beforeEach(() => {
     document.body.dataset.apiBase = "/v1/plugins/afkbotui";
     document.body.dataset.webBase = "/plugins/afkbotui";
+    window.localStorage.clear();
     window.history.replaceState({}, "", "/plugins/afkbotui?tab=skills&profile=blue");
     Object.values(routeRenderSpies).forEach((spy) => spy.mockClear());
     apiMethods.getAuthSession.mockReset();
@@ -233,6 +234,22 @@ describe("App", () => {
     expect(screen.getByText("Authentication required. Redirecting to login…")).toBeInTheDocument();
     expect(apiMethods.logout).toHaveBeenCalledTimes(1);
     expect(scheduleWindowRedirect).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores the last selected profile when the URL has no profile parameter", async () => {
+    window.localStorage.setItem("afkbotui:last-profile-id", "blue");
+    window.history.replaceState({}, "", "/plugins/afkbotui?tab=skills");
+
+    render(
+      <AppProviders>
+        <App />
+      </AppProviders>,
+    );
+
+    expect(await screen.findByText("Skills route blue")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(routeRenderSpies.skills).toHaveBeenCalledWith({ active: true, profileId: "blue" });
+    });
   });
 
   it("blocks route changes when auth refetch reports an expired session", async () => {

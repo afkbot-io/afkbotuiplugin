@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { resolveTextLibraryErrorMessage } from "@/features/text-library/model/text-library.errors";
 import type { TextLibraryDefinition } from "@/features/text-library/model/text-library.types";
@@ -48,6 +48,7 @@ export const TextLibraryPage = forwardRef<TextLibraryPageHandle, TextLibraryPage
   });
   const inspectorNodeRef = useRef<HTMLElement | null>(null);
   const inspectorSnapshotRef = useRef<ReturnType<typeof captureSurfaceState> | null>(null);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
 
   useEffect(() => {
     profileIdRef.current = profileId;
@@ -135,6 +136,18 @@ export const TextLibraryPage = forwardRef<TextLibraryPageHandle, TextLibraryPage
     ...draft,
     id: draft.id.trim(),
   });
+
+  const refreshLibraryManually = async () => {
+    setManualRefreshing(true);
+    try {
+      await listQuery.refetch();
+      if (state.panel.open && state.panel.itemId) {
+        await detailQuery.refetch();
+      }
+    } finally {
+      setManualRefreshing(false);
+    }
+  };
 
   useImperativeHandle(
     ref,
@@ -234,13 +247,8 @@ export const TextLibraryPage = forwardRef<TextLibraryPageHandle, TextLibraryPage
     <section className="route-page tl-page">
       <TextLibraryHeader
         onCreate={state.openCreateModal}
-        onRefresh={async () => {
-          await listQuery.refetch();
-          if (state.panel.open && state.panel.itemId) {
-            await detailQuery.refetch();
-          }
-        }}
-        refreshing={Boolean(listQuery.isFetching && items.length)}
+        onRefresh={refreshLibraryManually}
+        refreshing={manualRefreshing}
         ui={definition.ui}
       />
 
@@ -263,7 +271,6 @@ export const TextLibraryPage = forwardRef<TextLibraryPageHandle, TextLibraryPage
               items={items}
               loading={Boolean(listQuery.isFetching && !items.length)}
               onOpen={state.openPanel}
-              refreshing={Boolean(listQuery.isFetching && items.length)}
               selectedId={state.panel.itemId}
               ui={definition.ui}
             />

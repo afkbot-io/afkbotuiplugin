@@ -106,9 +106,6 @@ export const AutomationsPage = forwardRef<RouteHandle, AppRouteProps>(function A
     await listQuery.refetch();
     if (state.panel.open && state.panel.itemId && state.panel.mode !== "edit") {
       await detailQuery.refetch();
-      if (webhookAutomationId !== null) {
-        await webhookEndpointQuery.refetch();
-      }
       if (state.panel.graphOpen && automation?.execution_mode === "graph") {
         await graphQuery.refetch();
       }
@@ -122,8 +119,6 @@ export const AutomationsPage = forwardRef<RouteHandle, AppRouteProps>(function A
     state.panel.itemId,
     state.panel.mode,
     state.panel.open,
-    webhookAutomationId,
-    webhookEndpointQuery,
   ]);
 
   useEffect(() => {
@@ -334,7 +329,6 @@ export const AutomationsPage = forwardRef<RouteHandle, AppRouteProps>(function A
             items={items}
             loading={Boolean(listQuery.isFetching && !items.length)}
             onOpen={handleOpenPanel}
-            refreshing={Boolean(listQuery.isFetching && items.length)}
             selectedId={state.panel.itemId}
           />
         </div>
@@ -363,7 +357,11 @@ export const AutomationsPage = forwardRef<RouteHandle, AppRouteProps>(function A
             rotatingToken={mutations.rotateWebhookMutation.isPending}
             saving={saving}
             webhookEndpointError={webhookEndpointError}
-            webhookEndpointLoading={Boolean(webhookEndpointQuery.isFetching && webhookAutomationId !== null)}
+            webhookEndpointLoading={Boolean(
+              webhookEndpointQuery.isFetching &&
+                webhookAutomationId !== null &&
+                !automation?.webhook?.webhook_url
+            )}
           />
         </aside>
       </div>

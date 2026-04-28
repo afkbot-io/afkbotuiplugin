@@ -1,4 +1,5 @@
 import type { TextLibraryDefinition } from "@/features/text-library/model/text-library.types";
+import { summarizeTextLibraryItem } from "@/features/text-library/model/text-library.summary";
 
 export const subagentsDefinition: TextLibraryDefinition = {
   entity: "subagents",
@@ -129,19 +130,25 @@ export const subagentsDefinition: TextLibraryDefinition = {
 };
 
 function mapSubagentItem(rawItem: Record<string, unknown>) {
+  const content = String(rawItem.content || "");
+  const id = String(rawItem.name || "");
   return {
     cardBadges: [
       { text: "profile", className: "badge badge--ai" },
       { text: "subagent", className: "badge" },
     ],
-    content: String(rawItem.content || ""),
+    content,
     detailBadges: [
       { text: "profile", className: "badge badge--ai" },
       { text: String(rawItem.path || ""), className: "badge" },
     ],
-    id: String(rawItem.name || ""),
+    id,
     path: String(rawItem.path || ""),
-    summary: String(rawItem.summary || ""),
+    summary: summarizeTextLibraryItem({
+      content,
+      fallback: id,
+      summary: rawItem.summary,
+    }),
   };
 }
 

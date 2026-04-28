@@ -1,7 +1,7 @@
 {
   "plugin_id": "afkbotui",
   "name": "AFKBOT UI",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "afkbot_version": ">=1.4.2,<2.0.0",
   "kind": "embedded",
   "entrypoint": "afkbot_plugin_afkbotui.plugin:register",
@@ -50,7 +50,8 @@
         "description": "Actor type used for Task Flow and operator-side actions.",
         "choices": [
           "human",
-          "ai_profile"
+          "ai_profile",
+          "ai_subagent"
         ]
       },
       "task_flow_actor_ref": {

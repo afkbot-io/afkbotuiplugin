@@ -35,6 +35,8 @@ import {
   formatSessionEventTitle,
   formatTaskRunningElapsed,
   formatTaskOwnerSummary,
+  formatTaskPriorityLabel,
+  formatTaskPriorityTitle,
   formatTaskSessionCounts,
   formatStatusLabel,
   getRenderedTaskSessionInsights,
@@ -575,7 +577,30 @@ describe("task-flow presentation helpers", () => {
     expect(
       formatTaskOwnerSummary({ id: "1", owner_type: "ai_subagent", owner_ref: "default:researcher", status: "todo", title: "Task" }),
     ).toBe("Owner: Subagent researcher (default)");
+    expect(
+      formatTaskOwnerSummary({
+        id: "1",
+        owner_type: "ai_profile",
+        owner_ref: "alpha",
+        reviewer_type: "ai_subagent",
+        reviewer_ref: "default:reviewer",
+        status: "review",
+        title: "Task",
+      }),
+    ).toBe("Reviewer: Subagent reviewer (default)");
+    expect(
+      formatTaskOwnerSummary({
+        id: "1",
+        reviewer_type: "ai_subagent",
+        reviewer_ref: "default:reviewer",
+        status: "review",
+        title: "Task",
+      }),
+    ).toBe("Reviewer: Subagent reviewer (default)");
     expect(formatTaskOwnerSummary({ id: "1", status: "todo", title: "Task" })).toBe("Owner: Unassigned");
+    expect(formatTaskPriorityLabel(99)).toBe("Critical >>");
+    expect(formatTaskPriorityLabel(84)).toBe("Very High >>");
+    expect(formatTaskPriorityTitle(84)).toBe("Priority score: 84/100");
     expect(formatFlowOwnerSummary(flows[0])).toBe("Default owner: AI alpha");
     expect(
       formatFlowOwnerSummary({

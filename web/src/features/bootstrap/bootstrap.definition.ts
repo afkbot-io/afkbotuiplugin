@@ -1,4 +1,5 @@
 import type { TextLibraryDefinition } from "@/features/text-library/model/text-library.types";
+import { summarizeTextLibraryItem } from "@/features/text-library/model/text-library.summary";
 
 export const bootstrapDefinition: TextLibraryDefinition = {
   entity: "bootstrap",
@@ -128,19 +129,25 @@ export const bootstrapDefinition: TextLibraryDefinition = {
 };
 
 function mapBootstrapItem(rawItem: Record<string, unknown>) {
+  const content = String(rawItem.content || "");
+  const id = String(rawItem.file_name || "");
   return {
     cardBadges: [
       { text: "bootstrap", className: "badge badge--ai" },
       { text: "profile", className: "badge" },
     ],
-    content: String(rawItem.content || ""),
+    content,
     detailBadges: [
       { text: "bootstrap", className: "badge badge--ai" },
       { text: String(rawItem.path || ""), className: "badge" },
     ],
-    id: String(rawItem.file_name || ""),
+    id,
     path: String(rawItem.path || ""),
-    summary: String(rawItem.summary || ""),
+    summary: summarizeTextLibraryItem({
+      content,
+      fallback: id,
+      summary: rawItem.summary,
+    }),
   };
 }
 

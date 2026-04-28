@@ -135,7 +135,8 @@ export function AutomationInspector({
   const runtime = describeRuntime(automation);
   const hideActions = shouldHideMutationActions(automation);
   const showWebhookRecovery = hasWebhookRecoveryWarning(automation);
-  const webhookUrlValue = webhookEndpointLoading ? "Loading current endpoint…" : formatDetailValue(automation.webhook?.webhook_url);
+  const webhookUrlValue = formatDetailValue(automation.webhook?.webhook_url);
+  const firstWebhookRevealPending = automation.trigger_type === "webhook" && webhookEndpointLoading && !automation.webhook?.webhook_url;
 
   return (
     <div className="task-pane">
@@ -182,7 +183,7 @@ export function AutomationInspector({
               This automation does not have a recoverable webhook URL in server storage yet. Rotate the URL only if
               you intentionally want a new endpoint.
             </p>
-          ) : automation.trigger_type === "webhook" && webhookEndpointLoading ? (
+          ) : firstWebhookRevealPending ? (
             <p className="field__hint">Revealing the current operator webhook endpoint…</p>
           ) : null}
           <div className="detail-grid">
@@ -310,7 +311,7 @@ function CopyDetail({
   value: string;
 }) {
   const normalizedValue = String(value || "").trim();
-  const unavailable = normalizedValue === "Unavailable" || normalizedValue === "Loading current endpoint…";
+  const unavailable = normalizedValue === "Unavailable";
 
   return (
     <div className={`detail-item${full ? " detail-item--full" : ""}`}>

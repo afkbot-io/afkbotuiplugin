@@ -363,6 +363,16 @@ describe("TaskFlowPage", () => {
     dateNowSpy.mockRestore();
   });
 
+  it("keeps board refresh controls stable during background polling", async () => {
+    const api = createApi();
+
+    renderTaskFlowPage({ api });
+
+    expect(await screen.findByText("Fix planner output")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
+    expect(screen.queryByText("Refreshing board…")).not.toBeInTheDocument();
+  });
+
   it("renders the board, opens the inspector, saves the task, and posts a comment", async () => {
     const user = userEvent.setup();
     const { api, notify } = renderTaskFlowPage();

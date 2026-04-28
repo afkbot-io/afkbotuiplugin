@@ -21,13 +21,15 @@ type FlashState = {
   message: string;
 };
 
+const LAST_PROFILE_STORAGE_KEY = "afkbotui:last-profile-id";
+
 export function App() {
   const routeState = useRouteState();
   const [authRedirecting, setAuthRedirecting] = useState(false);
   const [globalError, setGlobalError] = useState("");
   const [configState, setConfigState] = useState(defaultConfig);
   const [mountedRoutes, setMountedRoutes] = useState(() => new Set([routeState.route]));
-  const [selectedProfileId, setSelectedProfileId] = useState(routeState.profileId);
+  const [selectedProfileId, setSelectedProfileId] = useState(routeState.profileId || readLastSelectedProfileId());
   const [flash, setFlash] = useState<FlashState | null>(null);
   const flashTimerRef = useRef<number | null>(null);
   const body = document.body;
@@ -115,6 +117,8 @@ export function App() {
         setSelectedProfileId(resolved);
       });
       routeState.setProfile(resolved, { replace: true });
+    } else if (resolved && !routeState.profileId) {
+      routeState.setProfile(resolved, { replace: true });
     }
   }, [configState.default_profile_id, profiles, routeState, selectedProfileId]);
 
@@ -124,6 +128,12 @@ export function App() {
     }
     setSelectedProfileId(routeState.profileId);
   }, [routeState.profileId, selectedProfileId]);
+
+  useEffect(() => {
+    if (selectedProfileId) {
+      writeLastSelectedProfileId(selectedProfileId);
+    }
+  }, [selectedProfileId]);
 
   useEffect(() => {
     setMountedRoutes((current) => {
@@ -282,4 +292,20 @@ export function App() {
       selectedProfileId={selectedProfileId}
     />
   );
+}
+
+function readLastSelectedProfileId() {
+  try {
+    return window.localStorage.getItem(LAST_PROFILE_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function writeLastSelectedProfileId(profileId: string) {
+  try {
+    window.localStorage.setItem(LAST_PROFILE_STORAGE_KEY, profileId);
+  } catch {
+    // Ignore storage restrictions; URL and config fallback still resolve a profile.
+  }
 }

@@ -130,6 +130,39 @@ def test_infer_task_session_profile_id_reads_ai_subagent_owner_ref() -> None:
     assert _infer_task_session_profile_id(payload) == "default"
 
 
+def test_config_accepts_subagent_task_flow_actor_type() -> None:
+    class FakeRegistry:
+        def __init__(self) -> None:
+            self._config: dict[str, object] = {}
+
+        def read_config(self) -> dict[str, object]:
+            return dict(self._config)
+
+        def write_config(self, payload: dict[str, object]) -> None:
+            self._config = dict(payload)
+
+        def reset_config(self) -> None:
+            self._config = {}
+
+    app = FastAPI()
+    app.include_router(
+        router_module.build_router(api_prefix="/v1/plugins/afkbotui", registry=FakeRegistry())
+    )
+    client = TestClient(app)
+
+    response = client.patch(
+        "/v1/plugins/afkbotui/config",
+        json={
+            "task_flow_actor_type": "ai_subagent",
+            "task_flow_actor_ref": "default:reviewer",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["config"]["task_flow_actor_type"] == "ai_subagent"
+    assert response.json()["config"]["task_flow_actor_ref"] == "default:reviewer"
+
+
 def test_automation_webhook_endpoint_route_is_separate_from_masked_detail(monkeypatch) -> None:
     now = datetime.now(timezone.utc)
     masked = AutomationMetadata(

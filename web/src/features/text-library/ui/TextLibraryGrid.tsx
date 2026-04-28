@@ -17,7 +17,6 @@ export function TextLibraryGrid({
   items,
   loading,
   onOpen,
-  refreshing,
   selectedId,
   ui,
 }: {
@@ -26,7 +25,6 @@ export function TextLibraryGrid({
   items: TextLibraryItem[];
   loading: boolean;
   onOpen: (itemId: string) => void;
-  refreshing: boolean;
   selectedId: string;
   ui: TextLibraryUiDefinition;
 }) {
@@ -44,7 +42,6 @@ export function TextLibraryGrid({
   return (
     <>
       {loading ? <SurfaceLoader message={ui.loadingListLabel} title="Loading…" /> : null}
-      {refreshing ? <SurfaceLoader message="Refreshing library…" variant="inline" /> : null}
       {items.map((item) => (
         <button
           className={`card ${cardClass} card--button${selectedId === item.id ? " card--selected" : ""}`}

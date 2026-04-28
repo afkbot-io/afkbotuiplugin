@@ -182,13 +182,16 @@ export function TaskFormFields({
           <span className="field__label">Due At</span>
           <input onChange={(event) => handleFieldChange("due_at", event.target.value)} type="datetime-local" value={draft.due_at} />
         </label>
-        <label className="checkbox-row checkbox-row--compact">
-          <input
-            checked={draft.requires_review}
-            onChange={(event) => handleFieldChange("requires_review", event.target.checked)}
-            type="checkbox"
-          />
-          <span>Require review</span>
+        <label className="field field--compact field--checkbox">
+          <span className="field__label">Review</span>
+          <span className="checkbox-row checkbox-row--compact">
+            <input
+              checked={draft.requires_review}
+              onChange={(event) => handleFieldChange("requires_review", event.target.checked)}
+              type="checkbox"
+            />
+            <span>Require review</span>
+          </span>
         </label>
       </div>
       <label className="field">
