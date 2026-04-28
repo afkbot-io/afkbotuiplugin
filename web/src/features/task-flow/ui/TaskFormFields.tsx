@@ -45,10 +45,10 @@ export function TaskFormFields({
         <span className="field__label">Description</span>
         <textarea
           maxLength={12000}
-          onChange={(event) => handleFieldChange("prompt", event.target.value)}
+          onChange={(event) => handleFieldChange("description", event.target.value)}
           required
           rows={8}
-          value={draft.prompt}
+          value={draft.description}
         />
       </label>
       <div className="field-grid">

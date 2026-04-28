@@ -86,7 +86,7 @@ describe("task-flow api helpers", () => {
           [],
         ),
         title: "Task",
-        prompt: "Prompt",
+        description: "Prompt",
         priority: "999",
       }),
     ).toBe("Task priority must be between 0 and 100.");
@@ -102,7 +102,7 @@ describe("task-flow api helpers", () => {
           [],
         ),
         title: "Task",
-        prompt: "Prompt",
+        description: "Prompt",
         due_at: "not-a-date",
       }),
     ).toBe("Due date must be a valid date and time.");
@@ -118,7 +118,7 @@ describe("task-flow api helpers", () => {
           [],
         ),
         title: "Task",
-        prompt: "Prompt",
+        description: "Prompt",
         priority: "40",
       }),
     ).toBe("");
@@ -151,7 +151,7 @@ describe("task-flow api helpers", () => {
                 id: "todo",
                 title: "To Do",
                 count: 1,
-                tasks: [{ id: "task-1", prompt: "Prompt", status: "todo", title: "Task" }],
+                tasks: [{ description: "Prompt", id: "task-1", status: "todo", title: "Task" }],
               },
               {
                 id: "review",
@@ -268,16 +268,28 @@ describe("task-flow api helpers", () => {
       taskDraftFromTask({
         id: "task-1",
         title: "Task",
-        prompt: "Prompt",
+        description: "Prompt",
         status: "todo",
         labels: ["ops"],
         priority: 60,
         requires_review: true,
       }),
     ).toMatchObject({
+      description: "Prompt",
       labels: "ops",
       priority: "60",
       title: "Task",
+    });
+    expect(
+      taskDraftFromTask({
+        id: "task-legacy",
+        title: "Legacy Task",
+        prompt: "Legacy prompt text",
+        status: "todo",
+      }),
+    ).toMatchObject({
+      description: "Legacy prompt text",
+      title: "Legacy Task",
     });
     expect(
       buildSettingsPatch({
@@ -303,7 +315,7 @@ describe("task-flow api helpers", () => {
     };
     const draft = {
       ...defaultTaskDraft(config),
-      prompt: "Write the task contract.",
+      description: "Write the task contract.",
       title: "Route task",
     };
     const payloads: Record<string, unknown>[] = [];
@@ -333,7 +345,7 @@ describe("task-flow api helpers", () => {
     };
 
     await createTaskItem(api, "default", draft, config);
-    await updateTaskItem(api, "default", "task-1", { ...draft, prompt: "Update the task contract." }, config);
+    await updateTaskItem(api, "default", "task-1", { ...draft, description: "Update the task contract." }, config);
 
     expect(payloads[0]).toMatchObject({
       description: "Write the task contract.",

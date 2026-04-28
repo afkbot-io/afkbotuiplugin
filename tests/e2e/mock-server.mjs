@@ -68,7 +68,7 @@ const boardTasks = [
   {
     id: "task-rollout",
     title: "Prepare rollout checklist",
-    prompt: "Collect the final rollout checklist for the React migration.",
+    description: "Collect the final rollout checklist for the React migration.",
     status: "todo",
     priority: 60,
     profile_id: "default",
@@ -94,7 +94,7 @@ const boardTasks = [
   {
     id: "task-review",
     title: "Approve migration smoke suite",
-    prompt: "Review the new dist smoke suite before release.",
+    description: "Review the new dist smoke suite before release.",
     status: "review",
     priority: 70,
     profile_id: "default",

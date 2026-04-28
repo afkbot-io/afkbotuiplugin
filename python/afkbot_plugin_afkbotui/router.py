@@ -139,7 +139,7 @@ class TaskPatchPayload(BaseModel):
 
     title: str | None = None
     description: str | None = Field(default=None, max_length=12000)
-    prompt: str | None = None
+    prompt: str | None = Field(default=None, max_length=12000)
     status: str | None = None
     priority: int | None = None
     due_at: datetime | None = None
