@@ -2,6 +2,14 @@
 
 All notable changes to this plugin are tracked here.
 
+## 0.5.2 - 2026-04-28
+
+- accept legacy Task Flow `prompt` payloads while forwarding canonical `description` values into AFKBOT core for task create and update routes
+- send Task Flow create/edit form data as `description` from the React workspace and keep `prompt` only as a legacy read fallback
+- order Task Flow board columns as Plan, Todo, Blocked, Running, Review, Completed, Failed, and Cancelled
+- show actionable server-error fallback text for opaque 500 responses so operators know to check AFKBOT API logs
+- sync release metadata to version `0.5.2`
+
 ## 0.5.1 - 2026-04-22
 
 - match `afkbotweb` more closely by bundling the same local font assets and removing runtime Google Fonts dependency from the React workspace
