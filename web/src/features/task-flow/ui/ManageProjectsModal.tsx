@@ -8,11 +8,18 @@ import {
   formatProjectResultsNote,
   getVisibleProjects,
 } from "@/features/task-flow/model/task-flow.presentation";
+import {
+  TASK_FLOW_AI_PROFILE_TYPE,
+  TASK_FLOW_AI_SUBAGENT_TYPE,
+  TASK_FLOW_HUMAN_TYPE,
+  resolveActorRefForType,
+} from "@/features/task-flow/model/task-flow.api";
 import type {
   TaskFlowConfig,
   TaskFlowProfile,
   TaskFlowProject,
   TaskFlowProjectDraft,
+  TaskFlowSubagent,
 } from "@/features/task-flow/model/task-flow.types";
 import { AsyncButton } from "@/shared/ui/AsyncButton";
 import { ModalDialog } from "@/shared/ui/ModalDialog";
@@ -34,7 +41,9 @@ type ManageProjectsModalProps = {
   onSubmit: () => void;
   open: boolean;
   pendingDeleteId: string;
+  profileId: string;
   profiles: TaskFlowProfile[];
+  subagents: TaskFlowSubagent[];
   config: TaskFlowConfig;
 };
 
@@ -56,10 +65,27 @@ export function ManageProjectsModal({
   onSubmit,
   open,
   pendingDeleteId,
+  profileId,
   profiles,
+  subagents,
 }: ManageProjectsModalProps) {
   const visibleFlows = getVisibleProjects(flows, activeFlowId, flowSearchQuery);
   const activeFlow = flows.find((item) => item.id === activeFlowId) || null;
+  const handleDefaultOwnerTypeChange = (defaultOwnerType: string) => {
+    onDraftChange({
+      ...draft,
+      default_owner_ref: resolveActorRefForType({
+        config,
+        currentRef: draft.default_owner_ref,
+        previousType: draft.default_owner_type,
+        profileId,
+        profiles,
+        subagents,
+        type: defaultOwnerType,
+      }),
+      default_owner_type: defaultOwnerType,
+    });
+  };
 
   return (
     <ModalDialog
@@ -215,12 +241,13 @@ export function ManageProjectsModal({
               <label className="field field--compact">
                 <span className="field__label">Default Owner Type</span>
                 <select
-                  onChange={(event) => onDraftChange({ ...draft, default_owner_type: event.target.value })}
+                  onChange={(event) => handleDefaultOwnerTypeChange(event.target.value)}
                   value={draft.default_owner_type}
                 >
                   <option value="">None</option>
-                  <option value="ai_profile">ai_profile</option>
-                  <option value="human">human</option>
+                  <option value={TASK_FLOW_AI_PROFILE_TYPE}>AI Profile</option>
+                  <option value={TASK_FLOW_AI_SUBAGENT_TYPE}>Subagent</option>
+                  <option value={TASK_FLOW_HUMAN_TYPE}>Human</option>
                 </select>
               </label>
               <ActorRefField
@@ -228,7 +255,9 @@ export function ManageProjectsModal({
                 label="Default Owner Ref"
                 name="default_owner_ref"
                 onChange={(value) => onDraftChange({ ...draft, default_owner_ref: value })}
+                profileId={profileId}
                 profiles={profiles}
+                subagents={subagents}
                 typeValue={draft.default_owner_type}
                 value={draft.default_owner_ref}
               />

@@ -1,4 +1,4 @@
-export type TaskFlowActorType = "ai_profile" | "human" | string;
+export type TaskFlowActorType = "ai_profile" | "ai_subagent" | "human" | string;
 
 export type TaskFlowStatus =
   | "plan"
@@ -23,6 +23,12 @@ export type TaskFlowProfile = {
   id?: string | null;
   is_default?: boolean | null;
   title?: string | null;
+};
+
+export type TaskFlowSubagent = {
+  name: string;
+  path?: string | null;
+  summary?: string | null;
 };
 
 export type TaskFlowSession = {

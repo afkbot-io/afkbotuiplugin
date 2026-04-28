@@ -3,6 +3,7 @@ import type {
   TaskFlowConfig,
   TaskFlowProfile,
   TaskFlowProject,
+  TaskFlowSubagent,
   TaskFlowTaskDraft,
 } from "@/features/task-flow/model/task-flow.types";
 import { AsyncButton } from "@/shared/ui/AsyncButton";
@@ -18,7 +19,9 @@ type CreateTaskModalProps = {
   onDraftChange: (draft: TaskFlowTaskDraft) => void;
   onSubmit: () => void;
   open: boolean;
+  profileId: string;
   profiles: TaskFlowProfile[];
+  subagents: TaskFlowSubagent[];
 };
 
 export function CreateTaskModal({
@@ -31,7 +34,9 @@ export function CreateTaskModal({
   onDraftChange,
   onSubmit,
   open,
+  profileId,
   profiles,
+  subagents,
 }: CreateTaskModalProps) {
   return (
     <ModalDialog
@@ -50,8 +55,10 @@ export function CreateTaskModal({
           draft={draft}
           flows={flows}
           onChange={onDraftChange}
+          profileId={profileId}
           profiles={profiles}
           showFlowField
+          subagents={subagents}
         />
         <div className="button-row">
           <AsyncButton className="button button--primary" idleLabel="Create Task" loading={busy} pendingLabel="Creating…" type="submit" />

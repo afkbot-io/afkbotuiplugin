@@ -7,4 +7,5 @@ export const taskFlowQueryKeys = {
   review: (profileId: string, flowId: string, actorType: string, actorRef: string) =>
     [...taskFlowQueryKeys.all, profileId, "review", flowId || "all", actorType, actorRef] as const,
   session: (profileId: string, taskId: string) => [...taskFlowQueryKeys.all, profileId, "session", taskId] as const,
+  subagents: (profileId: string) => [...taskFlowQueryKeys.all, profileId, "subagents"] as const,
 };

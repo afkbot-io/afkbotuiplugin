@@ -2,6 +2,15 @@
 
 All notable changes to this plugin are tracked here.
 
+## 0.5.3 - 2026-04-28
+
+- add Subagent as a Task Flow owner and reviewer type while sending the canonical `ai_subagent` owner value to AFKBOT core
+- replace free-text subagent owner fields with profile-local subagent selects for task, review, flow default owner, and Task Flow actor settings
+- validate subagent owner refs before submit so `ai_subagent` payloads use `<profile_id>:<subagent_name>` instead of stale profile IDs
+- render subagent-owned task cards and flow summaries from `owner_ref` values such as `default:researcher` instead of showing them as unassigned
+- infer Task Flow session profile fallbacks from `ai_subagent` owner refs in the plugin API
+- sync release metadata to version `0.5.3`
+
 ## 0.5.2 - 2026-04-28
 
 - accept legacy Task Flow `prompt` payloads while forwarding canonical `description` values into AFKBOT core for task create and update routes

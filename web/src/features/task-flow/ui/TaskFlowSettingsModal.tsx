@@ -1,26 +1,62 @@
-import type { TaskFlowSettingsDraft } from "@/features/task-flow/model/task-flow.types";
+import {
+  TASK_FLOW_AI_PROFILE_TYPE,
+  TASK_FLOW_AI_SUBAGENT_TYPE,
+  TASK_FLOW_HUMAN_TYPE,
+  resolveActorRefForType,
+} from "@/features/task-flow/model/task-flow.api";
+import type {
+  TaskFlowConfig,
+  TaskFlowProfile,
+  TaskFlowSettingsDraft,
+  TaskFlowSubagent,
+} from "@/features/task-flow/model/task-flow.types";
+import { ActorRefField } from "@/features/task-flow/ui/ActorRefField";
 import { AsyncButton } from "@/shared/ui/AsyncButton";
 import { ModalDialog } from "@/shared/ui/ModalDialog";
 
 type TaskFlowSettingsModalProps = {
   busy: boolean;
+  config: TaskFlowConfig;
   draft: TaskFlowSettingsDraft;
   error: string;
   onCancel: () => void;
   onDraftChange: (draft: TaskFlowSettingsDraft) => void;
   onSubmit: () => void;
   open: boolean;
+  profileId: string;
+  profiles: TaskFlowProfile[];
+  subagents: TaskFlowSubagent[];
 };
 
 export function TaskFlowSettingsModal({
   busy,
+  config,
   draft,
   error,
   onCancel,
   onDraftChange,
   onSubmit,
   open,
+  profileId,
+  profiles,
+  subagents,
 }: TaskFlowSettingsModalProps) {
+  const handleActorTypeChange = (actorType: string) => {
+    onDraftChange({
+      ...draft,
+      task_flow_actor_ref: resolveActorRefForType({
+        config,
+        currentRef: draft.task_flow_actor_ref,
+        previousType: draft.task_flow_actor_type,
+        profileId,
+        profiles,
+        subagents,
+        type: actorType,
+      }),
+      task_flow_actor_type: actorType,
+    });
+  };
+
   return (
     <ModalDialog
       busy={busy}
@@ -58,18 +94,23 @@ export function TaskFlowSettingsModal({
         <div className="field-grid">
           <label className="field field--compact">
             <span className="field__label">Actor Type</span>
-            <select onChange={(event) => onDraftChange({ ...draft, task_flow_actor_type: event.target.value })} value={draft.task_flow_actor_type}>
-              <option value="human">human</option>
-              <option value="ai_profile">ai_profile</option>
+            <select onChange={(event) => handleActorTypeChange(event.target.value)} value={draft.task_flow_actor_type}>
+              <option value={TASK_FLOW_HUMAN_TYPE}>Human</option>
+              <option value={TASK_FLOW_AI_PROFILE_TYPE}>AI Profile</option>
+              <option value={TASK_FLOW_AI_SUBAGENT_TYPE}>Subagent</option>
             </select>
           </label>
-          <label className="field field--compact">
-            <span className="field__label">Actor Ref</span>
-            <input
-              onChange={(event) => onDraftChange({ ...draft, task_flow_actor_ref: event.target.value })}
-              value={draft.task_flow_actor_ref}
-            />
-          </label>
+          <ActorRefField
+            config={config}
+            label="Actor Ref"
+            name="task_flow_actor_ref"
+            onChange={(value) => onDraftChange({ ...draft, task_flow_actor_ref: value })}
+            profileId={profileId}
+            profiles={profiles}
+            subagents={subagents}
+            typeValue={draft.task_flow_actor_type}
+            value={draft.task_flow_actor_ref}
+          />
         </div>
         <div className="button-row">
           <AsyncButton className="button button--primary" idleLabel="Save Settings" loading={busy} pendingLabel="Saving…" type="submit" />

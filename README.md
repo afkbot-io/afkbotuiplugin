@@ -2,7 +2,7 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, and profile-local text libraries.
 
-Current release: `0.5.2`
+Current release: `0.5.3`
 
 ## Overview
 
@@ -18,7 +18,7 @@ Current frontend/runtime contract:
 
 The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*` or `web/dist/assets/features/*` payloads.
 
-## What Is In 0.5.2
+## What Is In 0.5.3
 
 - single-shell workspace with `Automations`, `Task Flow`, `Subagents`, `Skills`, and `Bootstrap`
 - React-native route surfaces for every section, with shared loaders, dialogs, async buttons, and responsive layout primitives
@@ -28,6 +28,7 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 - masked webhook metadata in ordinary automation list/detail payloads, with reveal only through `/automations/{id}/webhook-endpoint`
 - automation inspector with cron/webhook diagnostics, copy actions, graph preview, runtime path, and webhook URL rotation
 - Task Flow board with Plan-first status ordering, flow management modal, per-flow filtering, inspector, review flows, comments, dependencies, runs, session activity, and live chat-style activity modal
+- Task Flow owner controls and task cards recognize subagent owners from `owner_ref` values like `default:researcher`
 - Task Flow create/edit routes submit canonical `description` payloads while still reading legacy `prompt` tasks during mixed-version upgrades
 - profile-local CRUD surfaces for subagents, skills, and bootstrap files
 - release-contract checks that verify version sync and shipped `web/dist` integrity
@@ -63,7 +64,7 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 
 ## Requirements
 
-- AFKBOT UI `0.5.2`
+- AFKBOT UI `0.5.3`
 - AFKBOT `>=1.4.2,<2.0.0`
 - current AFKBOT `1.x` auth/chat runtime surface, including:
   - `/v1/auth/session`
