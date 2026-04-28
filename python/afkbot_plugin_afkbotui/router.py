@@ -49,7 +49,7 @@ class UiPluginConfig(BaseModel):
     default_profile_id: str = Field(default="default", min_length=1, max_length=120)
     task_flow_poll_interval_sec: int = Field(default=5, ge=1, le=300)
     task_flow_board_limit_per_column: int = Field(default=20, ge=1, le=200)
-    task_flow_actor_type: Literal["human", "ai_profile"] = "human"
+    task_flow_actor_type: Literal["human", "ai_profile", "ai_subagent"] = "human"
     task_flow_actor_ref: str = Field(default="web-user", min_length=1, max_length=120)
 
 
@@ -62,7 +62,7 @@ class UiPluginConfigPatchPayload(BaseModel):
     default_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
     task_flow_poll_interval_sec: int | None = Field(default=None, ge=1, le=300)
     task_flow_board_limit_per_column: int | None = Field(default=None, ge=1, le=200)
-    task_flow_actor_type: Literal["human", "ai_profile"] | None = None
+    task_flow_actor_type: Literal["human", "ai_profile", "ai_subagent"] | None = None
     task_flow_actor_ref: str | None = Field(default=None, min_length=1, max_length=120)
 
 

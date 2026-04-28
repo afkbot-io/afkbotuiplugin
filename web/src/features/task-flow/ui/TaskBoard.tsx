@@ -4,6 +4,8 @@ import {
   formatTaskRunningElapsed,
   formatStatusLabel,
   formatTaskOwnerSummary,
+  formatTaskPriorityLabel,
+  formatTaskPriorityTitle,
   isActiveRuntimeStatus,
   isOverdue,
   statusToneClass,
@@ -18,7 +20,6 @@ type TaskBoardProps = {
   board: TaskFlowBoard | null;
   boardRef: RefObject<HTMLDivElement | null>;
   loading: boolean;
-  refreshing: boolean;
   onBoardMouseDown: (event: MouseEvent<HTMLElement>) => void;
   onDragEnd: () => void;
   onDragStart: (taskId: string) => void;
@@ -33,7 +34,6 @@ export function TaskBoard({
   board,
   boardRef,
   loading,
-  refreshing,
   onBoardMouseDown,
   onDragEnd,
   onDragStart,
@@ -71,7 +71,6 @@ export function TaskBoard({
           </div>
         </>
       ) : null}
-      {refreshing ? <SurfaceLoader message="Refreshing board…" variant="inline" /> : null}
       <div className="board-grid">
         {board.columns.map((column) => (
           <section
@@ -172,7 +171,9 @@ function TaskCard({
         <div className="task-card__badges">
           <span className={`badge ${taskStatusBadgeClass(task.status)}`}>{formatStatusLabel(task.status)}</span>
           <span className="badge badge--violet">{task.id}</span>
-          <span className="badge badge--accent">p{String(task.priority ?? 50)}</span>
+          <span className="badge badge--accent" title={formatTaskPriorityTitle(task.priority)}>
+            {formatTaskPriorityLabel(task.priority)}
+          </span>
           {task.flow_id ? <span className="badge">{task.flow_id}</span> : null}
           {task.requires_review ? <span className="badge badge--warning">review</span> : null}
           {task.last_comment_created_at ? <span className="badge badge--muted">{formatDateTime(task.last_comment_created_at)}</span> : null}

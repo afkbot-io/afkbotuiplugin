@@ -80,6 +80,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   const [editorError, setEditorError] = useState("");
   const [savingTask, setSavingTask] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
+  const [manualRefreshingBoard, setManualRefreshingBoard] = useState(false);
   const [refreshingSessionKeys, setRefreshingSessionKeys] = useState<Set<string>>(() => new Set());
   const [sessionInsights, setSessionInsights] = useState<TaskSessionInsights | null>(null);
   const [sessionError, setSessionError] = useState("");
@@ -325,6 +326,15 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
       state,
     ],
   );
+
+  const refreshBoardManually = useCallback(async () => {
+    setManualRefreshingBoard(true);
+    try {
+      await refreshAll(false);
+    } finally {
+      setManualRefreshingBoard(false);
+    }
+  }, [refreshAll]);
 
   useEffect(() => {
     if (!previousActiveRef.current && active) {
@@ -749,8 +759,8 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         onManageFlows={state.openManageProjectsModal}
         onOpenReview={state.openReviewModal}
         onOpenSettings={state.openSettingsModal}
-        onRefresh={() => void refreshAll(false)}
-        refreshing={Boolean(boardQuery.isFetching && board)}
+        onRefresh={() => void refreshBoardManually()}
+        refreshing={manualRefreshingBoard}
         reviewCount={reviewTasks.length}
         selectedCount={state.selectedTaskIds.size}
       />
@@ -763,7 +773,6 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
             board={board}
             boardRef={boardRef}
             loading={Boolean(boardQuery.isFetching && !board)}
-            refreshing={Boolean(boardQuery.isFetching && board)}
             onBoardMouseDown={handleBoardMouseDown}
             onDragEnd={() => {
               dragTaskIdRef.current = "";

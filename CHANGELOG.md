@@ -2,6 +2,17 @@
 
 All notable changes to this plugin are tracked here.
 
+## 0.5.4 - 2026-04-28
+
+- keep background refreshes silent across Task Flow, Automations, and profile libraries so polling no longer shifts dashboards or flips refresh buttons every cycle
+- preserve revealed webhook URLs in open automation inspectors unless the operator explicitly rotates the endpoint
+- restore the last selected profile when the workspace opens without a `profile` URL parameter
+- show richer one-line summaries for Subagents, Skills, and Bootstrap files by deriving previews from markdown content instead of terse names
+- replace raw `pNN` task priority chips with named priority levels and Jira-style direction markers
+- tighten Task Flow inspector layouts by aligning the Review field, constraining live activity overflow, moving the Discussion composer below existing comments, and collapsing long comments
+- allow `ai_subagent` as a persisted Task Flow actor type in plugin config metadata and API validation
+- sync release metadata to version `0.5.4`
+
 ## 0.5.3 - 2026-04-28
 
 - add Subagent as a Task Flow owner and reviewer type while sending the canonical `ai_subagent` owner value to AFKBOT core

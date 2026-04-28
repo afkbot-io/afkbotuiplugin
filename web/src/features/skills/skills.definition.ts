@@ -1,4 +1,5 @@
 import type { TextLibraryDefinition } from "@/features/text-library/model/text-library.types";
+import { summarizeTextLibraryItem } from "@/features/text-library/model/text-library.summary";
 
 export const skillsDefinition: TextLibraryDefinition = {
   entity: "skills",
@@ -132,7 +133,9 @@ export const skillsDefinition: TextLibraryDefinition = {
 
 function mapSkillItem(rawItem: Record<string, unknown>) {
   const available = Boolean(rawItem.available);
+  const content = String(rawItem.content || "");
   const executionMode = String(rawItem.execution_mode || "advisory");
+  const id = String(rawItem.name || "");
   const path = String(rawItem.path || "");
   return {
     cardBadges: [
@@ -142,16 +145,20 @@ function mapSkillItem(rawItem: Record<string, unknown>) {
         ? { text: executionMode, className: "badge badge--ai" }
         : { text: "unavailable", className: "badge badge--danger" },
     ],
-    content: String(rawItem.content || ""),
+    content,
     detailBadges: [
       { text: "profile", className: "badge" },
       { text: executionMode, className: "badge badge--accent" },
       ...(available ? [] : [{ text: "missing requirements", className: "badge badge--danger" }]),
       ...(path ? [{ text: path, className: "badge" }] : []),
     ],
-    id: String(rawItem.name || ""),
+    id,
     path,
-    summary: String(rawItem.summary || ""),
+    summary: summarizeTextLibraryItem({
+      content,
+      fallback: id,
+      summary: rawItem.summary,
+    }),
   };
 }
 

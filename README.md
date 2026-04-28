@@ -2,7 +2,7 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, and profile-local text libraries.
 
-Current release: `0.5.3`
+Current release: `0.5.4`
 
 ## Overview
 
@@ -18,7 +18,7 @@ Current frontend/runtime contract:
 
 The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*` or `web/dist/assets/features/*` payloads.
 
-## What Is In 0.5.3
+## What Is In 0.5.4
 
 - single-shell workspace with `Automations`, `Task Flow`, `Subagents`, `Skills`, and `Bootstrap`
 - React-native route surfaces for every section, with shared loaders, dialogs, async buttons, and responsive layout primitives
@@ -27,10 +27,13 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 - operator auth integration with login redirect, session badge, logout, and fail-closed handling when AFKBOT auth endpoints are missing
 - masked webhook metadata in ordinary automation list/detail payloads, with reveal only through `/automations/{id}/webhook-endpoint`
 - automation inspector with cron/webhook diagnostics, copy actions, graph preview, runtime path, and webhook URL rotation
-- Task Flow board with Plan-first status ordering, flow management modal, per-flow filtering, inspector, review flows, comments, dependencies, runs, session activity, and live chat-style activity modal
-- Task Flow owner controls and task cards recognize subagent owners from `owner_ref` values like `default:researcher`
+- Task Flow board with Plan-first status ordering, flow management modal, per-flow filtering, stable silent polling, inspector, review flows, comments, dependencies, runs, session activity, and live chat-style activity modal
+- Task Flow owner controls, reviewer fallbacks, actor settings, and task cards recognize subagent owners from `owner_ref` values like `default:researcher`
+- named Task Flow priority chips replace raw `pNN` scores with low-to-critical labels and direction markers
+- inspector discussion and live activity panels keep long content inside their panes, collapse oversized comments, and keep the comment composer at the bottom
 - Task Flow create/edit routes submit canonical `description` payloads while still reading legacy `prompt` tasks during mixed-version upgrades
-- profile-local CRUD surfaces for subagents, skills, and bootstrap files
+- profile-local CRUD surfaces for subagents, skills, and bootstrap files with richer markdown-derived summaries
+- last selected profile is restored when the workspace opens without an explicit profile parameter
 - release-contract checks that verify version sync and shipped `web/dist` integrity
 - browser smoke coverage for desktop, mobile, auth, mutations, and responsive shell behavior
 
@@ -64,7 +67,7 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 
 ## Requirements
 
-- AFKBOT UI `0.5.3`
+- AFKBOT UI `0.5.4`
 - AFKBOT `>=1.4.2,<2.0.0`
 - current AFKBOT `1.x` auth/chat runtime surface, including:
   - `/v1/auth/session`

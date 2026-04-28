@@ -615,6 +615,57 @@ describe("AutomationsPage", () => {
     expect(getAutomationWebhookEndpoint.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("keeps the revealed webhook endpoint stable after first reveal", async () => {
+    const user = userEvent.setup();
+    const webhookAutomation = buildAutomation({
+      trigger_type: "webhook",
+      webhook: {
+        chat_resume_command: "/resume",
+        last_execution_status: "idle",
+        webhook_endpoint_recoverable: true,
+        webhook_path: null,
+        webhook_token_masked: "hook...gest",
+        webhook_url: null,
+      },
+    });
+    const getAutomationWebhookEndpoint = vi.fn(async () => ({ webhook: buildWebhookEndpoint() }));
+    const api = createApi({
+      getAutomation: vi.fn(async () => ({
+        automation: webhookAutomation,
+      })),
+      getAutomationWebhookEndpoint,
+      listAutomations: vi.fn(async () => ({
+        automations: [webhookAutomation],
+        filtered_count: 1,
+        summary: {
+          active: 1,
+          attention: 0,
+          cron: 0,
+          deleted: 0,
+          paused: 0,
+          total: 1,
+          webhook: 1,
+        },
+      })),
+    });
+
+    renderAutomationsPage({ api });
+
+    await user.click(await screen.findByText("Daily Digest"));
+    expect(await screen.findByText("https://example.test/hooks/digest")).toBeInTheDocument();
+    expect(getAutomationWebhookEndpoint).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Loading current endpoint...")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Copy" })[0]).toBeEnabled();
+
+    await user.click(screen.getAllByLabelText("Close automation panel")[0]);
+    await waitFor(() => {
+      expect(screen.queryByText("https://example.test/hooks/digest")).not.toBeInTheDocument();
+    });
+    await user.click(await screen.findByText("Daily Digest"));
+    expect(await screen.findByText("https://example.test/hooks/digest")).toBeInTheDocument();
+    expect(getAutomationWebhookEndpoint).toHaveBeenCalledTimes(1);
+  });
+
   it("shows pending state while creating an automation and blocks closing actions", async () => {
     const user = userEvent.setup();
     const createRequest = deferred<{ automation: ReturnType<typeof buildAutomation> }>();

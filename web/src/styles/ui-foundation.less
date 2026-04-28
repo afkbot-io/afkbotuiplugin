@@ -1292,6 +1292,14 @@ a {
   flex: 1 1 16rem;
 }
 
+.field--checkbox {
+  min-width: 0;
+}
+
+.field--checkbox .checkbox-row {
+  min-height: 3rem;
+}
+
 .input,
 .select,
 .textarea,
@@ -2309,13 +2317,20 @@ select::-ms-expand {
 }
 
 .task-session-stream--modal {
+  flex: 1 1 auto;
   min-height: 10rem;
+  max-height: min(54vh, 36rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.15rem;
 }
 
 .session-turn {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+  min-width: 0;
 }
 
 .session-bubble {
@@ -2326,6 +2341,7 @@ select::-ms-expand {
   border: 1px solid var(--stroke);
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.03);
+  min-width: 0;
 }
 
 .session-bubble--user {
@@ -2428,7 +2444,14 @@ select::-ms-expand {
 }
 
 .timeline-list--session {
+  flex: 1 1 auto;
   gap: 0.65rem;
+  min-height: 10rem;
+  max-height: min(54vh, 36rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.15rem;
 }
 
 .task-session-modal {
@@ -2454,6 +2477,7 @@ select::-ms-expand {
   grid-template-columns: minmax(0, 1.2fr) minmax(18rem, 0.9fr);
   gap: 1rem;
   min-height: 0;
+  align-items: stretch;
 }
 
 .task-session-modal__panel {
@@ -2474,13 +2498,20 @@ select::-ms-expand {
 
 .timeline-item--session {
   gap: 0.45rem;
+  min-width: 0;
 }
 
 .timeline-item__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.65rem;
+  min-width: 0;
+}
+
+.timeline-item__head p {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .timeline-item__copy {
@@ -2489,6 +2520,14 @@ select::-ms-expand {
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.timeline-item__copy--clamped {
+  white-space: normal;
+}
+
+.timeline-item__toggle {
+  align-self: flex-start;
 }
 
 .timeline-item p,
@@ -3989,6 +4028,11 @@ select::-ms-expand {
   .task-session-modal__statusbar {
     grid-template-columns: 1fr;
     flex-direction: column;
+  }
+
+  .task-session-stream--modal,
+  .timeline-list--session {
+    max-height: min(42vh, 28rem);
   }
 
   .summary-strip {

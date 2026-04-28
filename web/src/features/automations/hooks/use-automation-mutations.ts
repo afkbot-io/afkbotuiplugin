@@ -28,9 +28,6 @@ export function useAutomationMutations({
         queryKey: automationsKeys.detailRoot(profileId),
       }),
       queryClient.invalidateQueries({
-        queryKey: automationsKeys.endpointRoot(profileId),
-      }),
-      queryClient.invalidateQueries({
         queryKey: automationsKeys.graphRoot(profileId),
       }),
     ]);

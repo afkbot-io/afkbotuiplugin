@@ -5,6 +5,8 @@ import { TaskSessionSummaryCard } from "@/features/task-flow/ui/TaskSessionSumma
 import { TaskFormFields } from "@/features/task-flow/ui/TaskFormFields";
 import {
   getRenderedTaskSession,
+  normalizeInlineText,
+  truncate,
 } from "@/features/task-flow/model/task-flow.presentation";
 import {
   TASK_FLOW_AI_PROFILE_TYPE,
@@ -74,6 +76,7 @@ export function TaskInspector({
   subagents,
 }: TaskInspectorProps) {
   const [comment, setComment] = useState("");
+  const [expandedCommentIds, setExpandedCommentIds] = useState<Set<string>>(() => new Set());
   const [reviewDraft, setReviewDraft] = useState({
     owner_ref: "",
     owner_type: "",
@@ -82,6 +85,7 @@ export function TaskInspector({
 
   useEffect(() => {
     setComment("");
+    setExpandedCommentIds(new Set());
     setReviewDraft({
       owner_ref: "",
       owner_type: "",
@@ -258,25 +262,53 @@ export function TaskInspector({
               <h4 className="panel-head__title">Discussion</h4>
             </div>
           </div>
-          <form className="editor-form editor-form--compact" onSubmit={handleCommentSubmit}>
+          <div className="timeline-list">
+            {(detail.task_comments || []).length ? (
+              detail.task_comments.map((item) => {
+                const key = String(item.id || `${item.created_at}-${item.message}`);
+                const rawMessage = String(item.message || "");
+                const collapsedMessage = truncate(rawMessage, 320);
+                const isLong = normalizeInlineText(rawMessage).length > 320 || rawMessage.split(/\r?\n/).length > 8;
+                const expanded = expandedCommentIds.has(key);
+                return (
+                  <article className="timeline-item" key={key}>
+                    <p className={expanded ? "timeline-item__copy" : "timeline-item__copy timeline-item__copy--clamped"}>
+                      {expanded || !isLong ? rawMessage : collapsedMessage}
+                    </p>
+                    {isLong ? (
+                      <button
+                        className="button button--ghost button--tiny timeline-item__toggle"
+                        onClick={() => {
+                          setExpandedCommentIds((current) => {
+                            const next = new Set(current);
+                            if (next.has(key)) {
+                              next.delete(key);
+                            } else {
+                              next.add(key);
+                            }
+                            return next;
+                          });
+                        }}
+                        type="button"
+                      >
+                        {expanded ? "Show less" : "Show full"}
+                      </button>
+                    ) : null}
+                    <span>{formatDateTime(item.created_at)}</span>
+                  </article>
+                );
+              })
+            ) : (
+              <p className="muted-copy">No comments yet.</p>
+            )}
+          </div>
+          <form className="editor-form editor-form--compact discussion-composer" onSubmit={handleCommentSubmit}>
             <label className="field">
               <span className="field__label">Add comment</span>
               <textarea onChange={(event) => setComment(event.target.value)} placeholder="Add context or operator note…" rows={3} value={comment} />
             </label>
             <AsyncButton className="button button--primary" idleLabel="Send Comment" loading={commenting} pendingLabel="Sending…" type="submit" />
           </form>
-          <div className="timeline-list">
-            {(detail.task_comments || []).length ? (
-              detail.task_comments.map((item) => (
-                <article className="timeline-item" key={String(item.id || `${item.created_at}-${item.message}`)}>
-                  <p>{item.message || ""}</p>
-                  <span>{formatDateTime(item.created_at)}</span>
-                </article>
-              ))
-            ) : (
-              <p className="muted-copy">No comments yet.</p>
-            )}
-          </div>
         </section>
 
         <section className="detail-section">

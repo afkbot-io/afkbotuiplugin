@@ -63,6 +63,12 @@ export function statusToneClass(prefix: string, status: string | null | undefine
 export function formatTaskOwnerSummary(task: TaskFlowTask) {
   const ownerType = normalizeActorType(task.owner_type);
   const ownerRef = String(task.owner_ref || "").trim();
+  const reviewerType = normalizeActorType(task.reviewer_type);
+  const reviewerRef = String(task.reviewer_ref || "").trim();
+  const reviewerSummary = formatReviewerSummary(reviewerType, reviewerRef);
+  if (String(task.status || "").trim() === "review" && reviewerSummary) {
+    return reviewerSummary;
+  }
   if (ownerType === TASK_FLOW_AI_PROFILE_TYPE) {
     return ownerRef ? `Owner: AI ${ownerRef}` : "Owner: AI";
   }
@@ -72,7 +78,51 @@ export function formatTaskOwnerSummary(task: TaskFlowTask) {
   if (ownerType === TASK_FLOW_HUMAN_TYPE) {
     return ownerRef ? `Owner: ${ownerRef}` : "Owner: Human";
   }
-  return "Owner: Unassigned";
+  return reviewerSummary || "Owner: Unassigned";
+}
+
+function formatReviewerSummary(reviewerType: string, reviewerRef: string) {
+  if (reviewerType === TASK_FLOW_AI_PROFILE_TYPE) {
+    return reviewerRef ? `Reviewer: AI ${reviewerRef}` : "Reviewer: AI";
+  }
+  if (reviewerType === TASK_FLOW_AI_SUBAGENT_TYPE) {
+    return reviewerRef ? `Reviewer: Subagent ${formatSubagentOwnerRef(reviewerRef)}` : "Reviewer: Subagent";
+  }
+  if (reviewerType === TASK_FLOW_HUMAN_TYPE) {
+    return reviewerRef ? `Reviewer: ${reviewerRef}` : "Reviewer: Human";
+  }
+  return "";
+}
+
+const TASK_PRIORITY_LABELS = [
+  "Lowest <<",
+  "Very Low <",
+  "Low <",
+  "Below <=",
+  "Normal =",
+  "Steady =",
+  "Raised >=",
+  "High >",
+  "Very High >>",
+  "Critical >>",
+] as const;
+
+export function formatTaskPriorityLabel(priority: unknown) {
+  const value = normalizePriorityScore(priority);
+  const index = Math.min(TASK_PRIORITY_LABELS.length - 1, Math.floor(value / 10));
+  return TASK_PRIORITY_LABELS[index];
+}
+
+export function formatTaskPriorityTitle(priority: unknown) {
+  return `Priority score: ${normalizePriorityScore(priority)}/100`;
+}
+
+function normalizePriorityScore(priority: unknown) {
+  const parsed = Number(priority ?? 50);
+  if (!Number.isFinite(parsed)) {
+    return 50;
+  }
+  return Math.min(100, Math.max(0, Math.round(parsed)));
 }
 
 export function formatFlowOwnerSummary(flow: TaskFlowProject) {

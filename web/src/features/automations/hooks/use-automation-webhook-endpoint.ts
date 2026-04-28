@@ -18,13 +18,13 @@ export function useAutomationWebhookEndpoint({
 }) {
   return useQuery({
     enabled: Boolean(active && enabled && profileId && automationId !== null),
-    gcTime: 0,
+    gcTime: Infinity,
     queryFn: async () => getAutomationWebhookEndpoint(api, profileId, automationId as number),
     queryKey: automationsKeys.endpoint(profileId, automationId as number),
-    refetchOnMount: "always",
-    refetchOnReconnect: true,
-    refetchOnWindowFocus: true,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
     retry: false,
-    staleTime: 0,
+    staleTime: Infinity,
   });
 }
