@@ -38,6 +38,7 @@ export type TaskFlowTask = {
   active_session?: TaskFlowSession | null;
   blocked_reason_code?: string | null;
   blocked_reason_text?: string | null;
+  description?: string | null;
   due_at?: string | null;
   flow_id?: string | null;
   id: string;

@@ -58,8 +58,12 @@ function toApiError(response: Response, payload: unknown) {
       : {
           message: typeof detail?.detail === "string" ? detail.detail : "",
         };
+  const fallbackMessage =
+    response.status >= 500
+      ? `Server error (${response.status}). Check AFKBOT API logs for details.`
+      : `Request failed with status ${response.status}`;
   const error = new Error(
-    errorDetail.reason || errorDetail.message || `Request failed with status ${response.status}`,
+    errorDetail.reason || errorDetail.message || fallbackMessage,
   ) as ApiError;
   error.code = errorDetail.error_code || "request_failed";
   error.status = response.status;

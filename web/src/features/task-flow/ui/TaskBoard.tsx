@@ -130,7 +130,7 @@ function TaskCard({
   task: TaskFlowTask;
 }) {
   const isSelected = task.id === selectedTaskId || selectedTaskIds.has(task.id);
-  const previewCopy = task.last_comment_message || task.prompt || "No prompt yet.";
+  const previewCopy = task.last_comment_message || task.description || task.prompt || "No description yet.";
   const ownerSummary = formatTaskOwnerSummary(task);
   const activeSession = task.active_session?.dialog_active;
   const runningElapsed = formatTaskRunningElapsed(task);
