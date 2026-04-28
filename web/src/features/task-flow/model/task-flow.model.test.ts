@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildSettingsPatch,
+  createTaskItem,
   defaultProjectDraft,
   defaultTaskDraft,
   getTaskFlowBoard,
@@ -11,6 +12,7 @@ import {
   parseCsv,
   taskDraftFromTask,
   toDateTimeLocal,
+  updateTaskItem,
   validateProjectDraft,
   validateSettingsDraft,
   validateTaskDraft,
@@ -172,7 +174,16 @@ describe("task-flow api helpers", () => {
       },
     );
 
-    expect(board.columns.map((column) => column.id)).toEqual(["todo", "blocked", "review", "completed", "failed", "cancelled"]);
+    expect(board.columns.map((column) => column.id)).toEqual([
+      "plan",
+      "todo",
+      "blocked",
+      "running",
+      "review",
+      "completed",
+      "failed",
+      "cancelled",
+    ]);
     expect(board.columns.find((column) => column.id === "blocked")).toMatchObject({
       count: 0,
       tasks: [],
@@ -281,6 +292,59 @@ describe("task-flow api helpers", () => {
       task_flow_board_limit_per_column: 25,
       task_flow_poll_interval_sec: 9,
     });
+  });
+
+  it("sends canonical task descriptions for create and update mutations", async () => {
+    const config = {
+      task_flow_actor_ref: "web-user",
+      task_flow_actor_type: "human",
+      task_flow_board_limit_per_column: 20,
+      task_flow_poll_interval_sec: 5,
+    };
+    const draft = {
+      ...defaultTaskDraft(config),
+      prompt: "Write the task contract.",
+      title: "Route task",
+    };
+    const payloads: Record<string, unknown>[] = [];
+    const api = {
+      createTask: async (_profileId: string, payload: Record<string, unknown>) => {
+        payloads.push(payload);
+        return {
+          task: {
+            description: "Write the task contract.",
+            id: "task-1",
+            status: "todo",
+            title: "Route task",
+          },
+        };
+      },
+      updateTask: async (_profileId: string, _taskId: string, payload: Record<string, unknown>) => {
+        payloads.push(payload);
+        return {
+          task: {
+            description: "Update the task contract.",
+            id: "task-1",
+            status: "todo",
+            title: "Route task",
+          },
+        };
+      },
+    };
+
+    await createTaskItem(api, "default", draft, config);
+    await updateTaskItem(api, "default", "task-1", { ...draft, prompt: "Update the task contract." }, config);
+
+    expect(payloads[0]).toMatchObject({
+      description: "Write the task contract.",
+      title: "Route task",
+    });
+    expect(payloads[0]).not.toHaveProperty("prompt");
+    expect(payloads[1]).toMatchObject({
+      description: "Update the task contract.",
+      title: "Route task",
+    });
+    expect(payloads[1]).not.toHaveProperty("prompt");
   });
 });
 

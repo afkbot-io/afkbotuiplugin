@@ -158,4 +158,16 @@ describe("ApiClient text-library resources", () => {
     });
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
   });
+
+  it("uses an actionable fallback message for opaque server errors", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response("Internal Server Error", { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("/v1/plugins/afkbotui");
+
+    await expect(client.createTask("default", { title: "Task" })).rejects.toMatchObject({
+      message: "Server error (500). Check AFKBOT API logs for details.",
+      status: 500,
+    });
+  });
 });
