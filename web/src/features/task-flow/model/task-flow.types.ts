@@ -25,6 +25,12 @@ export type TaskFlowProfile = {
   title?: string | null;
 };
 
+export type TaskFlowSubagent = {
+  name: string;
+  path?: string | null;
+  summary?: string | null;
+};
+
 export type TaskFlowSession = {
   dialog_active?: boolean | null;
   latest_activity_at?: string | null;

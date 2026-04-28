@@ -10,10 +10,12 @@ import {
   TASK_FLOW_AI_PROFILE_TYPE,
   TASK_FLOW_AI_SUBAGENT_TYPE,
   TASK_FLOW_HUMAN_TYPE,
+  resolveActorRefForType,
 } from "@/features/task-flow/model/task-flow.api";
 import type {
   TaskFlowConfig,
   TaskFlowProfile,
+  TaskFlowSubagent,
   TaskFlowTaskDetail,
   TaskFlowTaskDraft,
   TaskSessionInsights,
@@ -38,11 +40,13 @@ type TaskInspectorProps = {
   onSave: () => void;
   onSubmitComment: (message: string) => void;
   commenting?: boolean;
+  profileId: string;
   profiles: TaskFlowProfile[];
   saving: boolean;
   sessionError: string;
   sessionRefreshing?: boolean;
   sessionInsights: TaskSessionInsights | null;
+  subagents: TaskFlowSubagent[];
 };
 
 export function TaskInspector({
@@ -61,11 +65,13 @@ export function TaskInspector({
   onSave,
   onSubmitComment,
   commenting = false,
+  profileId,
   profiles,
   saving,
   sessionError,
   sessionRefreshing = false,
   sessionInsights,
+  subagents,
 }: TaskInspectorProps) {
   const [comment, setComment] = useState("");
   const [reviewDraft, setReviewDraft] = useState({
@@ -123,6 +129,23 @@ export function TaskInspector({
     onRequestChanges(reviewDraft);
   };
 
+  const handleReviewOwnerTypeChange = (ownerType: string) => {
+    setReviewDraft((current) => ({
+      ...current,
+      owner_ref: resolveActorRefForType({
+        allowBlank: true,
+        config,
+        currentRef: current.owner_ref,
+        previousType: current.owner_type,
+        profileId,
+        profiles,
+        subagents,
+        type: ownerType,
+      }),
+      owner_type: ownerType,
+    }));
+  };
+
   return (
     <aside className="task-inspector glass-panel">
       <div className="task-inspector__head">
@@ -140,9 +163,11 @@ export function TaskInspector({
             config={config}
             draft={draft}
             onChange={onDraftChange}
+            profileId={profileId}
             profiles={profiles}
             showBlockedReason
             showStatus
+            subagents={subagents}
           />
           {error ? <div className="inline-alert inline-alert--danger" role="alert">{error}</div> : null}
           <div className="button-row">
@@ -193,7 +218,7 @@ export function TaskInspector({
               <label className="field field--compact">
                 <span className="field__label">Owner Type</span>
                 <select
-                  onChange={(event) => setReviewDraft((current) => ({ ...current, owner_type: event.target.value }))}
+                  onChange={(event) => handleReviewOwnerTypeChange(event.target.value)}
                   value={reviewDraft.owner_type}
                 >
                   <option value="">Keep current</option>
@@ -208,7 +233,9 @@ export function TaskInspector({
                 label="Owner Ref"
                 name="review_owner_ref"
                 onChange={(value) => setReviewDraft((current) => ({ ...current, owner_ref: value }))}
+                profileId={profileId}
                 profiles={profiles}
+                subagents={subagents}
                 typeValue={reviewDraft.owner_type}
                 value={reviewDraft.owner_ref}
               />

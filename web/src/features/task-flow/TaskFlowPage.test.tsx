@@ -246,6 +246,20 @@ function createApi({
         return taskItem.status === "review" && (!flowId || taskItem.flow_id === flowId);
       }),
     })),
+    listSubagents: vi.fn(async () => ({
+      subagents: [
+        {
+          name: "researcher",
+          path: "default/subagents/researcher.md",
+          summary: "Research tasks",
+        },
+        {
+          name: "reviewer",
+          path: "default/subagents/reviewer.md",
+          summary: "Review tasks",
+        },
+      ],
+    })),
     listTaskComments: vi.fn(async (_profileId: string, taskId: string) => ({ task_comments: commentsByTask.get(taskId) || [] })),
     listTaskDependencies: vi.fn(async () => ({ task_dependencies: [] })),
     listTaskEvents: vi.fn(async () => ({ task_events: [] })),
@@ -471,6 +485,36 @@ describe("TaskFlowPage", () => {
     await waitFor(() => {
       expect(api.createTaskFlow).toHaveBeenCalled();
       expect(notify).toHaveBeenCalledWith("Flow created.", "success");
+    });
+  });
+
+  it("uses a subagent select when creating subagent-owned tasks", async () => {
+    const user = userEvent.setup();
+    const { api, notify } = renderTaskFlowPage();
+
+    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(api.listSubagents).toHaveBeenCalledWith("default", { q: "" });
+    });
+
+    await user.click(screen.getByRole("button", { name: "New Task" }));
+    const dialog = await screen.findByRole("dialog", { name: "New Backlog Item" });
+
+    await user.type(within(dialog).getByLabelText("Title"), "Assign subagent task");
+    await user.type(within(dialog).getByLabelText("Description"), "Route this task to a specialist.");
+    await user.selectOptions(within(dialog).getByLabelText("Owner Type"), "ai_subagent");
+    await user.selectOptions(within(dialog).getByLabelText("Owner Ref"), "default:reviewer");
+    await user.click(within(dialog).getByRole("button", { name: "Create Task" }));
+
+    await waitFor(() => {
+      expect(api.createTask).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          owner_ref: "default:reviewer",
+          owner_type: "ai_subagent",
+        }),
+      );
+      expect(notify).toHaveBeenCalledWith("Task created.", "success");
     });
   });
 
@@ -1113,6 +1157,7 @@ describe("TaskFlowPage", () => {
     );
 
     expect(api.listTaskFlows).not.toHaveBeenCalled();
+    expect(api.listSubagents).not.toHaveBeenCalled();
     expect(api.getTaskBoard).not.toHaveBeenCalled();
     expect(api.listReviewTasks).not.toHaveBeenCalled();
 
@@ -1137,6 +1182,7 @@ describe("TaskFlowPage", () => {
 
     await waitFor(() => {
       expect(api.listTaskFlows).toHaveBeenCalled();
+      expect(api.listSubagents).toHaveBeenCalled();
       expect(api.getTaskBoard).toHaveBeenCalled();
       expect(api.listReviewTasks).toHaveBeenCalled();
     });

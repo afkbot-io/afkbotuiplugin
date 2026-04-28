@@ -2,6 +2,7 @@ import { normalizeError } from "@/shared/lib/workspace";
 
 import {
   normalizeActorRef,
+  normalizeActorType,
   normalizeNumberField,
   parseCsv,
   TASK_FLOW_STATUS_OPTIONS,
@@ -17,6 +18,7 @@ import type {
   TaskFlowReviewDraft,
   TaskFlowReviewTask,
   TaskFlowRun,
+  TaskFlowSubagent,
   TaskFlowTask,
   TaskFlowTaskDetail,
   TaskFlowTaskDraft,
@@ -49,6 +51,7 @@ type TaskFlowApi = {
     turns?: TaskSessionInsights["turns"];
   }>;
   listReviewTasks: (profileId: string, params?: Record<string, unknown>) => Promise<{ review_tasks?: TaskFlowReviewTask[] }>;
+  listSubagents: (profileId: string, params?: Record<string, unknown>) => Promise<{ subagents?: Array<Record<string, unknown>> }>;
   listTaskComments: (profileId: string, taskId: string) => Promise<{ task_comments?: TaskFlowComment[] }>;
   listTaskDependencies: (profileId: string, taskId: string) => Promise<{ task_dependencies?: TaskFlowDependency[] }>;
   listTaskEvents: (profileId: string, taskId: string, params?: Record<string, unknown>) => Promise<{ task_events?: TaskFlowEvent[] }>;
@@ -65,6 +68,11 @@ function coerceTaskFlowApi(api: unknown) {
 export async function listTaskProjects(api: unknown, profileId: string) {
   const payload = await coerceTaskFlowApi(api).listTaskFlows(profileId);
   return Array.isArray(payload.task_flows) ? payload.task_flows : [];
+}
+
+export async function listTaskFlowSubagents(api: unknown, profileId: string) {
+  const payload = await coerceTaskFlowApi(api).listSubagents(profileId, { q: "" });
+  return (Array.isArray(payload.subagents) ? payload.subagents : []).flatMap(mapTaskFlowSubagent);
 }
 
 export async function getTaskFlowBoard(api: unknown, profileId: string, flowId: string, config: TaskFlowConfig) {
@@ -201,11 +209,12 @@ export async function createTaskProject(
   draft: TaskFlowProjectDraft,
   config: TaskFlowConfig,
 ) {
+  const defaultOwnerType = normalizeActorType(draft.default_owner_type);
   const payload = await coerceTaskFlowApi(api).createTaskFlow(profileId, {
     created_by_ref: config.task_flow_actor_ref,
-    created_by_type: config.task_flow_actor_type,
+    created_by_type: normalizeActorType(config.task_flow_actor_type),
     default_owner_ref: normalizeActorRef(draft.default_owner_type, draft.default_owner_ref, config),
-    default_owner_type: draft.default_owner_type.trim() || null,
+    default_owner_type: defaultOwnerType || null,
     description: draft.description.trim() || null,
     labels: parseCsv(draft.labels),
     title: draft.title.trim(),
@@ -220,20 +229,22 @@ export async function createTaskItem(
   config: TaskFlowConfig,
 ) {
   const dueAt = draft.due_at.trim() ? new Date(draft.due_at) : null;
+  const ownerType = normalizeActorType(draft.owner_type);
+  const reviewerType = normalizeActorType(draft.reviewer_type);
   const payload = await coerceTaskFlowApi(api).createTask(profileId, {
     created_by_ref: config.task_flow_actor_ref,
-    created_by_type: config.task_flow_actor_type,
+    created_by_type: normalizeActorType(config.task_flow_actor_type),
     depends_on_task_ids: parseCsv(draft.depends_on_task_ids),
     due_at: dueAt ? dueAt.toISOString() : null,
     flow_id: draft.flow_id.trim() || null,
     labels: parseCsv(draft.labels),
     owner_ref: normalizeActorRef(draft.owner_type, draft.owner_ref, config),
-    owner_type: draft.owner_type.trim() || null,
+    owner_type: ownerType || null,
     priority: normalizeNumberField(draft.priority, { fallback: 50, min: 0, max: 100 }) ?? 50,
     description: draft.description.trim(),
     requires_review: draft.requires_review,
     reviewer_ref: normalizeActorRef(draft.reviewer_type, draft.reviewer_ref, config),
-    reviewer_type: draft.reviewer_type.trim() || null,
+    reviewer_type: reviewerType || null,
     title: draft.title.trim(),
   });
   return payload.task || null;
@@ -247,19 +258,21 @@ export async function updateTaskItem(
   config: TaskFlowConfig,
 ) {
   const dueAt = draft.due_at.trim() ? new Date(draft.due_at) : null;
+  const ownerType = normalizeActorType(draft.owner_type);
+  const reviewerType = normalizeActorType(draft.reviewer_type);
   const payload = await coerceTaskFlowApi(api).updateTask(profileId, taskId, {
     actor_ref: config.task_flow_actor_ref,
-    actor_type: config.task_flow_actor_type,
+    actor_type: normalizeActorType(config.task_flow_actor_type),
     blocked_reason_text: draft.blocked_reason_text.trim() || null,
     due_at: dueAt ? dueAt.toISOString() : null,
     labels: parseCsv(draft.labels),
     owner_ref: normalizeActorRef(draft.owner_type, draft.owner_ref, config),
-    owner_type: draft.owner_type.trim() || null,
+    owner_type: ownerType || null,
     priority: normalizeNumberField(draft.priority, { fallback: 50, min: 0, max: 100 }) ?? 50,
     description: draft.description.trim(),
     requires_review: draft.requires_review,
     reviewer_ref: normalizeActorRef(draft.reviewer_type, draft.reviewer_ref, config),
-    reviewer_type: draft.reviewer_type.trim() || null,
+    reviewer_type: reviewerType || null,
     status: draft.status.trim(),
     title: draft.title.trim(),
   });
@@ -283,7 +296,7 @@ export async function bulkMoveTaskItems(
 ) {
   await coerceTaskFlowApi(api).bulkUpdateTasks(profileId, {
     actor_ref: config.task_flow_actor_ref,
-    actor_type: config.task_flow_actor_type,
+    actor_type: normalizeActorType(config.task_flow_actor_type),
     status,
     task_ids: taskIds,
   });
@@ -302,7 +315,7 @@ export async function createTaskComment(
 ) {
   await coerceTaskFlowApi(api).addTaskComment(profileId, taskId, {
     actor_ref: config.task_flow_actor_ref,
-    actor_type: config.task_flow_actor_type,
+    actor_type: normalizeActorType(config.task_flow_actor_type),
     comment_type: "note",
     message: message.trim(),
   });
@@ -311,7 +324,7 @@ export async function createTaskComment(
 export async function approveTaskReview(api: unknown, profileId: string, taskId: string, config: TaskFlowConfig) {
   await coerceTaskFlowApi(api).approveReviewTask(profileId, taskId, {
     actor_ref: config.task_flow_actor_ref,
-    actor_type: config.task_flow_actor_type,
+    actor_type: normalizeActorType(config.task_flow_actor_type),
   });
 }
 
@@ -322,11 +335,12 @@ export async function requestTaskReviewChanges(
   draft: TaskFlowReviewDraft,
   config: TaskFlowConfig,
 ) {
+  const ownerType = normalizeActorType(draft.owner_type);
   await coerceTaskFlowApi(api).requestReviewChanges(profileId, taskId, {
     actor_ref: config.task_flow_actor_ref,
-    actor_type: config.task_flow_actor_type,
+    actor_type: normalizeActorType(config.task_flow_actor_type),
     owner_ref: normalizeActorRef(draft.owner_type, draft.owner_ref, config),
-    owner_type: draft.owner_type.trim() || null,
+    owner_type: ownerType || null,
     reason_text: draft.reason_text.trim(),
   });
 }
@@ -351,4 +365,18 @@ function mergeSessionProgressEvents(existingEvents: TaskSessionInsights["progres
     merged.push({ ...item });
   }
   return merged.slice(-18);
+}
+
+function mapTaskFlowSubagent(item: Record<string, unknown>): TaskFlowSubagent[] {
+  const name = String(item.name || "").trim();
+  if (!name) {
+    return [];
+  }
+  return [
+    {
+      name,
+      path: String(item.path || "").trim(),
+      summary: String(item.summary || "").trim(),
+    },
+  ];
 }

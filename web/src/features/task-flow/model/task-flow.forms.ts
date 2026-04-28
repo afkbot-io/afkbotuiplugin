@@ -4,6 +4,7 @@ import type {
   TaskFlowProjectDraft,
   TaskFlowReviewDraft,
   TaskFlowSettingsDraft,
+  TaskFlowSubagent,
   TaskFlowTask,
   TaskFlowTaskDraft,
 } from "@/features/task-flow/model/task-flow.types";
@@ -15,10 +16,16 @@ export const TASK_FLOW_HUMAN_TYPE = "human";
 
 export const TASK_FLOW_STATUS_OPTIONS = ["plan", "todo", "blocked", "running", "review", "completed", "failed", "cancelled"] as const;
 
+type ActorRefValidationContext = {
+  profileId: string;
+  subagents: TaskFlowSubagent[];
+};
+type ActorRefValidationLabel = "actor" | "default owner" | "owner" | "reviewer";
+
 export function normalizeTaskFlowConfig(config: Record<string, unknown>): TaskFlowConfig {
   return {
     task_flow_actor_ref: String(config.task_flow_actor_ref || "web-user"),
-    task_flow_actor_type: String(config.task_flow_actor_type || "human"),
+    task_flow_actor_type: normalizeActorType(config.task_flow_actor_type || "human"),
     task_flow_board_limit_per_column: Number(config.task_flow_board_limit_per_column || 20),
     task_flow_poll_interval_sec: Number(config.task_flow_poll_interval_sec || 5),
   };
@@ -90,7 +97,7 @@ export function settingsDraftFromConfig(config: TaskFlowConfig): TaskFlowSetting
   };
 }
 
-export function validateProjectDraft(draft: TaskFlowProjectDraft) {
+export function validateProjectDraft(draft: TaskFlowProjectDraft, context?: ActorRefValidationContext) {
   const title = draft.title.trim();
   const description = draft.description.trim();
   if (!title) {
@@ -102,10 +109,14 @@ export function validateProjectDraft(draft: TaskFlowProjectDraft) {
   if (description.length > 2000) {
     return "Flow description must be 2000 characters or less.";
   }
+  const defaultOwnerError = validateSubagentActorRef(draft.default_owner_type, draft.default_owner_ref, "default owner", context);
+  if (defaultOwnerError) {
+    return defaultOwnerError;
+  }
   return "";
 }
 
-export function validateTaskDraft(draft: TaskFlowTaskDraft) {
+export function validateTaskDraft(draft: TaskFlowTaskDraft, context?: ActorRefValidationContext) {
   const title = draft.title.trim();
   const description = draft.description.trim();
   if (!title) {
@@ -129,15 +140,34 @@ export function validateTaskDraft(draft: TaskFlowTaskDraft) {
       return "Due date must be a valid date and time.";
     }
   }
+  const ownerError = validateSubagentActorRef(draft.owner_type, draft.owner_ref, "owner", context);
+  if (ownerError) {
+    return ownerError;
+  }
+  const reviewerError = validateSubagentActorRef(draft.reviewer_type, draft.reviewer_ref, "reviewer", context);
+  if (reviewerError) {
+    return reviewerError;
+  }
   return "";
 }
 
-export function validateSettingsDraft(draft: TaskFlowSettingsDraft) {
+export function validateReviewDraft(draft: TaskFlowReviewDraft, context?: ActorRefValidationContext) {
+  if (!draft.reason_text.trim()) {
+    return "Change request reason is required.";
+  }
+  return validateSubagentActorRef(draft.owner_type, draft.owner_ref, "owner", context);
+}
+
+export function validateSettingsDraft(draft: TaskFlowSettingsDraft, context?: ActorRefValidationContext) {
   if (normalizeNumberField(draft.task_flow_poll_interval_sec, { fallback: null, min: 1, max: 300 }) === null) {
     return "Poll interval must be between 1 and 300 seconds.";
   }
   if (normalizeNumberField(draft.task_flow_board_limit_per_column, { fallback: null, min: 1, max: 200 }) === null) {
     return "Board limit must be between 1 and 200 tasks per column.";
+  }
+  const actorError = validateSubagentActorRef(draft.task_flow_actor_type, draft.task_flow_actor_ref, "actor", context);
+  if (actorError) {
+    return actorError;
   }
   return "";
 }
@@ -145,7 +175,7 @@ export function validateSettingsDraft(draft: TaskFlowSettingsDraft) {
 export function buildSettingsPatch(draft: TaskFlowSettingsDraft) {
   return {
     task_flow_actor_ref: draft.task_flow_actor_ref.trim() || "web-user",
-    task_flow_actor_type: draft.task_flow_actor_type.trim() || "human",
+    task_flow_actor_type: normalizeActorType(draft.task_flow_actor_type) || "human",
     task_flow_board_limit_per_column: normalizeNumberField(draft.task_flow_board_limit_per_column, {
       fallback: 20,
       max: 200,
@@ -210,6 +240,110 @@ export function normalizeActorType(value: unknown) {
     return TASK_FLOW_AI_SUBAGENT_TYPE;
   }
   return normalized;
+}
+
+export function getSubagentOwnerRefOptions(profileId: string, subagents: TaskFlowSubagent[]) {
+  const normalizedProfileId = String(profileId || "").trim() || "default";
+  const seen = new Set<string>();
+  return subagents.flatMap((subagent) => {
+    const name = String(subagent.name || "").trim();
+    if (!name) {
+      return [];
+    }
+    const value = `${normalizedProfileId}:${name}`;
+    if (seen.has(value)) {
+      return [];
+    }
+    seen.add(value);
+    return [
+      {
+        label: name,
+        summary: String(subagent.summary || "").trim(),
+        value,
+      },
+    ];
+  });
+}
+
+export function resolveActorRefForType({
+  allowBlank = false,
+  config,
+  currentRef,
+  profiles,
+  profileId,
+  previousType,
+  subagents,
+  type,
+}: {
+  allowBlank?: boolean;
+  config: TaskFlowConfig;
+  currentRef: unknown;
+  previousType?: unknown;
+  profiles: TaskFlowProfile[];
+  profileId: string;
+  subagents: TaskFlowSubagent[];
+  type: unknown;
+}) {
+  const normalizedType = normalizeActorType(type);
+  const normalizedPreviousType = normalizeActorType(previousType);
+  const normalizedRef = String(currentRef || "").trim();
+  if (!normalizedType) {
+    return "";
+  }
+  if (normalizedType === TASK_FLOW_AI_PROFILE_TYPE) {
+    const profileIds = new Set(profiles.map((profile) => String(profile.id || "").trim()).filter(Boolean));
+    return profileIds.has(normalizedRef) ? normalizedRef : getProfileIdFallback(profiles);
+  }
+  if (normalizedType === TASK_FLOW_AI_SUBAGENT_TYPE) {
+    const options = getSubagentOwnerRefOptions(profileId, subagents);
+    if (normalizedPreviousType === normalizedType && isCanonicalSubagentOwnerRef(normalizedRef)) {
+      return normalizedRef;
+    }
+    return options[0]?.value || (allowBlank ? "" : "");
+  }
+  if (normalizedType === TASK_FLOW_HUMAN_TYPE) {
+    if (normalizedPreviousType === normalizedType && normalizedRef) {
+      return normalizedRef;
+    }
+    return config.task_flow_actor_ref || "web-user";
+  }
+  return normalizedRef;
+}
+
+export function isCanonicalSubagentOwnerRef(value: unknown) {
+  const normalized = String(value || "").trim();
+  const parts = normalized.split(":");
+  return parts.length === 2 && Boolean(parts[0]?.trim()) && Boolean(parts[1]?.trim());
+}
+
+function validateSubagentActorRef(
+  type: unknown,
+  ref: unknown,
+  label: ActorRefValidationLabel,
+  context?: ActorRefValidationContext,
+) {
+  if (normalizeActorType(type) !== TASK_FLOW_AI_SUBAGENT_TYPE) {
+    return "";
+  }
+  const normalizedRef = String(ref || "").trim();
+  if (!normalizedRef) {
+    return `Subagent ${label} is required.`;
+  }
+  if (!isCanonicalSubagentOwnerRef(normalizedRef)) {
+    return `Subagent ${label} must use <profile_id>:<subagent_name>.`;
+  }
+  if (!context) {
+    return "";
+  }
+  const [ownerProfileId] = normalizedRef.split(":");
+  if (ownerProfileId !== context.profileId) {
+    return "";
+  }
+  const validRefs = new Set(getSubagentOwnerRefOptions(context.profileId, context.subagents).map((option) => option.value));
+  if (validRefs.size && !validRefs.has(normalizedRef)) {
+    return `Select a valid subagent ${label}.`;
+  }
+  return "";
 }
 
 export function toDateTimeLocal(value: string | null | undefined) {

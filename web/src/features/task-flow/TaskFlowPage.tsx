@@ -26,6 +26,7 @@ import {
   getTaskFlowBoard,
   getTaskSessionInsights,
   listTaskFlowReview,
+  listTaskFlowSubagents,
   listTaskProjects,
   normalizeTaskFlowConfig,
   resolveTaskFlowError,
@@ -34,6 +35,7 @@ import {
   validateProjectDraft,
   validateSettingsDraft,
   validateTaskDraft,
+  validateReviewDraft,
   bulkMoveTaskItems,
   bulkDeleteTaskItems,
   requestTaskReviewChanges,
@@ -124,6 +126,13 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     refetchOnWindowFocus: false,
   });
 
+  const subagentsQuery = useQuery({
+    enabled: active && Boolean(profileId),
+    queryKey: taskFlowQueryKeys.subagents(profileId),
+    queryFn: () => listTaskFlowSubagents(api, profileId),
+    refetchOnWindowFocus: false,
+  });
+
   const detailQuery = useQuery({
     enabled: active && Boolean(state.selectedTaskId),
     queryKey: taskFlowQueryKeys.detail(profileId, state.selectedTaskId),
@@ -134,6 +143,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   const board = boardQuery.data || null;
   const flows = projectsQuery.data || [];
   const reviewTasks = reviewQuery.data || [];
+  const subagents = subagentsQuery.data || [];
   const selectedListTask = useMemo(
     () => findBoardTask(board, state.selectedTaskId),
     [board, state.selectedTaskId],
@@ -463,7 +473,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   );
 
   const handleCreateProject = useCallback(async () => {
-    const error = validateProjectDraft(state.createProject.draft);
+    const error = validateProjectDraft(state.createProject.draft, { profileId, subagents });
     if (error) {
       state.setCreateProjectError(error);
       return;
@@ -496,7 +506,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     } finally {
       state.setModalBusy(false);
     }
-  }, [api, notify, profileId, refreshAll, state, taskFlowConfig]);
+  }, [api, notify, profileId, refreshAll, state, subagents, taskFlowConfig]);
 
   const handleDeleteProject = useCallback(
     async (flowId: string) => {
@@ -530,7 +540,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   );
 
   const handleCreateTask = useCallback(async () => {
-    const error = validateTaskDraft(state.createTask.draft);
+    const error = validateTaskDraft(state.createTask.draft, { profileId, subagents });
     if (error) {
       state.setCreateTaskError(error);
       return;
@@ -556,14 +566,14 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     } finally {
       state.setModalBusy(false);
     }
-  }, [api, notify, profileId, refreshAll, state, taskFlowConfig]);
+  }, [api, notify, profileId, refreshAll, state, subagents, taskFlowConfig]);
 
   const handleSaveTask = useCallback(async () => {
     if (!state.selectedTaskId) {
       return;
     }
     const taskId = state.selectedTaskId;
-    const error = validateTaskDraft(editorDraft);
+    const error = validateTaskDraft(editorDraft, { profileId, subagents });
     if (error) {
       setEditorError(error);
       return;
@@ -588,7 +598,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     } finally {
       setSavingTask(false);
     }
-  }, [api, editorDraft, notify, profileId, refreshAll, state.selectedTaskId, taskFlowConfig]);
+  }, [api, editorDraft, notify, profileId, refreshAll, state.selectedTaskId, subagents, taskFlowConfig]);
 
   const handleDeleteTask = useCallback(async () => {
     if (!state.selectedTaskId) {
@@ -689,8 +699,9 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
       if (!state.selectedTaskId) {
         return;
       }
-      if (!reviewDraft.reason_text.trim()) {
-        notify("Change request reason is required.", "danger");
+      const error = validateReviewDraft(reviewDraft, { profileId, subagents });
+      if (error) {
+        notify(error, "danger");
         return;
       }
       try {
@@ -701,11 +712,11 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         notify(resolveTaskFlowError(error), "danger");
       }
     },
-    [api, notify, profileId, refreshAll, state.selectedTaskId, taskFlowConfig],
+    [api, notify, profileId, refreshAll, state.selectedTaskId, subagents, taskFlowConfig],
   );
 
   const handleSaveSettings = useCallback(async () => {
-    const error = validateSettingsDraft(state.settings.draft);
+    const error = validateSettingsDraft(state.settings.draft, { profileId, subagents });
     if (error) {
       state.setSettingsError(error);
       return;
@@ -722,9 +733,9 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     } finally {
       state.setModalBusy(false);
     }
-  }, [notify, refreshAll, state, updateConfig]);
+  }, [notify, profileId, refreshAll, state, subagents, updateConfig]);
 
-  const pageError = [projectsQuery.error, boardQuery.error, reviewQuery.error].find(Boolean);
+  const pageError = [projectsQuery.error, boardQuery.error, reviewQuery.error, subagentsQuery.error].find(Boolean);
 
   return (
     <section className="route-page route-page--taskflow taskflow-page" ref={sectionRef}>
@@ -793,11 +804,13 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
             onSave={() => void handleSaveTask()}
             onSubmitComment={(message) => void handleSubmitComment(message)}
             commenting={submittingComment}
+            profileId={profileId}
             profiles={profiles}
             saving={savingTask}
             sessionError={sessionError}
             sessionRefreshing={refreshingSession}
             sessionInsights={sessionInsights}
+            subagents={subagents}
           />
         ) : null}
       </div>
@@ -836,7 +849,9 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         onSubmit={() => void handleCreateProject()}
         open={state.activeModal === "manage-projects"}
         pendingDeleteId={state.deleteState.pendingProjectId}
+        profileId={profileId}
         profiles={profiles}
+        subagents={subagents}
       />
 
       <CreateTaskModal
@@ -849,17 +864,23 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         onDraftChange={state.setCreateTaskDraft}
         onSubmit={() => void handleCreateTask()}
         open={state.activeModal === "task"}
+        profileId={profileId}
         profiles={profiles}
+        subagents={subagents}
       />
 
       <TaskFlowSettingsModal
         busy={state.modalBusy}
+        config={taskFlowConfig}
         draft={state.settings.draft}
         error={state.settings.error}
         onCancel={state.closeModal}
         onDraftChange={state.setSettingsDraft}
         onSubmit={() => void handleSaveSettings()}
         open={state.activeModal === "settings"}
+        profileId={profileId}
+        profiles={profiles}
+        subagents={subagents}
       />
 
       <ReviewQueueModal
