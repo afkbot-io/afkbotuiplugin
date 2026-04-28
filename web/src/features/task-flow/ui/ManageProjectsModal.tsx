@@ -8,6 +8,11 @@ import {
   formatProjectResultsNote,
   getVisibleProjects,
 } from "@/features/task-flow/model/task-flow.presentation";
+import {
+  TASK_FLOW_AI_PROFILE_TYPE,
+  TASK_FLOW_AI_SUBAGENT_TYPE,
+  TASK_FLOW_HUMAN_TYPE,
+} from "@/features/task-flow/model/task-flow.api";
 import type {
   TaskFlowConfig,
   TaskFlowProfile,
@@ -219,8 +224,9 @@ export function ManageProjectsModal({
                   value={draft.default_owner_type}
                 >
                   <option value="">None</option>
-                  <option value="ai_profile">ai_profile</option>
-                  <option value="human">human</option>
+                  <option value={TASK_FLOW_AI_PROFILE_TYPE}>AI Profile</option>
+                  <option value={TASK_FLOW_AI_SUBAGENT_TYPE}>Subagent</option>
+                  <option value={TASK_FLOW_HUMAN_TYPE}>Human</option>
                 </select>
               </label>
               <ActorRefField

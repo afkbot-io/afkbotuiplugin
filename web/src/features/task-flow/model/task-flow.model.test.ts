@@ -263,6 +263,18 @@ describe("task-flow api helpers", () => {
         },
       ),
     ).toBe("alpha");
+    expect(
+      normalizeActorRef(
+        "subagent",
+        "default:researcher",
+        {
+          task_flow_actor_ref: "web-user",
+          task_flow_actor_type: "human",
+          task_flow_board_limit_per_column: 20,
+          task_flow_poll_interval_sec: 5,
+        },
+      ),
+    ).toBe("default:researcher");
     expect(toDateTimeLocal("2026-04-21T10:00:00.000Z")).toContain("2026-04-21T");
     expect(
       taskDraftFromTask({
@@ -285,10 +297,14 @@ describe("task-flow api helpers", () => {
         id: "task-legacy",
         title: "Legacy Task",
         prompt: "Legacy prompt text",
+        owner_type: "subagent",
+        owner_ref: "default:researcher",
         status: "todo",
       }),
     ).toMatchObject({
       description: "Legacy prompt text",
+      owner_ref: "default:researcher",
+      owner_type: "ai_subagent",
       title: "Legacy Task",
     });
     expect(
@@ -395,8 +411,19 @@ describe("task-flow presentation helpers", () => {
     expect(formatTaskOwnerSummary({ id: "1", owner_type: "human", owner_ref: "alice", status: "todo", title: "Task" })).toBe(
       "Owner: alice",
     );
+    expect(
+      formatTaskOwnerSummary({ id: "1", owner_type: "ai_subagent", owner_ref: "default:researcher", status: "todo", title: "Task" }),
+    ).toBe("Owner: Subagent researcher (default)");
     expect(formatTaskOwnerSummary({ id: "1", status: "todo", title: "Task" })).toBe("Owner: Unassigned");
     expect(formatFlowOwnerSummary(flows[0])).toBe("Default owner: AI alpha");
+    expect(
+      formatFlowOwnerSummary({
+        id: "flow-gamma",
+        title: "Gamma",
+        default_owner_type: "ai_subagent",
+        default_owner_ref: "default:researcher",
+      }),
+    ).toBe("Default owner: Subagent researcher (default)");
     expect(formatFlowCreatorSummary(flows[1])).toBe("Created by: AI beta");
     expect(formatFlowStatusSummary(flows[1])).toBe("Status: Paused");
     expect(formatProjectResultsLabel(1, 2)).toBe("1 of 2 flows");
@@ -433,6 +460,13 @@ describe("task-flow presentation helpers", () => {
     };
     const fallbackSession = buildFallbackSessionFromTask(task);
     expect(fallbackSession?.session_profile_id).toBe("alpha");
+    expect(
+      buildFallbackSessionFromTask({
+        ...task,
+        owner_type: "ai_subagent",
+        owner_ref: "default:researcher",
+      })?.session_profile_id,
+    ).toBe("default");
     const sessionKey = getTaskSessionKey(task);
     expect(sessionKey?.sessionId).toBe("session-1");
     const insights = {

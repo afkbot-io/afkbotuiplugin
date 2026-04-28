@@ -29,6 +29,11 @@ from afkbot.services.profile_runtime import ProfileServiceError, get_profile_ser
 from afkbot.services.skills import get_profile_skill_service
 from afkbot.services.subagents.profile_service import get_profile_subagent_service
 from afkbot.services.task_flow import TaskFlowServiceError, get_task_flow_service
+from afkbot.services.task_flow.ai_executors import (
+    AI_PROFILE_OWNER_TYPE,
+    AI_SUBAGENT_OWNER_TYPE,
+    parse_ai_subagent_owner_ref,
+)
 from afkbot.settings import get_settings
 
 _TASK_COMMENT_PREVIEW_SCHEMA_READY = False
@@ -1671,8 +1676,12 @@ def _infer_task_session_profile_id(task_payload: dict[str, object]) -> str:
         return last_session_profile_id
     owner_type = str(task_payload.get("owner_type") or "").strip().lower()
     owner_ref = str(task_payload.get("owner_ref") or "").strip()
-    if owner_type == "ai_profile" and owner_ref:
+    if owner_type == AI_PROFILE_OWNER_TYPE and owner_ref:
         return owner_ref
+    if owner_type == AI_SUBAGENT_OWNER_TYPE and owner_ref:
+        parsed_owner_ref = parse_ai_subagent_owner_ref(owner_ref)
+        if parsed_owner_ref is not None:
+            return parsed_owner_ref[0]
     return str(task_payload.get("profile_id") or "").strip() or "default"
 
 

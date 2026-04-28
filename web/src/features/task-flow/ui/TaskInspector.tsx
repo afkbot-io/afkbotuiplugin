@@ -6,6 +6,11 @@ import { TaskFormFields } from "@/features/task-flow/ui/TaskFormFields";
 import {
   getRenderedTaskSession,
 } from "@/features/task-flow/model/task-flow.presentation";
+import {
+  TASK_FLOW_AI_PROFILE_TYPE,
+  TASK_FLOW_AI_SUBAGENT_TYPE,
+  TASK_FLOW_HUMAN_TYPE,
+} from "@/features/task-flow/model/task-flow.api";
 import type {
   TaskFlowConfig,
   TaskFlowProfile,
@@ -192,8 +197,9 @@ export function TaskInspector({
                   value={reviewDraft.owner_type}
                 >
                   <option value="">Keep current</option>
-                  <option value="ai_profile">ai_profile</option>
-                  <option value="human">human</option>
+                  <option value={TASK_FLOW_AI_PROFILE_TYPE}>AI Profile</option>
+                  <option value={TASK_FLOW_AI_SUBAGENT_TYPE}>Subagent</option>
+                  <option value={TASK_FLOW_HUMAN_TYPE}>Human</option>
                 </select>
               </label>
               <ActorRefField

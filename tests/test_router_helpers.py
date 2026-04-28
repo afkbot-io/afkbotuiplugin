@@ -13,6 +13,7 @@ from afkbot.services.automations.contracts import (
     AutomationWebhookMetadata,
 )
 from afkbot_plugin_afkbotui.router import (
+    _infer_task_session_profile_id,
     _last_activity_datetime,
     _serialize_graph_preview_trace,
     _serialize_graph_preview_validation,
@@ -117,6 +118,16 @@ def test_last_activity_ignores_future_cron_next_run() -> None:
     )
 
     assert _last_activity_datetime(item) == now - timedelta(minutes=30)
+
+
+def test_infer_task_session_profile_id_reads_ai_subagent_owner_ref() -> None:
+    payload = {
+        "owner_type": "ai_subagent",
+        "owner_ref": "default:researcher",
+        "profile_id": "backlog",
+    }
+
+    assert _infer_task_session_profile_id(payload) == "default"
 
 
 def test_automation_webhook_endpoint_route_is_separate_from_masked_detail(monkeypatch) -> None:

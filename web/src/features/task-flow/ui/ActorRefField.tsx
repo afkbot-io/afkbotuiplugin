@@ -1,4 +1,10 @@
 import type { TaskFlowConfig, TaskFlowProfile } from "@/features/task-flow/model/task-flow.types";
+import {
+  getProfileIdFallback,
+  TASK_FLOW_AI_PROFILE_TYPE,
+  TASK_FLOW_AI_SUBAGENT_TYPE,
+  TASK_FLOW_HUMAN_TYPE,
+} from "@/features/task-flow/model/task-flow.api";
 
 type ActorRefFieldProps = {
   allowBlank?: boolean;
@@ -21,7 +27,7 @@ export function ActorRefField({
   typeValue,
   value,
 }: ActorRefFieldProps) {
-  if (typeValue === "ai_profile") {
+  if (typeValue === TASK_FLOW_AI_PROFILE_TYPE) {
     return (
       <label className="field field--compact">
         <span className="field__label">{label}</span>
@@ -37,7 +43,21 @@ export function ActorRefField({
     );
   }
 
-  if (typeValue === "human") {
+  if (typeValue === TASK_FLOW_AI_SUBAGENT_TYPE) {
+    return (
+      <label className="field field--compact">
+        <span className="field__label">{label}</span>
+        <input
+          name={name}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={`${getProfileIdFallback(profiles)}:researcher`}
+          value={value}
+        />
+      </label>
+    );
+  }
+
+  if (typeValue === TASK_FLOW_HUMAN_TYPE) {
     return (
       <label className="field field--compact">
         <span className="field__label">{label}</span>

@@ -8,6 +8,11 @@ import type {
   TaskFlowTaskDraft,
 } from "@/features/task-flow/model/task-flow.types";
 
+export const TASK_FLOW_AI_PROFILE_TYPE = "ai_profile";
+export const TASK_FLOW_AI_SUBAGENT_TYPE = "ai_subagent";
+export const TASK_FLOW_SUBAGENT_ALIAS_TYPE = "subagent";
+export const TASK_FLOW_HUMAN_TYPE = "human";
+
 export const TASK_FLOW_STATUS_OPTIONS = ["plan", "todo", "blocked", "running", "review", "completed", "failed", "cancelled"] as const;
 
 export function normalizeTaskFlowConfig(config: Record<string, unknown>): TaskFlowConfig {
@@ -22,7 +27,7 @@ export function normalizeTaskFlowConfig(config: Record<string, unknown>): TaskFl
 export function defaultProjectDraft(profiles: TaskFlowProfile[] = []): TaskFlowProjectDraft {
   return {
     default_owner_ref: getProfileIdFallback(profiles),
-    default_owner_type: "ai_profile",
+    default_owner_type: TASK_FLOW_AI_PROFILE_TYPE,
     description: "",
     labels: "",
     title: "",
@@ -38,7 +43,7 @@ export function defaultTaskDraft(config: TaskFlowConfig, profiles: TaskFlowProfi
     flow_id: flowId,
     labels: "",
     owner_ref: getProfileIdFallback(profiles),
-    owner_type: "ai_profile",
+    owner_type: TASK_FLOW_AI_PROFILE_TYPE,
     priority: "50",
     description: "",
     requires_review: true,
@@ -57,12 +62,12 @@ export function taskDraftFromTask(task: TaskFlowTask): TaskFlowTaskDraft {
     flow_id: String(task.flow_id || ""),
     labels: (task.labels || []).join(", "),
     owner_ref: String(task.owner_ref || ""),
-    owner_type: String(task.owner_type || ""),
+    owner_type: normalizeActorType(task.owner_type),
     priority: String(task.priority ?? 50),
     description: String(task.description || task.prompt || ""),
     requires_review: Boolean(task.requires_review),
     reviewer_ref: String(task.reviewer_ref || ""),
-    reviewer_type: String(task.reviewer_type || ""),
+    reviewer_type: normalizeActorType(task.reviewer_type),
     status: String(task.status || "todo"),
     title: String(task.title || ""),
   };
@@ -188,15 +193,23 @@ export function getProfileIdFallback(profiles: TaskFlowProfile[]) {
 }
 
 export function normalizeActorRef(type: unknown, value: unknown, config: TaskFlowConfig) {
-  const normalizedType = String(type || "").trim();
+  const normalizedType = normalizeActorType(type);
   const normalizedValue = String(value || "").trim();
   if (!normalizedType) {
     return null;
   }
-  if (normalizedType === "human") {
+  if (normalizedType === TASK_FLOW_HUMAN_TYPE) {
     return normalizedValue || config.task_flow_actor_ref;
   }
   return normalizedValue || null;
+}
+
+export function normalizeActorType(value: unknown) {
+  const normalized = String(value || "").trim();
+  if (normalized === TASK_FLOW_SUBAGENT_ALIAS_TYPE) {
+    return TASK_FLOW_AI_SUBAGENT_TYPE;
+  }
+  return normalized;
 }
 
 export function toDateTimeLocal(value: string | null | undefined) {
