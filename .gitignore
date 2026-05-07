@@ -6,4 +6,5 @@ web/coverage/
 output/
 playwright-report/
 test-results/
+DESIGN.md
 **/__pycache__/
