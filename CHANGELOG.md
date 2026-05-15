@@ -4,6 +4,8 @@ All notable changes to this plugin are tracked here.
 
 ## 0.5.4 - 2026-04-28
 
+- add Task Flow AI-only agent feed, context bundle, and flow/task document controls so operators can see AI assignments, mentions, wake/recovery signals, plans, specs, handoffs, and confirmed document revisions from the board and flow library
+- align Task Flow feed/review API calls with AFKBOT core by sending `task_limit`, preserving omitted reviewers, allowing explicit reviewer clearing, and showing review actions for active review claims
 - keep background refreshes silent across Task Flow, Automations, and profile libraries so polling no longer shifts dashboards or flips refresh buttons every cycle
 - preserve revealed webhook URLs in open automation inspectors unless the operator explicitly rotates the endpoint
 - restore the last selected profile when the workspace opens without a `profile` URL parameter

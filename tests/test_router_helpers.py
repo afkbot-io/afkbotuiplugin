@@ -289,9 +289,9 @@ def test_task_flow_task_routes_map_prompt_payload_to_description(monkeypatch) ->
             return DumpableTask()
 
         async def update_task(self, **kwargs: object) -> DumpableTask:
+            observed.setdefault("updates", []).append(kwargs)
             observed["update"] = kwargs
             assert "prompt" not in kwargs
-            assert kwargs["description"] == "Update the route contract."
             return DumpableTask()
 
     class FakeRegistry:
@@ -328,3 +328,131 @@ def test_task_flow_task_routes_map_prompt_payload_to_description(monkeypatch) ->
     )
     assert update_response.status_code == 200
     assert observed["update"]["task_id"] == "task-1"
+    assert observed["update"]["description"] == "Update the route contract."
+    assert "reviewer_type" not in observed["update"]
+    assert "reviewer_ref" not in observed["update"]
+
+    clear_reviewer_response = client.patch(
+        "/v1/plugins/afkbotui/task-flow/tasks/task-1",
+        json={"reviewer_ref": None, "reviewer_type": None},
+        params={"profile_id": "default"},
+    )
+    assert clear_reviewer_response.status_code == 200
+    assert observed["update"]["reviewer_type"] is None
+    assert observed["update"]["reviewer_ref"] is None
+
+
+def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) -> None:
+    observed: dict[str, dict[str, object]] = {}
+
+    class Dumpable:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+
+        def model_dump(self, *, mode: str) -> dict[str, object]:
+            assert mode == "json"
+            return self.payload
+
+    class FakeTaskFlowService:
+        async def list_flow_documents(self, **kwargs: object) -> list[Dumpable]:
+            observed["list_flow_documents"] = kwargs
+            return [Dumpable({"id": "doc-flow-plan", "document_key": "plan"})]
+
+        async def put_task_document(self, **kwargs: object) -> Dumpable:
+            observed["put_task_document"] = kwargs
+            return Dumpable({"id": "doc-task-plan", "document_key": "plan"})
+
+        async def confirm_document(self, **kwargs: object) -> Dumpable:
+            observed["confirm_document"] = kwargs
+            return Dumpable({"id": kwargs["document_id"], "confirmation_status": "confirmed"})
+
+        async def build_task_context(self, **kwargs: object) -> Dumpable:
+            observed["build_task_context"] = kwargs
+            return Dumpable({"task": {"id": kwargs["task_id"], "title": "Task"}})
+
+        async def build_agent_inbox(
+            self,
+            *,
+            event_limit: int | None,
+            owner_ref: str,
+            owner_type: str,
+            profile_id: str,
+            task_limit: int | None,
+        ) -> Dumpable:
+            observed["build_agent_inbox"] = {
+                "event_limit": event_limit,
+                "owner_ref": owner_ref,
+                "owner_type": owner_type,
+                "profile_id": profile_id,
+                "task_limit": task_limit,
+            }
+            return Dumpable({"owner_ref": owner_ref, "owner_type": owner_type, "tasks": []})
+
+    class FakeRegistry:
+        def read_config(self) -> dict[str, object]:
+            return {"task_flow_actor_ref": "default", "task_flow_actor_type": "ai_profile"}
+
+        def write_config(self, payload: dict[str, object]) -> None:
+            del payload
+
+        def reset_config(self) -> None:
+            pass
+
+    monkeypatch.setattr(router_module, "get_settings", lambda: object())
+    monkeypatch.setattr(router_module, "get_task_flow_service", lambda _settings: FakeTaskFlowService())
+
+    app = FastAPI()
+    app.include_router(
+        router_module.build_router(api_prefix="/v1/plugins/afkbotui", registry=FakeRegistry())
+    )
+    client = TestClient(app)
+
+    docs_response = client.get(
+        "/v1/plugins/afkbotui/task-flow/docs",
+        params={"profile_id": "default", "scope_id": "flow-1", "scope_type": "flow"},
+    )
+    assert docs_response.status_code == 200
+    assert docs_response.json()["task_documents"][0]["id"] == "doc-flow-plan"
+    assert observed["list_flow_documents"] == {"flow_id": "flow-1", "profile_id": "default"}
+
+    put_response = client.put(
+        "/v1/plugins/afkbotui/task-flow/docs",
+        json={
+            "actor_ref": "default",
+            "actor_type": "ai_profile",
+            "body": "Plan body",
+            "document_key": "plan",
+            "scope_id": "task-1",
+            "scope_type": "task",
+            "title": "Task plan",
+        },
+        params={"profile_id": "default"},
+    )
+    assert put_response.status_code == 200
+    assert observed["put_task_document"]["task_id"] == "task-1"
+    assert observed["put_task_document"]["document_key"] == "plan"
+
+    confirm_response = client.post(
+        "/v1/plugins/afkbotui/task-flow/docs/doc-task-plan/confirm",
+        json={"actor_ref": "default", "actor_type": "ai_profile", "expected_revision": 2},
+        params={"profile_id": "default"},
+    )
+    assert confirm_response.status_code == 200
+    assert observed["confirm_document"]["expected_revision"] == 2
+
+    context_response = client.get(
+        "/v1/plugins/afkbotui/task-flow/tasks/task-1/context",
+        params={"profile_id": "default"},
+    )
+    assert context_response.status_code == 200
+    assert observed["build_task_context"] == {"profile_id": "default", "task_id": "task-1"}
+
+    feed_response = client.get(
+        "/v1/plugins/afkbotui/task-flow/feed",
+        params={"profile_id": "default", "owner_ref": "default:researcher", "owner_type": "ai_subagent"},
+    )
+    assert feed_response.status_code == 200
+    assert observed["build_agent_inbox"]["owner_type"] == "ai_subagent"
+    assert observed["build_agent_inbox"]["owner_ref"] == "default:researcher"
+    assert observed["build_agent_inbox"]["task_limit"] == 30
+    assert observed["build_agent_inbox"]["event_limit"] == 20

@@ -242,6 +242,11 @@ export function normalizeActorType(value: unknown) {
   return normalized;
 }
 
+export function isAiExecutorActorType(value: unknown) {
+  const normalized = normalizeActorType(value);
+  return normalized === TASK_FLOW_AI_PROFILE_TYPE || normalized === TASK_FLOW_AI_SUBAGENT_TYPE;
+}
+
 export function getSubagentOwnerRefOptions(profileId: string, subagents: TaskFlowSubagent[]) {
   const normalizedProfileId = String(profileId || "").trim() || "default";
   const seen = new Set<string>();

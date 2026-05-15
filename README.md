@@ -28,6 +28,7 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 - masked webhook metadata in ordinary automation list/detail payloads, with reveal only through `/automations/{id}/webhook-endpoint`
 - automation inspector with cron/webhook diagnostics, copy actions, graph preview, runtime path, and webhook URL rotation
 - Task Flow board with Plan-first status ordering, flow management modal, per-flow filtering, stable silent polling, inspector, review flows, comments, dependencies, runs, session activity, and live chat-style activity modal
+- Task Flow AI-only agent feed, context bundle, and flow/task document controls expose assignments, wake signals, plans, specs, handoffs, and confirmed revisions directly in the board and flow library
 - Task Flow owner controls, reviewer fallbacks, actor settings, and task cards recognize subagent owners from `owner_ref` values like `default:researcher`
 - named Task Flow priority chips replace raw `pNN` scores with low-to-critical labels and direction markers
 - inspector discussion and live activity panels keep long content inside their panes, collapse oversized comments, and keep the comment composer at the bottom
@@ -49,8 +50,11 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 ### Task Flow
 
 - kanban-style board inside the same workspace shell
-- flow library modal with search, add, delete, and quick selection
-- task inspector with create/edit/delete, comments, dependencies, runs, review actions, and live session activity
+- flow library modal with search, add, delete, quick selection, and project-level flow docs
+- agent feed modal for the configured AI Task Flow actor, including assigned tasks, mentions, wake requests, recovery signals, and runtime claim rejects
+- task inspector with create/edit/delete, comments, dependencies, runs, review actions, live session activity, context bundle summaries, and flow/task docs
+- review actions stay available for review tasks that are already claimed or running by an AI reviewer
+- durable flow/task document editing and revision confirmation for plans, specs, roadmaps, decisions, handoffs, QA notes, and agent-readable project knowledge
 - polling that pauses around active edits and resumes without full-page reloads
 
 ### Profile Libraries
@@ -158,9 +162,14 @@ Release preparation, `dist` integrity checks, and version-sync rules are documen
 - `POST /v1/plugins/afkbotui/task-flow/flows`
 - `DELETE /v1/plugins/afkbotui/task-flow/flows/{flow_id}`
 - `GET /v1/plugins/afkbotui/task-flow/board`
+- `GET /v1/plugins/afkbotui/task-flow/feed`
+- `GET /v1/plugins/afkbotui/task-flow/docs`
+- `PUT /v1/plugins/afkbotui/task-flow/docs`
+- `POST /v1/plugins/afkbotui/task-flow/docs/{document_id}/confirm`
 - `GET /v1/plugins/afkbotui/task-flow/sessions/activity`
 - `POST /v1/plugins/afkbotui/task-flow/tasks`
 - `GET /v1/plugins/afkbotui/task-flow/tasks/{task_id}`
+- `GET /v1/plugins/afkbotui/task-flow/tasks/{task_id}/context`
 - `GET /v1/plugins/afkbotui/task-flow/tasks/{task_id}/session`
 - `PATCH /v1/plugins/afkbotui/task-flow/tasks/{task_id}`
 - `DELETE /v1/plugins/afkbotui/task-flow/tasks/{task_id}`

@@ -148,6 +148,36 @@ const taskDependencies = {
   "task-rollout": [],
 };
 
+let taskDocuments = {
+  "flow:flow-alpha": [
+    {
+      id: "doc-flow-alpha-plan",
+      scope_type: "flow",
+      scope_id: "flow-alpha",
+      document_key: "plan",
+      title: "Flow plan",
+      body: "Coordinate rollout tasks through confirmed docs and task handoffs.",
+      revision: 1,
+      confirmation_status: "draft",
+      updated_at: "2026-04-21T09:42:00.000Z",
+    },
+  ],
+  "task:task-rollout": [
+    {
+      id: "doc-task-rollout-handoff",
+      scope_type: "task",
+      scope_id: "task-rollout",
+      document_key: "handoff",
+      title: "Rollout handoff",
+      body: "Check the flow plan and update QA notes before completion.",
+      revision: 1,
+      confirmation_status: "confirmed",
+      confirmed_revision: 1,
+      updated_at: "2026-04-21T09:44:00.000Z",
+    },
+  ],
+};
+
 const taskSessionInsights = {
   "task-rollout": {
     session: {
@@ -376,6 +406,39 @@ function matchApiRoute(pathname, requestUrl = "/") {
     };
   }
 
+  if (pathname === "/v1/plugins/afkbotui/task-flow/feed") {
+    return {
+      feed: {
+        blocked_count: 0,
+        mention_event_count: 1,
+        owner_ref: "default",
+        owner_type: "ai_profile",
+        recent_events: [
+          {
+            id: 31,
+            task_id: "task-rollout",
+            task_title: "Prepare rollout checklist",
+            event_type: "wake_requested",
+            created_at: "2026-04-21T09:47:00.000Z",
+          },
+        ],
+        review_count: 0,
+        running_count: 0,
+        tasks: boardTasks.filter((task) => task.owner_type === "ai_profile"),
+        todo_count: 1,
+        total_count: 1,
+      },
+    };
+  }
+
+  if (pathname === "/v1/plugins/afkbotui/task-flow/docs") {
+    const scopeType = requestUrlObject.searchParams.get("scope_type") || "";
+    const scopeId = requestUrlObject.searchParams.get("scope_id") || "";
+    return {
+      task_documents: taskDocuments[`${scopeType}:${scopeId}`] || [],
+    };
+  }
+
   if (pathname === "/v1/plugins/afkbotui/task-flow/review") {
     return {
       review_tasks: filteredBoardTasks.filter((task) => task.status === "review"),
@@ -386,6 +449,28 @@ function matchApiRoute(pathname, requestUrl = "/") {
     const taskId = decodeURIComponent(pathname.split("/").at(-1) || "");
     return {
       task: boardTasks.find((item) => item.id === taskId) || null,
+    };
+  }
+
+  if (/^\/v1\/plugins\/afkbotui\/task-flow\/tasks\/[^/]+\/context$/u.test(pathname)) {
+    const taskId = decodeURIComponent(pathname.split("/").at(-2) || "");
+    const task = boardTasks.find((item) => item.id === taskId) || null;
+    const flow = task?.flow_id ? taskFlows.find((item) => item.id === task.flow_id) || null : null;
+    return {
+      context: {
+        delegated_tasks: [],
+        dependencies: taskDependencies[taskId] || [],
+        dependency_tasks: [],
+        dependent_tasks: [],
+        dependents: [],
+        flow,
+        flow_documents: flow ? taskDocuments[`flow:${flow.id}`] || [] : [],
+        generated_at: "2026-04-21T09:50:00.000Z",
+        recent_comments: taskComments[taskId] || [],
+        recent_events: taskEvents[taskId] || [],
+        task,
+        task_documents: taskDocuments[`task:${taskId}`] || [],
+      },
     };
   }
 
@@ -645,6 +730,56 @@ async function handleMutation(request, response, pathname) {
     const flowId = decodeURIComponent(pathname.split("/").at(-1) || "");
     taskFlows = taskFlows.filter((item) => item.id !== flowId);
     sendJson(response, 200, { ok: true });
+    return true;
+  }
+
+  if (pathname === "/v1/plugins/afkbotui/task-flow/docs" && method === "PUT") {
+    const payload = await readJsonBody(request);
+    const scopeType = String(payload?.scope_type || "task");
+    const scopeId = String(payload?.scope_id || "");
+    const documentKey = String(payload?.document_key || "plan");
+    const mapKey = `${scopeType}:${scopeId}`;
+    const currentDocuments = taskDocuments[mapKey] || [];
+    const existing = currentDocuments.find((document) => document.document_key === documentKey);
+    const nextDocument = {
+      id: existing?.id || `doc-${scopeType}-${scopeId}-${documentKey}`,
+      scope_type: scopeType,
+      scope_id: scopeId,
+      document_key: documentKey,
+      title: String(payload?.title || documentKey),
+      body: String(payload?.body || ""),
+      revision: Number(existing?.revision || 0) + 1,
+      confirmation_status: "draft",
+      updated_at: "2026-04-21T12:15:00.000Z",
+    };
+    taskDocuments = {
+      ...taskDocuments,
+      [mapKey]: [...currentDocuments.filter((document) => document.id !== nextDocument.id), nextDocument],
+    };
+    sendJson(response, 200, { task_document: nextDocument });
+    return true;
+  }
+
+  if (/^\/v1\/plugins\/afkbotui\/task-flow\/docs\/[^/]+\/confirm$/u.test(pathname) && method === "POST") {
+    const documentId = decodeURIComponent(pathname.split("/").at(-2) || "");
+    let confirmedDocument = null;
+    taskDocuments = Object.fromEntries(
+      Object.entries(taskDocuments).map(([key, documents]) => [
+        key,
+        documents.map((document) => {
+          if (document.id !== documentId) {
+            return document;
+          }
+          confirmedDocument = {
+            ...document,
+            confirmation_status: "confirmed",
+            confirmed_revision: document.revision,
+          };
+          return confirmedDocument;
+        }),
+      ]),
+    );
+    sendJson(response, 200, { task_document: confirmedDocument });
     return true;
   }
 

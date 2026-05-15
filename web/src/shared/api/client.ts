@@ -342,6 +342,28 @@ export class ApiClient {
     });
   }
 
+  async listTaskFlowDocuments(profileId: string, scopeType: string, scopeId: string) {
+    return this.request<Record<string, unknown>>("/task-flow/docs", {
+      params: { profile_id: profileId, scope_id: scopeId, scope_type: scopeType },
+    });
+  }
+
+  async putTaskFlowDocument(profileId: string, payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>("/task-flow/docs", {
+      body: payload,
+      method: "PUT",
+      params: { profile_id: profileId },
+    });
+  }
+
+  async confirmTaskFlowDocument(profileId: string, documentId: string, payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>(`/task-flow/docs/${encodeURIComponent(documentId)}/confirm`, {
+      body: payload,
+      method: "POST",
+      params: { profile_id: profileId },
+    });
+  }
+
   async getTaskBoard(profileId: string, params: Record<string, unknown> = {}) {
     return this.request<Record<string, unknown>>("/task-flow/board", {
       params: { profile_id: profileId, ...params },
@@ -378,6 +400,18 @@ export class ApiClient {
   async getTask(profileId: string, taskId: string) {
     return this.request<Record<string, unknown>>(`/task-flow/tasks/${encodeURIComponent(taskId)}`, {
       params: { profile_id: profileId },
+    });
+  }
+
+  async getTaskContext(profileId: string, taskId: string) {
+    return this.request<Record<string, unknown>>(`/task-flow/tasks/${encodeURIComponent(taskId)}/context`, {
+      params: { profile_id: profileId },
+    });
+  }
+
+  async getTaskFeed(profileId: string, params: Record<string, unknown> = {}) {
+    return this.request<Record<string, unknown>>("/task-flow/feed", {
+      params: { profile_id: profileId, ...params },
     });
   }
 
