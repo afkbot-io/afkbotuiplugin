@@ -2,7 +2,7 @@
 
 All notable changes to this plugin are tracked here.
 
-## 0.5.4 - 2026-04-28
+## 0.5.5 - 2026-05-15
 
 - add Task Flow AI-only agent feed, context bundle, and flow/task document controls so operators can see AI assignments, mentions, wake/recovery signals, plans, specs, handoffs, and confirmed document revisions from the board and flow library
 - align Task Flow feed/review API calls with AFKBOT core by sending `task_limit`, preserving omitted reviewers, allowing explicit reviewer clearing, and showing review actions for active review claims
@@ -13,7 +13,7 @@ All notable changes to this plugin are tracked here.
 - replace raw `pNN` task priority chips with named priority levels and Jira-style direction markers
 - tighten Task Flow inspector layouts by aligning the Review field, constraining live activity overflow, moving the Discussion composer below existing comments, and collapsing long comments
 - allow `ai_subagent` as a persisted Task Flow actor type in plugin config metadata and API validation
-- sync release metadata to version `0.5.4`
+- sync release metadata to version `0.5.5`
 
 ## 0.5.3 - 2026-04-28
 

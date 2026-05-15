@@ -2,7 +2,7 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, and profile-local text libraries.
 
-Current release: `0.5.4`
+Current release: `0.5.5`
 
 ## Overview
 
@@ -18,7 +18,7 @@ Current frontend/runtime contract:
 
 The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*` or `web/dist/assets/features/*` payloads.
 
-## What Is In 0.5.4
+## What Is In 0.5.5
 
 - single-shell workspace with `Automations`, `Task Flow`, `Subagents`, `Skills`, and `Bootstrap`
 - React-native route surfaces for every section, with shared loaders, dialogs, async buttons, and responsive layout primitives
@@ -71,7 +71,7 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 
 ## Requirements
 
-- AFKBOT UI `0.5.4`
+- AFKBOT UI `0.5.5`
 - AFKBOT `>=1.4.2,<2.0.0`
 - current AFKBOT `1.x` auth/chat runtime surface, including:
   - `/v1/auth/session`
