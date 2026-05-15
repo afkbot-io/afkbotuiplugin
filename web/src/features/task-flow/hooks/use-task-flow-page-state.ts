@@ -17,7 +17,7 @@ import type {
   TaskFlowTaskDraft,
 } from "@/features/task-flow/model/task-flow.types";
 
-type ModalState = "" | "delete-selected" | "delete-task" | "manage-projects" | "review" | "settings" | "task";
+type ModalState = "" | "agent-feed" | "delete-selected" | "delete-task" | "manage-projects" | "review" | "settings" | "task";
 
 type CreateProjectState = {
   draft: TaskFlowProjectDraft;
@@ -145,6 +145,9 @@ export function useTaskFlowPageState({
       openDeleteSelectedModal() {
         setActiveModal("delete-selected");
         setDeleteState((current) => ({ ...current, error: "" }));
+      },
+      openAgentFeedModal() {
+        setActiveModal("agent-feed");
       },
       openDeleteTaskModal() {
         setActiveModal("delete-task");

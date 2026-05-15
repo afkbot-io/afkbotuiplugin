@@ -9,11 +9,14 @@ type TaskFlowHeaderProps = {
   onCreateTask: () => void;
   onDeleteSelected: () => void;
   onFilterChange: (flowId: string) => void;
+  onOpenAgentFeed: () => void;
   onManageFlows: () => void;
   onOpenReview: () => void;
   onOpenSettings: () => void;
   onRefresh: () => void;
+  agentFeedDisabled: boolean;
   refreshing: boolean;
+  agentFeedCount: number;
   reviewCount: number;
   selectedCount: number;
 };
@@ -25,11 +28,14 @@ export function TaskFlowHeader({
   onCreateTask,
   onDeleteSelected,
   onFilterChange,
+  onOpenAgentFeed,
   onManageFlows,
   onOpenReview,
   onOpenSettings,
   onRefresh,
+  agentFeedDisabled,
   refreshing,
+  agentFeedCount,
   reviewCount,
   selectedCount,
 }: TaskFlowHeaderProps) {
@@ -61,6 +67,15 @@ export function TaskFlowHeader({
           />
           <button className="button button--ghost button--compact" onClick={onOpenReview} type="button">
             Review <span className="button__count">{reviewCount}</span>
+          </button>
+          <button
+            className="button button--ghost button--compact"
+            disabled={agentFeedDisabled}
+            onClick={onOpenAgentFeed}
+            title={agentFeedDisabled ? "Select an AI profile or subagent actor in Task Flow settings." : undefined}
+            type="button"
+          >
+            Agent Feed <span className="button__count">{agentFeedCount}</span>
           </button>
           <button className="button button--ghost button--compact" onClick={onOpenSettings} type="button">
             Settings

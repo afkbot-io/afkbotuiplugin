@@ -22,12 +22,17 @@ import {
   defaultTaskDraft,
   deleteTaskItem,
   deleteTaskProject,
+  confirmTaskDocument,
+  getAgentFeed,
   getTaskDetail,
+  getTaskContext,
   getTaskFlowBoard,
   getTaskSessionInsights,
   listTaskFlowReview,
   listTaskFlowSubagents,
+  listTaskDocuments,
   listTaskProjects,
+  isAiExecutorActorType,
   normalizeTaskFlowConfig,
   resolveTaskFlowError,
   taskDraftFromTask,
@@ -38,6 +43,7 @@ import {
   validateReviewDraft,
   bulkMoveTaskItems,
   bulkDeleteTaskItems,
+  putTaskDocument,
   requestTaskReviewChanges,
 } from "@/features/task-flow/model/task-flow.api";
 import {
@@ -46,7 +52,8 @@ import {
   shouldAutoRefreshTaskSession,
 } from "@/features/task-flow/model/task-flow.presentation";
 import { taskFlowQueryKeys } from "@/features/task-flow/model/task-flow.query-keys";
-import type { TaskFlowTask, TaskSessionInsights } from "@/features/task-flow/model/task-flow.types";
+import type { TaskFlowDocument, TaskFlowDocumentDraft, TaskFlowTask, TaskSessionInsights } from "@/features/task-flow/model/task-flow.types";
+import { AgentFeedModal } from "@/features/task-flow/ui/AgentFeedModal";
 import { TaskBoard } from "@/features/task-flow/ui/TaskBoard";
 import { CreateTaskModal } from "@/features/task-flow/ui/CreateTaskModal";
 import { DeleteSelectedTasksModal } from "@/features/task-flow/ui/DeleteSelectedTasksModal";
@@ -56,6 +63,7 @@ import { ReviewQueueModal } from "@/features/task-flow/ui/ReviewQueueModal";
 import { TaskFlowHeader } from "@/features/task-flow/ui/TaskFlowHeader";
 import { TaskFlowSettingsModal } from "@/features/task-flow/ui/TaskFlowSettingsModal";
 import { TaskInspector } from "@/features/task-flow/ui/TaskInspector";
+import { TaskKnowledgePanel } from "@/features/task-flow/ui/TaskKnowledgePanel";
 import { TaskSessionModal } from "@/features/task-flow/ui/TaskSessionModal";
 
 export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function TaskFlowPage(
@@ -71,6 +79,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   ref,
 ) {
   const taskFlowConfig = useMemo(() => normalizeTaskFlowConfig(config), [config]);
+  const agentFeedEnabled = isAiExecutorActorType(taskFlowConfig.task_flow_actor_type);
   const state = useTaskFlowPageState({
     config: taskFlowConfig,
     profileId,
@@ -81,6 +90,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   const [savingTask, setSavingTask] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
   const [manualRefreshingBoard, setManualRefreshingBoard] = useState(false);
+  const [savingDocumentId, setSavingDocumentId] = useState("");
   const [refreshingSessionKeys, setRefreshingSessionKeys] = useState<Set<string>>(() => new Set());
   const [sessionInsights, setSessionInsights] = useState<TaskSessionInsights | null>(null);
   const [sessionError, setSessionError] = useState("");
@@ -127,6 +137,13 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     refetchOnWindowFocus: false,
   });
 
+  const agentFeedQuery = useQuery({
+    enabled: active && Boolean(profileId) && agentFeedEnabled,
+    queryKey: taskFlowQueryKeys.feed(profileId, taskFlowConfig.task_flow_actor_type, taskFlowConfig.task_flow_actor_ref),
+    queryFn: () => getAgentFeed(api, profileId, taskFlowConfig),
+    refetchOnWindowFocus: false,
+  });
+
   const subagentsQuery = useQuery({
     enabled: active && Boolean(profileId),
     queryKey: taskFlowQueryKeys.subagents(profileId),
@@ -141,9 +158,24 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     refetchOnWindowFocus: false,
   });
 
+  const contextQuery = useQuery({
+    enabled: active && Boolean(state.selectedTaskId),
+    queryKey: taskFlowQueryKeys.context(profileId, state.selectedTaskId),
+    queryFn: () => getTaskContext(api, profileId, state.selectedTaskId),
+    refetchOnWindowFocus: false,
+  });
+
+  const flowDocumentsQuery = useQuery({
+    enabled: active && Boolean(profileId) && Boolean(state.flowFilter),
+    queryKey: taskFlowQueryKeys.documents(profileId, "flow", state.flowFilter),
+    queryFn: () => listTaskDocuments(api, profileId, "flow", state.flowFilter),
+    refetchOnWindowFocus: false,
+  });
+
   const board = boardQuery.data || null;
   const flows = projectsQuery.data || [];
   const reviewTasks = reviewQuery.data || [];
+  const agentFeed = agentFeedEnabled ? agentFeedQuery.data || null : null;
   const subagents = subagentsQuery.data || [];
   const selectedListTask = useMemo(
     () => findBoardTask(board, state.selectedTaskId),
@@ -307,9 +339,13 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         return;
       }
 
-      await Promise.all([boardQuery.refetch(), reviewQuery.refetch()]);
+      await Promise.all([
+        boardQuery.refetch(),
+        reviewQuery.refetch(),
+        ...(agentFeedEnabled ? [agentFeedQuery.refetch()] : []),
+      ]);
       if (state.selectedTaskId) {
-        await detailQuery.refetch();
+        await Promise.all([detailQuery.refetch(), contextQuery.refetch()]);
         if (sessionAutoRefreshEnabled) {
           await refreshCurrentSessionIncrementally(incrementalSession);
         }
@@ -317,7 +353,10 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     },
     [
       active,
+      agentFeedEnabled,
+      agentFeedQuery,
       boardQuery,
+      contextQuery,
       detailQuery,
       projectsQuery,
       refreshCurrentSessionIncrementally,
@@ -691,6 +730,70 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     [api, detailQuery, notify, profileId, state.selectedTaskId, taskFlowConfig],
   );
 
+  const handleSaveDocument = useCallback(
+    async (draft: TaskFlowDocumentDraft, scopeId: string, baseRevision?: number | null) => {
+      setSavingDocumentId("new");
+      try {
+        await putTaskDocument(api, profileId, draft, scopeId, taskFlowConfig, baseRevision);
+        notify("Document saved.", "success");
+        await Promise.all([contextQuery.refetch(), flowDocumentsQuery.refetch()]);
+      } catch (error) {
+        notify(resolveTaskFlowError(error), "danger");
+      } finally {
+        setSavingDocumentId("");
+      }
+    },
+    [api, contextQuery, flowDocumentsQuery, notify, profileId, taskFlowConfig],
+  );
+
+  const handleSaveFlowDocument = useCallback(
+    async (draft: TaskFlowDocumentDraft, flowId: string, baseRevision?: number | null) => {
+      setSavingDocumentId("new-flow-doc");
+      try {
+        await putTaskDocument(api, profileId, draft, flowId, taskFlowConfig, baseRevision);
+        notify("Flow document saved.", "success");
+        await flowDocumentsQuery.refetch();
+      } catch (error) {
+        notify(resolveTaskFlowError(error), "danger");
+      } finally {
+        setSavingDocumentId("");
+      }
+    },
+    [api, flowDocumentsQuery, notify, profileId, taskFlowConfig],
+  );
+
+  const handleConfirmDocument = useCallback(
+    async (document: TaskFlowDocument) => {
+      setSavingDocumentId(document.id);
+      try {
+        await confirmTaskDocument(api, profileId, document, taskFlowConfig);
+        notify("Document confirmed.", "success");
+        await Promise.all([contextQuery.refetch(), flowDocumentsQuery.refetch()]);
+      } catch (error) {
+        notify(resolveTaskFlowError(error), "danger");
+      } finally {
+        setSavingDocumentId("");
+      }
+    },
+    [api, contextQuery, flowDocumentsQuery, notify, profileId, taskFlowConfig],
+  );
+
+  const handleConfirmFlowDocument = useCallback(
+    async (document: TaskFlowDocument) => {
+      setSavingDocumentId(document.id);
+      try {
+        await confirmTaskDocument(api, profileId, document, taskFlowConfig);
+        notify("Flow document confirmed.", "success");
+        await flowDocumentsQuery.refetch();
+      } catch (error) {
+        notify(resolveTaskFlowError(error), "danger");
+      } finally {
+        setSavingDocumentId("");
+      }
+    },
+    [api, flowDocumentsQuery, notify, profileId, taskFlowConfig],
+  );
+
   const handleApproveReview = useCallback(async () => {
     if (!state.selectedTaskId) {
       return;
@@ -756,11 +859,14 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         onCreateTask={() => state.openTaskModal(state.flowFilter)}
         onDeleteSelected={state.openDeleteSelectedModal}
         onFilterChange={handleFlowFilterChange}
+        onOpenAgentFeed={state.openAgentFeedModal}
         onManageFlows={state.openManageProjectsModal}
         onOpenReview={state.openReviewModal}
         onOpenSettings={state.openSettingsModal}
         onRefresh={() => void refreshBoardManually()}
+        agentFeedDisabled={!agentFeedEnabled}
         refreshing={manualRefreshingBoard}
+        agentFeedCount={agentFeed?.total_count || 0}
         reviewCount={reviewTasks.length}
         selectedCount={state.selectedTaskIds.size}
       />
@@ -820,9 +926,35 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
             sessionRefreshing={refreshingSession}
             sessionInsights={sessionInsights}
             subagents={subagents}
+            knowledgePanel={
+              <TaskKnowledgePanel
+                busyDocumentId={savingDocumentId}
+                context={contextQuery.data || null}
+                error={contextQuery.error ? resolveTaskFlowError(contextQuery.error) : ""}
+                loading={Boolean(contextQuery.isFetching && !contextQuery.data)}
+                onConfirmDocument={(document) => void handleConfirmDocument(document)}
+                onSaveDocument={(draft, scopeId, baseRevision) => void handleSaveDocument(draft, scopeId, baseRevision)}
+                savingDocument={savingDocumentId === "new"}
+              />
+            }
           />
         ) : null}
       </div>
+
+      <AgentFeedModal
+        error={agentFeedQuery.error ? resolveTaskFlowError(agentFeedQuery.error) : ""}
+        feed={agentFeed}
+        loading={Boolean(agentFeedQuery.isFetching && !agentFeed)}
+        onClose={state.closeModal}
+        onRefresh={() => void agentFeedQuery.refetch()}
+        onSelectTask={(taskId) => {
+          state.closeModal();
+          state.selectTask(taskId);
+          closeSessionFeed();
+          setSessionInsights(null);
+        }}
+        open={state.activeModal === "agent-feed"}
+      />
 
       <TaskSessionModal
         error={sessionError}
@@ -840,20 +972,23 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         config={taskFlowConfig}
         draft={state.createProject.draft}
         error={state.createProject.error || state.deleteState.error}
+        flowDocuments={flowDocumentsQuery.data || []}
+        flowDocumentsError={flowDocumentsQuery.error ? resolveTaskFlowError(flowDocumentsQuery.error) : ""}
+        flowDocumentsLoading={Boolean(flowDocumentsQuery.isFetching && !flowDocumentsQuery.data)}
         flowSearchQuery={state.flowSearchQuery}
         flows={flows}
+        busyDocumentId={savingDocumentId}
         onCancel={state.closeModal}
         onCancelDelete={state.clearPendingProjectDelete}
+        onConfirmFlowDocument={(document) => void handleConfirmFlowDocument(document)}
         onConfirmDelete={(flowId) => void handleDeleteProject(flowId)}
         onDraftChange={state.setCreateProjectDraft}
         onFilter={(flowId) => {
           handleFlowFilterChange(flowId);
           state.clearPendingProjectDelete();
-          if (flowId) {
-            state.closeModal();
-          }
         }}
         onRequestDelete={state.requestProjectDelete}
+        onSaveFlowDocument={(draft, flowId, baseRevision) => void handleSaveFlowDocument(draft, flowId, baseRevision)}
         onSearchChange={state.setFlowSearchQuery}
         onSubmit={() => void handleCreateProject()}
         open={state.activeModal === "manage-projects"}

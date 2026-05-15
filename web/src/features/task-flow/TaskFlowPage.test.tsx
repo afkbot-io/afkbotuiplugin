@@ -140,6 +140,25 @@ function createApi({
     ],
     ["task-review", []],
   ]);
+  const documents = new Map<string, Array<Record<string, unknown>>>([
+    [
+      "flow:flow-alpha",
+      [
+        {
+          body: "Ship a coordinated planner improvement.",
+          confirmation_status: "draft",
+          document_key: "plan",
+          id: "doc-flow-plan",
+          revision: 1,
+          scope_id: "flow-alpha",
+          scope_type: "flow",
+          title: "Flow plan",
+          updated_at: "2026-04-21T10:00:00.000Z",
+        },
+      ],
+    ],
+    ["task:task-1", []],
+  ]);
 
   return {
     addTaskComment: vi.fn(async (_profileId: string, _taskId: string, payload: Record<string, unknown>) => {
@@ -211,6 +230,55 @@ function createApi({
       return { ok: true };
     }),
     getTask: vi.fn(async (_profileId: string, taskId: string) => ({ task: tasks.get(taskId) || null })),
+    getTaskContext: vi.fn(async (_profileId: string, taskId: string) => {
+      const task = tasks.get(taskId) || null;
+      const flow = task?.flow_id ? flows.find((flowItem) => flowItem.id === task.flow_id) || null : null;
+      return {
+        context: {
+          delegated_tasks: [],
+          dependencies: [],
+          dependency_tasks: [],
+          dependent_tasks: [],
+          dependents: [],
+          flow,
+          flow_documents: flow ? documents.get(`flow:${flow.id}`) || [] : [],
+          generated_at: "2026-04-21T12:00:00.000Z",
+          recent_comments: commentsByTask.get(taskId) || [],
+          recent_events: [
+            {
+              created_at: "2026-04-21T12:00:00.000Z",
+              event_type: "wake_requested",
+              id: 9,
+              task_id: taskId,
+            },
+          ],
+          task,
+          task_documents: documents.get(`task:${taskId}`) || [],
+        },
+      };
+    }),
+    getTaskFeed: vi.fn(async (_profileId: string, params: Record<string, unknown> = {}) => ({
+      feed: {
+        blocked_count: 0,
+        mention_event_count: 1,
+        owner_ref: String(params.owner_ref || "default"),
+        owner_type: String(params.owner_type || "ai_profile"),
+        recent_events: [
+          {
+            created_at: "2026-04-21T12:00:00.000Z",
+            event_type: "mention_created",
+            id: 10,
+            task_id: "task-1",
+            task_title: "Fix planner output",
+          },
+        ],
+        review_count: 0,
+        running_count: 0,
+        tasks: Array.from(tasks.values()).filter((taskItem) => taskItem.owner_ref === "default" || taskItem.owner_ref === "web-user"),
+        todo_count: 1,
+        total_count: 1,
+      },
+    })),
     getTaskBoard: vi.fn(async (_profileId: string, params: Record<string, unknown> = {}) => ({
       board: (() => {
         const flowId = String(params.flow_id || "");
@@ -243,7 +311,7 @@ function createApi({
     listReviewTasks: vi.fn(async (_profileId: string, params: Record<string, unknown> = {}) => ({
       review_tasks: Array.from(tasks.values()).filter((taskItem) => {
         const flowId = String(params.flow_id || "");
-        return taskItem.status === "review" && (!flowId || taskItem.flow_id === flowId);
+        return (taskItem.status === "review" || taskItem.review_actionable) && (!flowId || taskItem.flow_id === flowId);
       }),
     })),
     listSubagents: vi.fn(async () => ({
@@ -264,7 +332,45 @@ function createApi({
     listTaskDependencies: vi.fn(async () => ({ task_dependencies: [] })),
     listTaskEvents: vi.fn(async () => ({ task_events: [] })),
     listTaskFlows: vi.fn(async () => ({ task_flows: flows })),
+    listTaskFlowDocuments: vi.fn(async (_profileId: string, scopeType: string, scopeId: string) => ({
+      task_documents: documents.get(`${scopeType}:${scopeId}`) || [],
+    })),
     listTaskRuns: vi.fn(async () => ({ task_runs: [] })),
+    putTaskFlowDocument: vi.fn(async (_profileId: string, payload: Record<string, unknown>) => {
+      const scopeType = String(payload.scope_type || "task");
+      const scopeId = String(payload.scope_id || "");
+      const key = `${scopeType}:${scopeId}`;
+      const currentDocuments = documents.get(key) || [];
+      const existing = currentDocuments.find((document) => document.document_key === payload.document_key);
+      const nextDocument = {
+        body: String(payload.body || ""),
+        confirmation_status: "draft",
+        document_key: String(payload.document_key || "plan"),
+        id: String(existing?.id || `doc-${scopeType}-${scopeId}-${payload.document_key}`),
+        revision: Number(existing?.revision || 0) + 1,
+        scope_id: scopeId,
+        scope_type: scopeType,
+        title: String(payload.title || payload.document_key || "Document"),
+        updated_at: "2026-04-21T12:05:00.000Z",
+      };
+      documents.set(key, [...currentDocuments.filter((document) => document.id !== nextDocument.id), nextDocument]);
+      return { task_document: nextDocument };
+    }),
+    confirmTaskFlowDocument: vi.fn(async (_profileId: string, documentId: string) => {
+      for (const [key, currentDocuments] of documents.entries()) {
+        const match = currentDocuments.find((document) => document.id === documentId);
+        if (match) {
+          const nextDocument = {
+            ...match,
+            confirmation_status: "confirmed",
+            confirmed_revision: match.revision,
+          };
+          documents.set(key, currentDocuments.map((document) => (document.id === documentId ? nextDocument : document)));
+          return { task_document: nextDocument };
+        }
+      }
+      return { task_document: null };
+    }),
     requestReviewChanges: vi.fn(async () => ({ ok: true })),
     updateTask: vi.fn(async (_profileId: string, taskId: string, payload: Record<string, unknown>) => {
       const currentTask = tasks.get(taskId) || buildTask({ id: taskId });
@@ -295,7 +401,8 @@ function renderWithClient(node: ReactElement) {
 function renderTaskFlowPage({
   active = true,
   api = createApi(),
-}: { active?: boolean; api?: ReturnType<typeof createApi> } = {}) {
+  config = {},
+}: { active?: boolean; api?: ReturnType<typeof createApi>; config?: Record<string, unknown> } = {}) {
   const notify = vi.fn();
   const updateConfig = vi.fn(async (patch: Record<string, unknown>) => patch);
 
@@ -308,6 +415,7 @@ function renderTaskFlowPage({
         task_flow_actor_type: "human",
         task_flow_board_limit_per_column: 20,
         task_flow_poll_interval_sec: 5,
+        ...config,
       }}
       notify={notify}
       profileId="default"
@@ -403,6 +511,132 @@ describe("TaskFlowPage", () => {
       expect(api.addTaskComment).toHaveBeenCalled();
       expect(notify).toHaveBeenCalledWith("Comment added.", "success");
     });
+  });
+
+  it("shows task context docs and lets an operator save and confirm document revisions", async () => {
+    const user = userEvent.setup();
+    const { api, notify } = renderTaskFlowPage();
+
+    expect(await screen.findByText("Fix planner output")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /fix planner output/i }));
+
+    const knowledgeSection = (await screen.findByText("Context & Docs")).closest("section") as HTMLElement;
+    expect(knowledgeSection).not.toBeNull();
+    expect(within(knowledgeSection).getByText("Flow plan")).toBeInTheDocument();
+    expect(within(knowledgeSection).getByText("wake_requested")).toBeInTheDocument();
+
+    await user.selectOptions(within(knowledgeSection).getByLabelText("Document"), "handoff");
+    await user.clear(within(knowledgeSection).getByLabelText("Title"));
+    await user.type(within(knowledgeSection).getByLabelText("Title"), "Task handoff");
+    await user.type(within(knowledgeSection).getByLabelText("Body"), "Use the confirmed plan before taking the next task.");
+    await user.click(within(knowledgeSection).getByRole("button", { name: "Save Document" }));
+
+    await waitFor(() => {
+      expect(api.putTaskFlowDocument).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          document_key: "handoff",
+          scope_id: "task-1",
+          scope_type: "task",
+        }),
+      );
+      expect(notify).toHaveBeenCalledWith("Document saved.", "success");
+    });
+
+    await user.click(within(knowledgeSection).getAllByRole("button", { name: "Confirm" })[0]);
+
+    await waitFor(() => {
+      expect(api.confirmTaskFlowDocument).toHaveBeenCalledWith(
+        "default",
+        "doc-flow-plan",
+        expect.objectContaining({
+          expected_revision: 1,
+        }),
+      );
+      expect(notify).toHaveBeenCalledWith("Document confirmed.", "success");
+    });
+  });
+
+  it("manages selected flow docs from the flow library", async () => {
+    const user = userEvent.setup();
+    const { api, notify } = renderTaskFlowPage();
+
+    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Flows" }));
+    const dialog = await screen.findByRole("dialog", { name: "Flow Library" });
+
+    await user.click(within(dialog).getByRole("button", { name: "Show on Board" }));
+    expect(await within(dialog).findByText("Flow plan")).toBeInTheDocument();
+
+    const docsSection = within(dialog).getByText("Flow docs").closest(".flow-manager__docs") as HTMLElement;
+    expect(docsSection).not.toBeNull();
+    await user.selectOptions(within(docsSection).getByLabelText("Document"), "spec");
+    await user.clear(within(docsSection).getByLabelText("Title"));
+    await user.type(within(docsSection).getByLabelText("Title"), "Flow spec");
+    await user.type(within(docsSection).getByLabelText("Body"), "Agents must use this project specification before delegation.");
+    await user.click(within(docsSection).getByRole("button", { name: "Save Flow Doc" }));
+
+    await waitFor(() => {
+      expect(api.putTaskFlowDocument).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          document_key: "spec",
+          scope_id: "flow-alpha",
+          scope_type: "flow",
+        }),
+      );
+      expect(notify).toHaveBeenCalledWith("Flow document saved.", "success");
+    });
+
+    await user.click(within(docsSection).getAllByRole("button", { name: "Confirm" })[0]);
+
+    await waitFor(() => {
+      expect(api.confirmTaskFlowDocument).toHaveBeenCalledWith(
+        "default",
+        "doc-flow-plan",
+        expect.objectContaining({
+          expected_revision: 1,
+        }),
+      );
+      expect(notify).toHaveBeenCalledWith("Flow document confirmed.", "success");
+    });
+  });
+
+  it("opens the agent feed and selects work from assignment and wake signals", async () => {
+    const user = userEvent.setup();
+    const { api } = renderTaskFlowPage({
+      config: {
+        task_flow_actor_ref: "default",
+        task_flow_actor_type: "ai_profile",
+      },
+    });
+
+    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Agent Feed/i }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Agent Feed" });
+    expect(within(dialog).getByText("Work Queue")).toBeInTheDocument();
+    expect(within(dialog).getByText("Mentions & wake events")).toBeInTheDocument();
+    expect(within(dialog).getByText("mention_created")).toBeInTheDocument();
+    expect(api.getTaskFeed).toHaveBeenCalledWith(
+      "default",
+      expect.objectContaining({
+        owner_ref: "default",
+        owner_type: "ai_profile",
+      }),
+    );
+
+    await user.click(within(dialog).getByRole("button", { name: /Fix planner output/i }));
+    expect(await screen.findByText("Inspector")).toBeInTheDocument();
+  });
+
+  it("does not request the AI agent feed for a human task-flow actor", async () => {
+    const { api } = renderTaskFlowPage();
+
+    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
+    const feedButton = screen.getByRole("button", { name: /Agent Feed/i });
+    expect(feedButton).toBeDisabled();
+    expect(api.getTaskFeed).not.toHaveBeenCalled();
   });
 
   it("allows clearing an existing due date from the inspector", async () => {
@@ -616,6 +850,30 @@ describe("TaskFlowPage", () => {
       );
       expect(notify).toHaveBeenCalledWith("Review approved.", "success");
     });
+  });
+
+  it("keeps review actions visible for claimed review tasks", async () => {
+    const user = userEvent.setup();
+    renderTaskFlowPage({
+      api: createApi({
+        taskItems: [
+          buildTask({
+            id: "task-claimed-review",
+            review_actionable: true,
+            status: "claimed",
+            title: "Claimed review",
+          }),
+        ],
+      }),
+    });
+
+    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /Review 1/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Tasks Waiting on Review" });
+    await user.click(within(dialog).getByRole("button", { name: /Claimed review/i }));
+
+    expect(await screen.findByRole("button", { name: "Approve" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Request Changes" })).toBeInTheDocument();
   });
 
   it("saves task-flow settings through the shared updateConfig contract", async () => {

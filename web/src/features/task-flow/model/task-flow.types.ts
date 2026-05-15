@@ -59,6 +59,7 @@ export type TaskFlowTask = {
   priority?: number | null;
   profile_id?: string | null;
   prompt?: string | null;
+  review_actionable?: boolean | null;
   requires_review?: boolean | null;
   reviewer_ref?: string | null;
   reviewer_type?: TaskFlowActorType | null;
@@ -102,11 +103,19 @@ export type TaskFlowComment = {
 };
 
 export type TaskFlowEvent = {
+  actor_ref?: string | null;
+  actor_type?: string | null;
   created_at?: string | null;
+  details?: Record<string, unknown>;
   event_type?: string | null;
+  from_status?: string | null;
   id?: number | null;
+  message?: string | null;
   reason?: string | null;
   status?: string | null;
+  task_id?: string | null;
+  task_title?: string | null;
+  to_status?: string | null;
 };
 
 export type TaskFlowRun = {
@@ -129,6 +138,62 @@ export type TaskFlowTaskDetail = {
   task_dependencies: TaskFlowDependency[];
   task_events: TaskFlowEvent[];
   task_runs: TaskFlowRun[];
+};
+
+export type TaskFlowDocument = {
+  body?: string | null;
+  confirmation_status?: string | null;
+  confirmed_at?: string | null;
+  confirmed_by_ref?: string | null;
+  confirmed_by_type?: string | null;
+  confirmed_revision?: number | null;
+  created_at?: string | null;
+  document_key: string;
+  id: string;
+  latest_revision_id?: number | null;
+  profile_id?: string | null;
+  revision: number;
+  scope_id: string;
+  scope_type: "flow" | "task" | string;
+  title: string;
+  updated_at?: string | null;
+  updated_by_ref?: string | null;
+  updated_by_type?: string | null;
+};
+
+export type TaskFlowContextBundle = {
+  delegated_tasks?: TaskFlowTask[];
+  dependencies?: TaskFlowDependency[];
+  dependency_tasks?: TaskFlowTask[];
+  dependent_tasks?: TaskFlowTask[];
+  dependents?: TaskFlowDependency[];
+  flow?: TaskFlowProject | null;
+  flow_documents?: TaskFlowDocument[];
+  generated_at?: string | null;
+  recent_comments?: TaskFlowComment[];
+  recent_events?: TaskFlowEvent[];
+  task?: TaskFlowTask | null;
+  task_documents?: TaskFlowDocument[];
+};
+
+export type TaskFlowAgentFeed = {
+  blocked_count?: number;
+  mention_event_count?: number;
+  owner_ref: string;
+  owner_type: string;
+  recent_events?: TaskFlowEvent[];
+  review_count?: number;
+  running_count?: number;
+  tasks?: TaskFlowTask[];
+  todo_count?: number;
+  total_count?: number;
+};
+
+export type TaskFlowDocumentDraft = {
+  body: string;
+  document_key: string;
+  scope_type: "flow" | "task";
+  title: string;
 };
 
 export type TaskFlowReviewTask = TaskFlowTask;

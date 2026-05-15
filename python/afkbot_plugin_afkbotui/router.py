@@ -208,6 +208,27 @@ class TaskBulkDeletePayload(BaseModel):
     task_ids: tuple[str, ...] = Field(min_length=1)
 
 
+class TaskDocumentPutPayload(BaseModel):
+    """Request body for creating or updating one Task Flow document."""
+
+    scope_type: Literal["flow", "task"]
+    scope_id: str = Field(min_length=1, max_length=128)
+    document_key: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=1, max_length=240)
+    body: str = Field(default="", max_length=200000)
+    actor_type: str = Field(default="human", min_length=1)
+    actor_ref: str = Field(default="web-user", min_length=1)
+    base_revision: int | None = Field(default=None, ge=1)
+
+
+class TaskDocumentConfirmPayload(BaseModel):
+    """Request body for confirming one Task Flow document revision."""
+
+    actor_type: str = Field(default="human", min_length=1)
+    actor_ref: str = Field(default="web-user", min_length=1)
+    expected_revision: int | None = Field(default=None, ge=1)
+
+
 class SubagentCreatePayload(BaseModel):
     """Request body for profile subagent creation."""
 
@@ -586,6 +607,74 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             raise _task_http_error(exc) from exc
         return {"deleted": True, "flow_id": flow_id}
 
+    @router.get("/task-flow/docs")
+    async def task_flow_document_list(
+        scope_type: Literal["flow", "task"],
+        scope_id: str,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_task_flow_service(get_settings())
+        try:
+            if scope_type == "flow":
+                payload = await service.list_flow_documents(profile_id=profile_id, flow_id=scope_id)
+            else:
+                payload = await service.list_task_documents(profile_id=profile_id, task_id=scope_id)
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+        return {"task_documents": [item.model_dump(mode="json") for item in payload]}
+
+    @router.put("/task-flow/docs")
+    async def task_flow_document_put(
+        payload: TaskDocumentPutPayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_task_flow_service(get_settings())
+        try:
+            if payload.scope_type == "flow":
+                item = await service.put_flow_document(
+                    profile_id=profile_id,
+                    flow_id=payload.scope_id,
+                    document_key=payload.document_key,
+                    title=payload.title,
+                    body=payload.body,
+                    actor_type=payload.actor_type,
+                    actor_ref=payload.actor_ref,
+                    base_revision=payload.base_revision,
+                )
+            else:
+                item = await service.put_task_document(
+                    profile_id=profile_id,
+                    task_id=payload.scope_id,
+                    document_key=payload.document_key,
+                    title=payload.title,
+                    body=payload.body,
+                    actor_type=payload.actor_type,
+                    actor_ref=payload.actor_ref,
+                    base_revision=payload.base_revision,
+                )
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+        return {"task_document": item.model_dump(mode="json")}
+
+    @router.post("/task-flow/docs/{document_id}/confirm")
+    async def task_flow_document_confirm(
+        document_id: str,
+        payload: TaskDocumentConfirmPayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_task_flow_service(get_settings())
+        try:
+            item = await service.confirm_document(
+                profile_id=profile_id,
+                document_id=document_id,
+                actor_type=payload.actor_type,
+                actor_ref=payload.actor_ref,
+                expected_revision=payload.expected_revision,
+            )
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+        return {"task_document": item.model_dump(mode="json")}
+
     @router.get("/task-flow/board")
     async def task_flow_board(
         profile_id: str = "default",
@@ -673,6 +762,37 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
         return {"task": payload.model_dump(mode="json")}
+
+    @router.get("/task-flow/tasks/{task_id}/context")
+    async def task_flow_task_context(task_id: str, profile_id: str = "default") -> dict[str, object]:
+        service = get_task_flow_service(get_settings())
+        try:
+            payload = await service.build_task_context(profile_id=profile_id, task_id=task_id)
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+        return {"context": payload.model_dump(mode="json")}
+
+    @router.get("/task-flow/feed")
+    async def task_flow_agent_feed(
+        profile_id: str = "default",
+        owner_type: str | None = None,
+        owner_ref: str | None = None,
+        limit: int | None = 30,
+        event_limit: int | None = 20,
+    ) -> dict[str, object]:
+        service = get_task_flow_service(get_settings())
+        config = read_config()
+        try:
+            payload = await service.build_agent_inbox(
+                profile_id=profile_id,
+                owner_type=owner_type or config.task_flow_actor_type,
+                owner_ref=owner_ref or config.task_flow_actor_ref,
+                task_limit=limit,
+                event_limit=event_limit,
+            )
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+        return {"feed": payload.model_dump(mode="json")}
 
     @router.get("/task-flow/tasks/{task_id}/session")
     async def task_flow_task_session_insights(
@@ -767,8 +887,6 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 "due_at": payload.due_at,
                 "owner_type": payload.owner_type,
                 "owner_ref": payload.owner_ref,
-                "reviewer_type": payload.reviewer_type,
-                "reviewer_ref": payload.reviewer_ref,
                 "requires_review": payload.requires_review,
                 "labels": payload.labels,
                 "blocked_reason_code": payload.blocked_reason_code,
@@ -780,6 +898,10 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 update_kwargs["session_id"] = payload.session_id
             if "session_profile_id" in payload.model_fields_set:
                 update_kwargs["session_profile_id"] = payload.session_profile_id
+            if "reviewer_type" in payload.model_fields_set:
+                update_kwargs["reviewer_type"] = payload.reviewer_type
+            if "reviewer_ref" in payload.model_fields_set:
+                update_kwargs["reviewer_ref"] = payload.reviewer_ref
             item = await service.update_task(**update_kwargs)
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
@@ -817,23 +939,26 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                         }
                     )
                     continue
-                updated = await service.update_task(
-                    profile_id=profile_id,
-                    task_id=task_id,
-                    status=payload.status,
-                    priority=payload.priority,
-                    due_at=payload.due_at,
-                    owner_type=payload.owner_type,
-                    owner_ref=payload.owner_ref,
-                    reviewer_type=payload.reviewer_type,
-                    reviewer_ref=payload.reviewer_ref,
-                    requires_review=payload.requires_review,
-                    labels=payload.labels,
-                    blocked_reason_code=payload.blocked_reason_code,
-                    blocked_reason_text=payload.blocked_reason_text,
-                    actor_type=payload.actor_type,
-                    actor_ref=payload.actor_ref,
-                )
+                update_kwargs: dict[str, object] = {
+                    "profile_id": profile_id,
+                    "task_id": task_id,
+                    "status": payload.status,
+                    "priority": payload.priority,
+                    "due_at": payload.due_at,
+                    "owner_type": payload.owner_type,
+                    "owner_ref": payload.owner_ref,
+                    "requires_review": payload.requires_review,
+                    "labels": payload.labels,
+                    "blocked_reason_code": payload.blocked_reason_code,
+                    "blocked_reason_text": payload.blocked_reason_text,
+                    "actor_type": payload.actor_type,
+                    "actor_ref": payload.actor_ref,
+                }
+                if "reviewer_type" in payload.model_fields_set:
+                    update_kwargs["reviewer_type"] = payload.reviewer_type
+                if "reviewer_ref" in payload.model_fields_set:
+                    update_kwargs["reviewer_ref"] = payload.reviewer_ref
+                updated = await service.update_task(**update_kwargs)
                 if payload.comment_message:
                     await service.add_task_comment(
                         profile_id=profile_id,

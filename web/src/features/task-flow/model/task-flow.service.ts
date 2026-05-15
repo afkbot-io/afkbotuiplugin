@@ -6,12 +6,17 @@ import {
   normalizeNumberField,
   parseCsv,
   TASK_FLOW_STATUS_OPTIONS,
+  isAiExecutorActorType,
 } from "@/features/task-flow/model/task-flow.forms";
 import type {
   TaskFlowBoard,
   TaskFlowComment,
   TaskFlowConfig,
+  TaskFlowAgentFeed,
+  TaskFlowContextBundle,
   TaskFlowDependency,
+  TaskFlowDocument,
+  TaskFlowDocumentDraft,
   TaskFlowEvent,
   TaskFlowProject,
   TaskFlowProjectDraft,
@@ -41,6 +46,8 @@ type TaskFlowApi = {
   deleteTaskFlow: (profileId: string, flowId: string) => Promise<unknown>;
   getTask: (profileId: string, taskId: string) => Promise<{ task?: TaskFlowTask }>;
   getTaskBoard: (profileId: string, params?: Record<string, unknown>) => Promise<{ board?: TaskFlowBoard }>;
+  getTaskContext: (profileId: string, taskId: string) => Promise<{ context?: TaskFlowContextBundle }>;
+  getTaskFeed: (profileId: string, params?: Record<string, unknown>) => Promise<{ feed?: TaskFlowAgentFeed }>;
   getTaskSessionInsights: (
     profileId: string,
     taskId: string,
@@ -52,11 +59,22 @@ type TaskFlowApi = {
   }>;
   listReviewTasks: (profileId: string, params?: Record<string, unknown>) => Promise<{ review_tasks?: TaskFlowReviewTask[] }>;
   listSubagents: (profileId: string, params?: Record<string, unknown>) => Promise<{ subagents?: Array<Record<string, unknown>> }>;
+  listTaskFlowDocuments: (
+    profileId: string,
+    scopeType: string,
+    scopeId: string,
+  ) => Promise<{ task_documents?: TaskFlowDocument[] }>;
   listTaskComments: (profileId: string, taskId: string) => Promise<{ task_comments?: TaskFlowComment[] }>;
   listTaskDependencies: (profileId: string, taskId: string) => Promise<{ task_dependencies?: TaskFlowDependency[] }>;
   listTaskEvents: (profileId: string, taskId: string, params?: Record<string, unknown>) => Promise<{ task_events?: TaskFlowEvent[] }>;
   listTaskFlows: (profileId: string) => Promise<{ task_flows?: TaskFlowProject[] }>;
   listTaskRuns: (profileId: string, taskId: string, params?: Record<string, unknown>) => Promise<{ task_runs?: TaskFlowRun[] }>;
+  putTaskFlowDocument: (profileId: string, payload: Record<string, unknown>) => Promise<{ task_document?: TaskFlowDocument }>;
+  confirmTaskFlowDocument: (
+    profileId: string,
+    documentId: string,
+    payload: Record<string, unknown>,
+  ) => Promise<{ task_document?: TaskFlowDocument }>;
   requestReviewChanges: (profileId: string, taskId: string, payload: Record<string, unknown>) => Promise<unknown>;
   updateTask: (profileId: string, taskId: string, payload: Record<string, unknown>) => Promise<{ task?: TaskFlowTask }>;
 };
@@ -110,6 +128,68 @@ export async function getTaskDetail(api: unknown, profileId: string, taskId: str
   };
 }
 
+export async function getTaskContext(api: unknown, profileId: string, taskId: string) {
+  const payload = await coerceTaskFlowApi(api).getTaskContext(profileId, taskId);
+  return normalizeTaskContext(payload.context);
+}
+
+export async function getAgentFeed(api: unknown, profileId: string, config: TaskFlowConfig) {
+  const ownerType = normalizeActorType(config.task_flow_actor_type) || "human";
+  if (!isAiExecutorActorType(ownerType)) {
+    return normalizeAgentFeed(null, ownerType, config.task_flow_actor_ref);
+  }
+  const payload = await coerceTaskFlowApi(api).getTaskFeed(profileId, {
+    event_limit: 20,
+    limit: 30,
+    owner_ref: config.task_flow_actor_ref,
+    owner_type: ownerType,
+  });
+  return normalizeAgentFeed(payload.feed, ownerType, config.task_flow_actor_ref);
+}
+
+export async function listTaskDocuments(api: unknown, profileId: string, scopeType: string, scopeId: string) {
+  if (!scopeType || !scopeId) {
+    return [];
+  }
+  const payload = await coerceTaskFlowApi(api).listTaskFlowDocuments(profileId, scopeType, scopeId);
+  return Array.isArray(payload.task_documents) ? payload.task_documents : [];
+}
+
+export async function putTaskDocument(
+  api: unknown,
+  profileId: string,
+  draft: TaskFlowDocumentDraft,
+  scopeId: string,
+  config: TaskFlowConfig,
+  baseRevision?: number | null,
+) {
+  const payload = await coerceTaskFlowApi(api).putTaskFlowDocument(profileId, {
+    actor_ref: config.task_flow_actor_ref,
+    actor_type: normalizeActorType(config.task_flow_actor_type),
+    base_revision: baseRevision || undefined,
+    body: draft.body.trim(),
+    document_key: draft.document_key.trim(),
+    scope_id: scopeId,
+    scope_type: draft.scope_type,
+    title: draft.title.trim(),
+  });
+  return payload.task_document || null;
+}
+
+export async function confirmTaskDocument(
+  api: unknown,
+  profileId: string,
+  document: TaskFlowDocument,
+  config: TaskFlowConfig,
+) {
+  const payload = await coerceTaskFlowApi(api).confirmTaskFlowDocument(profileId, document.id, {
+    actor_ref: config.task_flow_actor_ref,
+    actor_type: normalizeActorType(config.task_flow_actor_type),
+    expected_revision: document.revision,
+  });
+  return payload.task_document || null;
+}
+
 function normalizeTaskFlowBoard(board: TaskFlowBoard | null | undefined): TaskFlowBoard {
   const rawColumns = Array.isArray(board?.columns) ? board.columns : [];
   const columnMap = new Map(
@@ -161,6 +241,39 @@ function normalizeTaskFlowBoard(board: TaskFlowBoard | null | undefined): TaskFl
       board?.total_count ??
         rawColumns.reduce((total, column) => total + Number(column.count ?? (Array.isArray(column.tasks) ? column.tasks.length : 0)), 0),
     ),
+  };
+}
+
+function normalizeTaskContext(context: TaskFlowContextBundle | null | undefined): TaskFlowContextBundle | null {
+  if (!context?.task) {
+    return context || null;
+  }
+  return {
+    ...context,
+    delegated_tasks: Array.isArray(context.delegated_tasks) ? context.delegated_tasks : [],
+    dependencies: Array.isArray(context.dependencies) ? context.dependencies : [],
+    dependency_tasks: Array.isArray(context.dependency_tasks) ? context.dependency_tasks : [],
+    dependent_tasks: Array.isArray(context.dependent_tasks) ? context.dependent_tasks : [],
+    dependents: Array.isArray(context.dependents) ? context.dependents : [],
+    flow_documents: Array.isArray(context.flow_documents) ? context.flow_documents : [],
+    recent_comments: Array.isArray(context.recent_comments) ? context.recent_comments : [],
+    recent_events: Array.isArray(context.recent_events) ? context.recent_events : [],
+    task_documents: Array.isArray(context.task_documents) ? context.task_documents : [],
+  };
+}
+
+function normalizeAgentFeed(feed: TaskFlowAgentFeed | null | undefined, ownerType: string, ownerRef: string): TaskFlowAgentFeed {
+  return {
+    blocked_count: Number(feed?.blocked_count || 0),
+    mention_event_count: Number(feed?.mention_event_count || 0),
+    owner_ref: String(feed?.owner_ref || ownerRef || ""),
+    owner_type: String(feed?.owner_type || ownerType || ""),
+    recent_events: Array.isArray(feed?.recent_events) ? feed.recent_events : [],
+    review_count: Number(feed?.review_count || 0),
+    running_count: Number(feed?.running_count || 0),
+    tasks: Array.isArray(feed?.tasks) ? feed.tasks : [],
+    todo_count: Number(feed?.todo_count || 0),
+    total_count: Number(feed?.total_count || 0),
   };
 }
 

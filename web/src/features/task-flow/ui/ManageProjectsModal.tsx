@@ -1,3 +1,5 @@
+import { useEffect, useMemo, useState } from "react";
+
 import { ActorRefField } from "@/features/task-flow/ui/ActorRefField";
 import {
   formatFlowCreatorSummary,
@@ -6,7 +8,9 @@ import {
   formatFlowUpdatedAt,
   formatProjectResultsLabel,
   formatProjectResultsNote,
+  formatStatusLabel,
   getVisibleProjects,
+  truncate,
 } from "@/features/task-flow/model/task-flow.presentation";
 import {
   TASK_FLOW_AI_PROFILE_TYPE,
@@ -16,6 +20,8 @@ import {
 } from "@/features/task-flow/model/task-flow.api";
 import type {
   TaskFlowConfig,
+  TaskFlowDocument,
+  TaskFlowDocumentDraft,
   TaskFlowProfile,
   TaskFlowProject,
   TaskFlowProjectDraft,
@@ -29,14 +35,20 @@ type ManageProjectsModalProps = {
   busy: boolean;
   draft: TaskFlowProjectDraft;
   error: string;
+  flowDocuments: TaskFlowDocument[];
+  flowDocumentsError: string;
+  flowDocumentsLoading: boolean;
   flowSearchQuery: string;
   flows: TaskFlowProject[];
+  busyDocumentId: string;
   onCancel: () => void;
   onCancelDelete: () => void;
+  onConfirmFlowDocument: (document: TaskFlowDocument) => void;
   onConfirmDelete: (flowId: string) => void;
   onDraftChange: (draft: TaskFlowProjectDraft) => void;
   onFilter: (flowId: string) => void;
   onRequestDelete: (flowId: string) => void;
+  onSaveFlowDocument: (draft: TaskFlowDocumentDraft, flowId: string, baseRevision?: number | null) => void;
   onSearchChange: (value: string) => void;
   onSubmit: () => void;
   open: boolean;
@@ -53,14 +65,20 @@ export function ManageProjectsModal({
   config,
   draft,
   error,
+  flowDocuments,
+  flowDocumentsError,
+  flowDocumentsLoading,
   flowSearchQuery,
   flows,
+  busyDocumentId,
   onCancel,
   onCancelDelete,
+  onConfirmFlowDocument,
   onConfirmDelete,
   onDraftChange,
   onFilter,
   onRequestDelete,
+  onSaveFlowDocument,
   onSearchChange,
   onSubmit,
   open,
@@ -276,8 +294,172 @@ export function ManageProjectsModal({
                 Done
               </button>
             </div>
+            <FlowDocumentSection
+              activeFlow={activeFlow}
+              busyDocumentId={busyDocumentId}
+              documents={flowDocuments}
+              error={flowDocumentsError}
+              loading={flowDocumentsLoading}
+              onConfirm={onConfirmFlowDocument}
+              onSave={onSaveFlowDocument}
+              saving={busyDocumentId === "new-flow-doc"}
+            />
           </section>
         </div>
     </ModalDialog>
   );
+}
+
+const FLOW_DOCUMENT_KEYS = ["brief", "plan", "roadmap", "spec", "decisions", "handoff", "qa", "notes"] as const;
+
+function FlowDocumentSection({
+  activeFlow,
+  busyDocumentId,
+  documents,
+  error,
+  loading,
+  onConfirm,
+  onSave,
+  saving,
+}: {
+  activeFlow: TaskFlowProject | null;
+  busyDocumentId: string;
+  documents: TaskFlowDocument[];
+  error: string;
+  loading: boolean;
+  onConfirm: (document: TaskFlowDocument) => void;
+  onSave: (draft: TaskFlowDocumentDraft, flowId: string, baseRevision?: number | null) => void;
+  saving: boolean;
+}) {
+  const [draft, setDraft] = useState<TaskFlowDocumentDraft>({
+    body: "",
+    document_key: "plan",
+    scope_type: "flow",
+    title: "Flow plan",
+  });
+
+  useEffect(() => {
+    setDraft({
+      body: "",
+      document_key: "plan",
+      scope_type: "flow",
+      title: "Flow plan",
+    });
+  }, [activeFlow?.id]);
+
+  const matchingDocument = useMemo(
+    () => documents.find((document) => document.document_key === draft.document_key) || null,
+    [documents, draft.document_key],
+  );
+
+  const handleSave = () => {
+    if (!activeFlow?.id || !draft.title.trim() || !draft.document_key.trim()) {
+      return;
+    }
+    onSave(draft, activeFlow.id, matchingDocument?.revision || null);
+  };
+
+  return (
+    <div className="flow-manager__docs">
+      <div className="panel-head panel-head--compact">
+        <div>
+          <p className="panel-head__eyebrow">Project Knowledge</p>
+          <h4 className="flow-manager__title">Flow docs</h4>
+        </div>
+      </div>
+      {!activeFlow ? (
+        <p className="muted-copy">Select a flow on the board to manage its plan, spec, roadmap, and decisions.</p>
+      ) : (
+        <>
+          <p className="muted">{activeFlow.title || activeFlow.id}</p>
+          {error ? <div className="inline-alert inline-alert--danger">{error}</div> : null}
+          {loading ? <p className="muted-copy">Loading flow docs…</p> : null}
+          <div className="knowledge-doc-list">
+            <div className="knowledge-doc-list__head">
+              <h5>Documents</h5>
+              <span className="badge badge--muted">{documents.length}</span>
+            </div>
+            {documents.length ? (
+              documents.map((document) => {
+                const confirmed = document.confirmed_revision === document.revision || document.confirmation_status === "confirmed";
+                return (
+                  <article className="knowledge-doc" key={document.id}>
+                    <div className="knowledge-doc__head">
+                      <div>
+                        <h5>{document.title || formatStatusLabel(document.document_key)}</h5>
+                        <p className="muted">
+                          {document.document_key} · r{document.revision}
+                        </p>
+                      </div>
+                      <span className={`badge ${confirmed ? "badge--success" : "badge--warning"}`}>
+                        {confirmed ? "confirmed" : "draft"}
+                      </span>
+                    </div>
+                    <p className="knowledge-doc__body">{truncate(document.body, 220) || "No body yet."}</p>
+                    <div className="button-row">
+                      <button className="button button--ghost button--tiny" onClick={() => setDraft(documentToFlowDraft(document))} type="button">
+                        Edit
+                      </button>
+                      <AsyncButton
+                        className="button button--ghost button--tiny"
+                        disabled={confirmed}
+                        idleLabel="Confirm"
+                        loading={busyDocumentId === document.id}
+                        onClick={() => onConfirm(document)}
+                        pendingLabel="Confirming…"
+                      />
+                    </div>
+                  </article>
+                );
+              })
+            ) : (
+              <p className="muted-copy">No flow docs yet.</p>
+            )}
+          </div>
+          <div className="editor-form editor-form--compact knowledge-editor">
+            <label className="field field--compact">
+              <span className="field__label">Document</span>
+              <select onChange={(event) => setDraft((current) => ({ ...current, document_key: event.target.value }))} value={draft.document_key}>
+                {FLOW_DOCUMENT_KEYS.map((key) => (
+                  <option key={key} value={key}>
+                    {formatStatusLabel(key)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field__label">Title</span>
+              <input maxLength={240} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} value={draft.title} />
+            </label>
+            <label className="field">
+              <span className="field__label">Body</span>
+              <textarea
+                onChange={(event) => setDraft((current) => ({ ...current, body: event.target.value }))}
+                placeholder="Persist the flow plan, spec, roadmap, or decisions for every agent in this project."
+                rows={5}
+                value={draft.body}
+              />
+            </label>
+            <AsyncButton
+              className="button button--primary"
+              disabled={!activeFlow.id || !draft.title.trim()}
+              idleLabel={matchingDocument ? "Update Flow Doc" : "Save Flow Doc"}
+              loading={saving}
+              onClick={handleSave}
+              pendingLabel="Saving…"
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function documentToFlowDraft(document: TaskFlowDocument): TaskFlowDocumentDraft {
+  return {
+    body: String(document.body || ""),
+    document_key: String(document.document_key || "plan"),
+    scope_type: "flow",
+    title: String(document.title || document.document_key || "Flow document"),
+  };
 }

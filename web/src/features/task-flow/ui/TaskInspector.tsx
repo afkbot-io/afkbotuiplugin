@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import { ActorRefField } from "@/features/task-flow/ui/ActorRefField";
 import { TaskSessionSummaryCard } from "@/features/task-flow/ui/TaskSessionSummaryCard";
@@ -42,6 +42,7 @@ type TaskInspectorProps = {
   onSave: () => void;
   onSubmitComment: (message: string) => void;
   commenting?: boolean;
+  knowledgePanel?: ReactNode;
   profileId: string;
   profiles: TaskFlowProfile[];
   saving: boolean;
@@ -67,6 +68,7 @@ export function TaskInspector({
   onSave,
   onSubmitComment,
   commenting = false,
+  knowledgePanel,
   profileId,
   profiles,
   saving,
@@ -111,6 +113,7 @@ export function TaskInspector({
   }
 
   const session = getRenderedTaskSession(task, sessionInsights);
+  const reviewActionable = Boolean(task.review_actionable || task.status === "review");
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -201,7 +204,7 @@ export function TaskInspector({
           </section>
         ) : null}
 
-        {task.status === "review" ? (
+        {reviewActionable ? (
           <section className="detail-section">
             <div className="panel-head panel-head--compact">
               <div>
@@ -254,6 +257,8 @@ export function TaskInspector({
             </div>
           </section>
         ) : null}
+
+        {knowledgePanel}
 
         <section className="detail-section">
           <div className="panel-head panel-head--compact">

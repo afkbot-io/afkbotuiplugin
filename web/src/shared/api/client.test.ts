@@ -138,6 +138,52 @@ describe("ApiClient text-library resources", () => {
     );
   });
 
+  it("supports Task Flow docs, context, and agent feed endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ task_documents: [] }))
+      .mockResolvedValueOnce(jsonResponse({ task_document: { id: "doc-1" } }))
+      .mockResolvedValueOnce(jsonResponse({ task_document: { id: "doc-1", confirmation_status: "confirmed" } }))
+      .mockResolvedValueOnce(jsonResponse({ context: { task: { id: "task-1" } } }))
+      .mockResolvedValueOnce(jsonResponse({ feed: { owner_ref: "default", owner_type: "ai_profile" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("/v1/plugins/afkbotui");
+
+    await client.listTaskFlowDocuments("default", "flow", "flow-1");
+    await client.putTaskFlowDocument("default", { document_key: "plan", scope_id: "flow-1", scope_type: "flow" });
+    await client.confirmTaskFlowDocument("default", "doc-1", { expected_revision: 2 });
+    await client.getTaskContext("default", "task-1");
+    await client.getTaskFeed("default", { owner_ref: "default", owner_type: "ai_profile" });
+    const origin = window.location.origin;
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      `${origin}/v1/plugins/afkbotui/task-flow/docs?profile_id=default&scope_id=flow-1&scope_type=flow`,
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `${origin}/v1/plugins/afkbotui/task-flow/docs?profile_id=default`,
+      expect.objectContaining({ method: "PUT" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      `${origin}/v1/plugins/afkbotui/task-flow/docs/doc-1/confirm?profile_id=default`,
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      `${origin}/v1/plugins/afkbotui/task-flow/tasks/task-1/context?profile_id=default`,
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      `${origin}/v1/plugins/afkbotui/task-flow/feed?profile_id=default&owner_ref=default&owner_type=ai_profile`,
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("invokes onUnauthorized when the auth session probe returns ui_auth_required", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       errorResponse(401, {
