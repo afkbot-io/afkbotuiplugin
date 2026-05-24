@@ -145,7 +145,10 @@ describe("ApiClient text-library resources", () => {
       .mockResolvedValueOnce(jsonResponse({ task_document: { id: "doc-1" } }))
       .mockResolvedValueOnce(jsonResponse({ task_document: { id: "doc-1", confirmation_status: "confirmed" } }))
       .mockResolvedValueOnce(jsonResponse({ context: { task: { id: "task-1" } } }))
-      .mockResolvedValueOnce(jsonResponse({ feed: { owner_ref: "default", owner_type: "ai_profile" } }));
+      .mockResolvedValueOnce(jsonResponse({ feed: { owner_ref: "default", owner_type: "ai_profile" } }))
+      .mockResolvedValueOnce(jsonResponse({ subagents: [{ name: "backend-engineer" }] }))
+      .mockResolvedValueOnce(jsonResponse({ team: { profile_id: "default" } }))
+      .mockResolvedValueOnce(jsonResponse({ team: { taskflow_team_profile_ids: ["analyst"] } }));
     vi.stubGlobal("fetch", fetchMock);
 
     const client = new ApiClient("/v1/plugins/afkbotui");
@@ -155,6 +158,9 @@ describe("ApiClient text-library resources", () => {
     await client.confirmTaskFlowDocument("default", "doc-1", { expected_revision: 2 });
     await client.getTaskContext("default", "task-1");
     await client.getTaskFeed("default", { owner_ref: "default", owner_type: "ai_profile" });
+    await client.listTaskFlowSubagents("default", { q: "backend" });
+    await client.getTaskFlowTeam("default");
+    await client.updateTaskFlowTeam("default", { taskflow_team_profile_ids: ["analyst"] });
     const origin = window.location.origin;
 
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -181,6 +187,24 @@ describe("ApiClient text-library resources", () => {
       5,
       `${origin}/v1/plugins/afkbotui/task-flow/feed?profile_id=default&owner_ref=default&owner_type=ai_profile`,
       expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      `${origin}/v1/plugins/afkbotui/task-flow/subagents?profile_id=default&q=backend`,
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      `${origin}/v1/plugins/afkbotui/task-flow/team?profile_id=default`,
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      8,
+      `${origin}/v1/plugins/afkbotui/task-flow/team?profile_id=default`,
+      expect.objectContaining({
+        body: JSON.stringify({ taskflow_team_profile_ids: ["analyst"] }),
+        method: "PATCH",
+      }),
     );
   });
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Response
@@ -27,6 +28,7 @@ from afkbot.services.plugins.runtime_registry import PluginRuntimeRegistry
 from afkbot.services.policy import ProfileFilesLockedError
 from afkbot.services.profile_runtime import ProfileServiceError, get_profile_service
 from afkbot.services.skills import get_profile_skill_service
+from afkbot.services.subagents.loader import SubagentLoader
 from afkbot.services.subagents.profile_service import get_profile_subagent_service
 from afkbot.services.task_flow import TaskFlowServiceError, get_task_flow_service
 from afkbot.services.task_flow.ai_executors import (
@@ -34,10 +36,12 @@ from afkbot.services.task_flow.ai_executors import (
     AI_SUBAGENT_OWNER_TYPE,
     parse_ai_subagent_owner_ref,
 )
+from afkbot.services.task_flow.team_config import get_taskflow_team_config_service
 from afkbot.settings import get_settings
 
 _TASK_COMMENT_PREVIEW_SCHEMA_READY = False
 _TASK_COMMENT_PREVIEW_SCHEMA_LOCK: asyncio.Lock | None = None
+_TASK_FLOW_RESERVED_SUBAGENTS = frozenset({"orchestrator"})
 
 
 class UiPluginConfig(BaseModel):
@@ -227,6 +231,14 @@ class TaskDocumentConfirmPayload(BaseModel):
     actor_type: str = Field(default="human", min_length=1)
     actor_ref: str = Field(default="web-user", min_length=1)
     expected_revision: int | None = Field(default=None, ge=1)
+
+
+class TaskFlowTeamPatchPayload(BaseModel):
+    """Request body for Task Flow AI team membership."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    taskflow_team_profile_ids: tuple[str, ...] = ()
 
 
 class SubagentCreatePayload(BaseModel):
@@ -793,6 +805,74 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
         return {"feed": payload.model_dump(mode="json")}
+
+    @router.get("/task-flow/team")
+    async def task_flow_team(profile_id: str = "default") -> dict[str, object]:
+        settings = get_settings()
+        try:
+            profile_ids = await _list_profile_ids(settings)
+            _ensure_profile_known(profile_id=profile_id, profile_ids=profile_ids)
+            team_ids = await asyncio.to_thread(_load_task_flow_team_profile_ids, settings, profile_id)
+            normalized_team_ids = _normalize_task_flow_team_profile_ids(
+                profile_id=profile_id,
+                profile_ids=profile_ids,
+                team_profile_ids=team_ids,
+            )
+        except ValueError as exc:
+            raise _task_flow_team_http_error(exc) from exc
+        return {"team": _serialize_task_flow_team(profile_id=profile_id, team_profile_ids=normalized_team_ids)}
+
+    @router.patch("/task-flow/team")
+    async def patch_task_flow_team(
+        payload: TaskFlowTeamPatchPayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        settings = get_settings()
+        try:
+            profile_ids = await _list_profile_ids(settings)
+            _ensure_profile_known(profile_id=profile_id, profile_ids=profile_ids)
+            team_profile_ids = _normalize_task_flow_team_profile_ids(
+                profile_id=profile_id,
+                profile_ids=profile_ids,
+                team_profile_ids=payload.taskflow_team_profile_ids,
+            )
+            await asyncio.to_thread(
+                _write_task_flow_team_profile_ids,
+                settings,
+                profile_id,
+                team_profile_ids,
+            )
+        except ValueError as exc:
+            raise _task_flow_team_http_error(exc) from exc
+        return {"team": _serialize_task_flow_team(profile_id=profile_id, team_profile_ids=team_profile_ids)}
+
+    @router.get("/task-flow/subagents")
+    async def task_flow_subagents(profile_id: str = "default", q: str = "", team: bool = False) -> dict[str, object]:
+        settings = get_settings()
+        loader = SubagentLoader(settings)
+        query = q.strip().lower()
+        records: list[dict[str, object]] = []
+        try:
+            team_profile_ids = (profile_id,)
+            if team:
+                profile_ids = await _list_profile_ids(settings)
+                _ensure_profile_known(profile_id=profile_id, profile_ids=profile_ids)
+                configured_team_ids = await asyncio.to_thread(_load_task_flow_team_profile_ids, settings, profile_id)
+                team_profile_ids = (
+                    profile_id,
+                    *_normalize_task_flow_team_profile_ids(
+                        profile_id=profile_id,
+                        profile_ids=profile_ids,
+                        team_profile_ids=configured_team_ids,
+                    ),
+                )
+            for owner_profile_id in team_profile_ids:
+                records.extend(await _list_task_flow_subagent_records(settings, loader, owner_profile_id, query))
+        except (FileNotFoundError, ValueError) as exc:
+            raise _task_flow_team_http_error(exc) from exc
+        profile_order = {owner_profile_id: index for index, owner_profile_id in enumerate(team_profile_ids)}
+        records.sort(key=lambda record: (profile_order.get(str(record["profile_id"]), 999), str(record["name"])))
+        return {"subagents": records, "filtered_count": len(records)}
 
     @router.get("/task-flow/tasks/{task_id}/session")
     async def task_flow_task_session_insights(
@@ -1810,6 +1890,109 @@ def _infer_task_session_profile_id(task_payload: dict[str, object]) -> str:
     return str(task_payload.get("profile_id") or "").strip() or "default"
 
 
+def _path_relative_to_root(root: Path, path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(root.resolve()))
+    except ValueError:
+        return str(path.resolve())
+
+
+def _extract_markdown_summary(content: str) -> str:
+    for raw in content.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("---"):
+            continue
+        if line.startswith("#"):
+            line = line.lstrip("#").strip()
+        if line:
+            return " ".join(line.split())[:160]
+    return ""
+
+
+async def _list_task_flow_subagent_records(
+    settings: object,
+    loader: SubagentLoader,
+    owner_profile_id: str,
+    query: str,
+) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for item in await loader.list_subagents(owner_profile_id):
+        if item.name in _TASK_FLOW_RESERVED_SUBAGENTS:
+            continue
+        content = await asyncio.to_thread(item.path.read_text, encoding="utf-8")
+        path = _path_relative_to_root(settings.root_dir, item.path)
+        summary = _extract_markdown_summary(content)
+        if query and query not in item.name.lower() and query not in path.lower() and query not in summary.lower():
+            continue
+        records.append(
+            {
+                "name": item.name,
+                "origin": item.origin,
+                "owner_ref": f"{owner_profile_id}:{item.name}",
+                "path": path,
+                "profile_id": owner_profile_id,
+                "summary": summary,
+            }
+        )
+    return records
+
+
+async def _list_profile_ids(settings: object) -> tuple[str, ...]:
+    service = get_profile_service(settings)
+    try:
+        profiles = await service.list()
+    except ProfileServiceError as exc:
+        raise ValueError(exc.reason) from exc
+    return tuple(str(item.id or "").strip() for item in profiles if str(item.id or "").strip())
+
+
+def _ensure_profile_known(*, profile_id: str, profile_ids: tuple[str, ...]) -> None:
+    if profile_id not in set(profile_ids):
+        raise ValueError(f"Unknown Task Flow profile: {profile_id}")
+
+
+def _load_task_flow_team_profile_ids(settings: object, profile_id: str) -> tuple[str, ...]:
+    team_config = get_taskflow_team_config_service(settings)
+    return tuple(team_config.load(profile_id) or ())
+
+
+def _write_task_flow_team_profile_ids(
+    settings: object,
+    profile_id: str,
+    team_profile_ids: tuple[str, ...],
+) -> None:
+    get_taskflow_team_config_service(settings).write(profile_id, team_profile_ids)
+
+
+def _normalize_task_flow_team_profile_ids(
+    *,
+    profile_id: str,
+    profile_ids: tuple[str, ...],
+    team_profile_ids: tuple[str, ...],
+) -> tuple[str, ...]:
+    known = set(profile_ids)
+    normalized: list[str] = []
+    seen: set[str] = {profile_id}
+    for item in team_profile_ids:
+        teammate = str(item or "").strip()
+        if not teammate or teammate in seen:
+            continue
+        if teammate not in known:
+            raise ValueError(f"Unknown Task Flow team profile: {teammate}")
+        seen.add(teammate)
+        normalized.append(teammate)
+    return tuple(normalized)
+
+
+def _serialize_task_flow_team(*, profile_id: str, team_profile_ids: tuple[str, ...]) -> dict[str, object]:
+    return {
+        "allowed_profile_ids": [profile_id, *team_profile_ids],
+        "orchestrator_profile_id": profile_id,
+        "profile_id": profile_id,
+        "taskflow_team_profile_ids": list(team_profile_ids),
+    }
+
+
 def _automation_http_error(exc: AutomationsServiceError) -> HTTPException:
     """Map automation service errors to HTTP responses."""
 
@@ -1830,6 +2013,15 @@ def _task_http_error(exc: TaskFlowServiceError) -> HTTPException:
     else:
         status_code = 400
     return HTTPException(status_code=status_code, detail={"error_code": exc.error_code, "reason": exc.reason})
+
+
+def _task_flow_team_http_error(exc: FileNotFoundError | ValueError) -> HTTPException:
+    """Map Task Flow team roster errors to stable plugin API responses."""
+
+    return HTTPException(
+        status_code=400,
+        detail={"error_code": "invalid_task_flow_team", "reason": str(exc)},
+    )
 
 
 def _subagent_http_error(exc: FileNotFoundError | ProfileFilesLockedError | ValueError) -> HTTPException:

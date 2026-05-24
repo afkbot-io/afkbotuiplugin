@@ -13,6 +13,7 @@ import type {
   TaskFlowProject,
   TaskFlowProjectDraft,
   TaskFlowReviewDraft,
+  TaskFlowSettingsDraft,
   TaskFlowTask,
   TaskFlowTaskDraft,
 } from "@/features/task-flow/model/task-flow.types";
@@ -30,7 +31,7 @@ type CreateTaskState = {
 };
 
 type SettingsState = {
-  draft: ReturnType<typeof settingsDraftFromConfig>;
+  draft: TaskFlowSettingsDraft;
   error: string;
 };
 
@@ -48,10 +49,12 @@ export function useTaskFlowPageState({
   config,
   profileId,
   profiles,
+  teamProfileIds = [],
 }: {
   config: TaskFlowConfig;
   profileId: string;
   profiles: TaskFlowProfile[];
+  teamProfileIds?: string[];
 }) {
   const [flowFilter, setFlowFilter] = useState("");
   const [flowSearchQuery, setFlowSearchQuery] = useState("");
@@ -69,7 +72,7 @@ export function useTaskFlowPageState({
     error: "",
   }));
   const [settings, setSettings] = useState<SettingsState>(() => ({
-    draft: settingsDraftFromConfig(config),
+    draft: settingsDraftFromConfig(config, teamProfileIds),
     error: "",
   }));
   const [deleteState, setDeleteState] = useState<DeleteState>({
@@ -97,14 +100,14 @@ export function useTaskFlowPageState({
     setModalBusy(false);
     setCreateProject({ draft: defaultProjectDraft(profiles), error: "" });
     setCreateTask({ draft: defaultTaskDraft(config, profiles), error: "" });
-    setSettings({ draft: settingsDraftFromConfig(config), error: "" });
+    setSettings({ draft: settingsDraftFromConfig(config, teamProfileIds), error: "" });
     setDeleteState({ error: "", pendingProjectId: "" });
     setReview({ draft: defaultReviewDraft(), error: "" });
-  }, [config, profileId, profiles]);
+  }, [config, profileId, profiles, teamProfileIds]);
 
   useEffect(() => {
-    setSettings({ draft: settingsDraftFromConfig(config), error: "" });
-  }, [config]);
+    setSettings({ draft: settingsDraftFromConfig(config, teamProfileIds), error: "" });
+  }, [config, teamProfileIds]);
 
   useEffect(() => {
     if (!previousSelectedTaskIdRef.current) {
@@ -163,7 +166,7 @@ export function useTaskFlowPageState({
       },
       openSettingsModal() {
         setActiveModal("settings");
-        setSettings({ draft: settingsDraftFromConfig(config), error: "" });
+        setSettings({ draft: settingsDraftFromConfig(config, teamProfileIds), error: "" });
       },
       openSessionFeed() {
         setSessionFeedOpen(true);
@@ -269,6 +272,7 @@ export function useTaskFlowPageState({
       selectedTaskIds,
       sessionFeedOpen,
       settings,
+      teamProfileIds,
     ],
   );
 }

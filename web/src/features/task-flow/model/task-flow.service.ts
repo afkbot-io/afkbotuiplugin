@@ -24,6 +24,7 @@ import type {
   TaskFlowReviewTask,
   TaskFlowRun,
   TaskFlowSubagent,
+  TaskFlowTeam,
   TaskFlowTask,
   TaskFlowTaskDetail,
   TaskFlowTaskDraft,
@@ -48,6 +49,7 @@ type TaskFlowApi = {
   getTaskBoard: (profileId: string, params?: Record<string, unknown>) => Promise<{ board?: TaskFlowBoard }>;
   getTaskContext: (profileId: string, taskId: string) => Promise<{ context?: TaskFlowContextBundle }>;
   getTaskFeed: (profileId: string, params?: Record<string, unknown>) => Promise<{ feed?: TaskFlowAgentFeed }>;
+  getTaskFlowTeam: (profileId: string) => Promise<{ team?: TaskFlowTeam }>;
   getTaskSessionInsights: (
     profileId: string,
     taskId: string,
@@ -58,7 +60,14 @@ type TaskFlowApi = {
     turns?: TaskSessionInsights["turns"];
   }>;
   listReviewTasks: (profileId: string, params?: Record<string, unknown>) => Promise<{ review_tasks?: TaskFlowReviewTask[] }>;
-  listSubagents: (profileId: string, params?: Record<string, unknown>) => Promise<{ subagents?: Array<Record<string, unknown>> }>;
+  listSubagents?: (
+    profileId: string,
+    params?: Record<string, unknown>,
+  ) => Promise<{ subagents?: Array<Record<string, unknown>> }>;
+  listTaskFlowSubagents: (
+    profileId: string,
+    params?: Record<string, unknown>,
+  ) => Promise<{ subagents?: Array<Record<string, unknown>> }>;
   listTaskFlowDocuments: (
     profileId: string,
     scopeType: string,
@@ -70,6 +79,7 @@ type TaskFlowApi = {
   listTaskFlows: (profileId: string) => Promise<{ task_flows?: TaskFlowProject[] }>;
   listTaskRuns: (profileId: string, taskId: string, params?: Record<string, unknown>) => Promise<{ task_runs?: TaskFlowRun[] }>;
   putTaskFlowDocument: (profileId: string, payload: Record<string, unknown>) => Promise<{ task_document?: TaskFlowDocument }>;
+  updateTaskFlowTeam: (profileId: string, payload: Record<string, unknown>) => Promise<{ team?: TaskFlowTeam }>;
   confirmTaskFlowDocument: (
     profileId: string,
     documentId: string,
@@ -83,14 +93,45 @@ function coerceTaskFlowApi(api: unknown) {
   return api as TaskFlowApi;
 }
 
+function isMissingTaskFlowEndpoint(error: unknown) {
+  return Boolean(error && typeof error === "object" && Number((error as { status?: number }).status) === 404);
+}
+
 export async function listTaskProjects(api: unknown, profileId: string) {
   const payload = await coerceTaskFlowApi(api).listTaskFlows(profileId);
   return Array.isArray(payload.task_flows) ? payload.task_flows : [];
 }
 
 export async function listTaskFlowSubagents(api: unknown, profileId: string) {
-  const payload = await coerceTaskFlowApi(api).listSubagents(profileId, { q: "" });
+  const taskFlowApi = coerceTaskFlowApi(api);
+  let payload: { subagents?: Array<Record<string, unknown>> };
+  try {
+    payload = await taskFlowApi.listTaskFlowSubagents(profileId, { q: "", team: 1 });
+  } catch (error) {
+    if (!isMissingTaskFlowEndpoint(error) || typeof taskFlowApi.listSubagents !== "function") {
+      throw error;
+    }
+    payload = await taskFlowApi.listSubagents(profileId, { q: "" });
+  }
   return (Array.isArray(payload.subagents) ? payload.subagents : []).flatMap(mapTaskFlowSubagent);
+}
+
+export async function getTaskFlowTeam(api: unknown, profileId: string) {
+  let payload: { team?: TaskFlowTeam };
+  try {
+    payload = await coerceTaskFlowApi(api).getTaskFlowTeam(profileId);
+  } catch (error) {
+    if (!isMissingTaskFlowEndpoint(error)) {
+      throw error;
+    }
+    payload = {};
+  }
+  return normalizeTaskFlowTeam(payload.team, profileId);
+}
+
+export async function updateTaskFlowTeam(api: unknown, profileId: string, payload: Record<string, unknown>) {
+  const response = await coerceTaskFlowApi(api).updateTaskFlowTeam(profileId, payload);
+  return normalizeTaskFlowTeam(response.team, profileId);
 }
 
 export async function getTaskFlowBoard(api: unknown, profileId: string, flowId: string, config: TaskFlowConfig) {
@@ -488,8 +529,27 @@ function mapTaskFlowSubagent(item: Record<string, unknown>): TaskFlowSubagent[] 
   return [
     {
       name,
+      origin: String(item.origin || "").trim(),
+      owner_ref: String(item.owner_ref || "").trim(),
       path: String(item.path || "").trim(),
+      profile_id: String(item.profile_id || "").trim(),
       summary: String(item.summary || "").trim(),
     },
   ];
+}
+
+function normalizeTaskFlowTeam(payload: TaskFlowTeam | undefined, profileId: string): TaskFlowTeam {
+  const teamProfileIds = Array.isArray(payload?.taskflow_team_profile_ids)
+    ? payload.taskflow_team_profile_ids.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const allowedProfileIds = Array.isArray(payload?.allowed_profile_ids)
+    ? payload.allowed_profile_ids.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const normalizedProfileId = String(payload?.profile_id || profileId || "default").trim() || "default";
+  return {
+    allowed_profile_ids: allowedProfileIds.length ? allowedProfileIds : [normalizedProfileId, ...teamProfileIds],
+    orchestrator_profile_id: String(payload?.orchestrator_profile_id || normalizedProfileId).trim() || normalizedProfileId,
+    profile_id: normalizedProfileId,
+    taskflow_team_profile_ids: teamProfileIds,
+  };
 }

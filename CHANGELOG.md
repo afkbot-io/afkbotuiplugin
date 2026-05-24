@@ -2,6 +2,15 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.0 - 2026-05-24
+
+- add a Task Flow team roster endpoint and settings UI so strict backend scheduling and the board share the same allowed teammate profiles, while packaged core employees remain assignable without exposing core templates through the editable Subagents library
+- expand Task Flow subagent assignment to every allowed teammate profile and add roster presets for solo, all-profile, and delivery-team setups
+- rename the AI queue surface to Team Feed and show the selected Team Orchestrator or employee alongside the available worker roster
+- replace the default new-subagent template with a Task Flow worker contract that points agents at context bundles, durable docs, comments, blockers, review handoffs, and delegation tools
+- require AFKBOT `1.9.0+`, keep settings saves from partially persisting stale roster actors, and fall back gracefully when a mixed rollout is missing the new team endpoints
+- sync release metadata to version `1.0.0`
+
 ## 0.5.5 - 2026-05-15
 
 - add Task Flow AI-only agent feed, context bundle, and flow/task document controls so operators can see AI assignments, mentions, wake/recovery signals, plans, specs, handoffs, and confirmed document revisions from the board and flow library

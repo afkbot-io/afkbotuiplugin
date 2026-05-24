@@ -91,7 +91,9 @@ describe("text-library resource definitions", () => {
     await subagentsDefinition.remove(api, "default", created);
     expect(api.deleteSubagent).toHaveBeenCalledWith("default", "builder");
 
-    expect(subagentsDefinition.defaultDraft().content).toContain("# specialist");
+    expect(subagentsDefinition.defaultDraft().content).toContain("# backend-engineer");
+    expect(subagentsDefinition.defaultDraft().content).toContain("task.context.get");
+    expect(subagentsDefinition.defaultDraft().content).toContain("task.doc.put");
     expect(subagentsDefinition.validateCreate({ content: "", id: "" })).toBe("Subagent name is required.");
     expect(subagentsDefinition.validateUpdate({ content: "", id: "builder" }, created)).toBe(
       "Subagent markdown is required.",

@@ -2,19 +2,25 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildSettingsPatch,
+  buildTaskFlowTeamPatch,
   createTaskItem,
   createTaskProject,
   defaultProjectDraft,
   defaultTaskDraft,
+  getTeamScopedSubagents,
   getSubagentOwnerRefOptions,
+  getTaskFlowAllowedProfiles,
   isCanonicalSubagentOwnerRef,
   getTaskFlowBoard,
+  getTaskFlowTeam,
+  listTaskFlowSubagents,
   normalizeActorRef,
   normalizeActorType,
   normalizeNumberField,
   normalizeTaskFlowConfig,
   parseCsv,
   requestTaskReviewChanges,
+  reconcileSettingsActorForTeam,
   resolveActorRefForType,
   taskDraftFromTask,
   toDateTimeLocal,
@@ -190,6 +196,8 @@ describe("task-flow api helpers", () => {
         task_flow_actor_type: "human",
         task_flow_board_limit_per_column: "0",
         task_flow_poll_interval_sec: "5",
+        taskflow_team_template: "custom",
+        taskflow_team_profile_ids: [],
       }),
     ).toBe("Board limit must be between 1 and 200 tasks per column.");
     expect(
@@ -198,6 +206,8 @@ describe("task-flow api helpers", () => {
         task_flow_actor_type: "human",
         task_flow_board_limit_per_column: "20",
         task_flow_poll_interval_sec: "0",
+        taskflow_team_template: "custom",
+        taskflow_team_profile_ids: [],
       }),
     ).toBe("Poll interval must be between 1 and 300 seconds.");
   });
@@ -337,13 +347,51 @@ describe("task-flow api helpers", () => {
       ),
     ).toBe("default:researcher");
     expect(normalizeActorType("subagent")).toBe("ai_subagent");
-    expect(getSubagentOwnerRefOptions("default", [{ name: "researcher", summary: "Research tasks" }])).toEqual([
+    expect(getSubagentOwnerRefOptions("default", [{ name: "researcher", summary: "Research tasks" }, { name: "orchestrator" }])).toEqual([
       {
         label: "researcher",
+        profileId: "default",
         summary: "Research tasks",
         value: "default:researcher",
       },
     ]);
+    expect(
+      getSubagentOwnerRefOptions("default", [{ name: "reviewer", profile_id: "analyst", summary: "Review tasks" }]),
+    ).toEqual([
+      {
+        label: "analyst:reviewer",
+        profileId: "analyst",
+        summary: "Review tasks",
+        value: "analyst:reviewer",
+      },
+    ]);
+    expect(getTaskFlowAllowedProfiles("default", [{ id: "default" }, { id: "analyst" }], null).map((profile) => profile.id)).toEqual([
+      "default",
+    ]);
+    expect(
+      getTaskFlowAllowedProfiles(
+        "default",
+        [{ id: "default" }, { id: "analyst" }, { id: "outsider" }],
+        {
+          allowed_profile_ids: ["default", "analyst"],
+          orchestrator_profile_id: "default",
+          profile_id: "default",
+          taskflow_team_profile_ids: ["analyst"],
+        },
+      ).map((profile) => profile.id),
+    ).toEqual(["default", "analyst"]);
+    expect(
+      buildTaskFlowTeamPatch({
+        task_flow_actor_ref: "web-user",
+        task_flow_actor_type: "human",
+        task_flow_board_limit_per_column: "20",
+        task_flow_poll_interval_sec: "5",
+        taskflow_team_template: "custom",
+        taskflow_team_profile_ids: ["analyst", "analyst", ""],
+      }),
+    ).toEqual({
+      taskflow_team_profile_ids: ["analyst"],
+    });
     expect(isCanonicalSubagentOwnerRef("default:researcher")).toBe(true);
     expect(isCanonicalSubagentOwnerRef("default")).toBe(false);
     expect(
@@ -376,6 +424,52 @@ describe("task-flow api helpers", () => {
         subagents: [{ name: "researcher" }],
         type: "ai_subagent",
       }),
+    ).toBe("default:researcher");
+    expect(
+      resolveActorRefForType({
+        config: {
+          task_flow_actor_ref: "web-user",
+          task_flow_actor_type: "ai_subagent",
+          task_flow_board_limit_per_column: 20,
+          task_flow_poll_interval_sec: 5,
+        },
+        currentRef: "analyst:reviewer",
+        previousType: "ai_subagent",
+        profileId: "default",
+        profiles: [{ id: "default" }],
+        subagents: [{ name: "researcher", owner_ref: "default:researcher", profile_id: "default" }],
+        type: "ai_subagent",
+      }),
+    ).toBe("default:researcher");
+    expect(
+      getTeamScopedSubagents("default", [], [
+        { name: "researcher", owner_ref: "default:researcher", profile_id: "default" },
+        { name: "reviewer", owner_ref: "analyst:reviewer", profile_id: "analyst" },
+      ]).map((subagent) => subagent.owner_ref),
+    ).toEqual(["default:researcher"]);
+    expect(
+      reconcileSettingsActorForTeam({
+        config: {
+          task_flow_actor_ref: "web-user",
+          task_flow_actor_type: "ai_subagent",
+          task_flow_board_limit_per_column: 20,
+          task_flow_poll_interval_sec: 5,
+        },
+        draft: {
+          task_flow_actor_ref: "analyst:reviewer",
+          task_flow_actor_type: "ai_subagent",
+          task_flow_board_limit_per_column: "20",
+          task_flow_poll_interval_sec: "5",
+          taskflow_team_profile_ids: [],
+          taskflow_team_template: "custom",
+        },
+        profileId: "default",
+        profiles: [{ id: "default" }, { id: "analyst" }],
+        subagents: [
+          { name: "researcher", owner_ref: "default:researcher", profile_id: "default" },
+          { name: "reviewer", owner_ref: "analyst:reviewer", profile_id: "analyst" },
+        ],
+      }).task_flow_actor_ref,
     ).toBe("default:researcher");
     expect(toDateTimeLocal("2026-04-21T10:00:00.000Z")).toContain("2026-04-21T");
     expect(
@@ -415,6 +509,8 @@ describe("task-flow api helpers", () => {
         task_flow_actor_type: "",
         task_flow_board_limit_per_column: "25",
         task_flow_poll_interval_sec: "9",
+        taskflow_team_template: "custom",
+        taskflow_team_profile_ids: [],
       }),
     ).toEqual({
       task_flow_actor_ref: "web-user",
@@ -536,6 +632,35 @@ describe("task-flow api helpers", () => {
       owner_ref: "default:reviewer",
       owner_type: "ai_subagent",
     });
+  });
+
+  it("falls back when new Task Flow team endpoints are absent", async () => {
+    await expect(
+      getTaskFlowTeam(
+        {
+          getTaskFlowTeam: async () => {
+            throw Object.assign(new Error("missing"), { status: 404 });
+          },
+        },
+        "default",
+      ),
+    ).resolves.toMatchObject({
+      allowed_profile_ids: ["default"],
+      taskflow_team_profile_ids: [],
+    });
+    await expect(
+      listTaskFlowSubagents(
+        {
+          listSubagents: async () => ({
+            subagents: [{ name: "researcher", owner_ref: "default:researcher", profile_id: "default" }],
+          }),
+          listTaskFlowSubagents: async () => {
+            throw Object.assign(new Error("missing"), { status: 404 });
+          },
+        },
+        "default",
+      ),
+    ).resolves.toMatchObject([{ owner_ref: "default:researcher" }]);
   });
 });
 

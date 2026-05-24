@@ -16,6 +16,7 @@ import { useTaskFlowPolling } from "@/features/task-flow/hooks/use-task-flow-pol
 import {
   approveTaskReview,
   buildSettingsPatch,
+  buildTaskFlowTeamPatch,
   createTaskComment,
   createTaskItem,
   createTaskProject,
@@ -27,6 +28,9 @@ import {
   getTaskDetail,
   getTaskContext,
   getTaskFlowBoard,
+  getTaskFlowTeam,
+  getTaskFlowAllowedProfiles,
+  getTeamScopedSubagents,
   getTaskSessionInsights,
   listTaskFlowReview,
   listTaskFlowSubagents,
@@ -37,6 +41,7 @@ import {
   resolveTaskFlowError,
   taskDraftFromTask,
   updateTaskItem,
+  updateTaskFlowTeam,
   validateProjectDraft,
   validateSettingsDraft,
   validateTaskDraft,
@@ -80,12 +85,28 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
 ) {
   const taskFlowConfig = useMemo(() => normalizeTaskFlowConfig(config), [config]);
   const agentFeedEnabled = isAiExecutorActorType(taskFlowConfig.task_flow_actor_type);
+  const teamQuery = useQuery({
+    enabled: active && Boolean(profileId),
+    queryKey: taskFlowQueryKeys.team(profileId),
+    queryFn: () => getTaskFlowTeam(api, profileId),
+    refetchOnWindowFocus: false,
+  });
+  const taskFlowTeam = teamQuery.data || null;
+  const allowedProfiles = useMemo(
+    () => getTaskFlowAllowedProfiles(profileId, profiles, taskFlowTeam),
+    [profileId, profiles, taskFlowTeam],
+  );
+  const teamProfileIds = useMemo(
+    () => taskFlowTeam?.taskflow_team_profile_ids || [],
+    [taskFlowTeam],
+  );
   const state = useTaskFlowPageState({
     config: taskFlowConfig,
     profileId,
-    profiles,
+    profiles: allowedProfiles,
+    teamProfileIds,
   });
-  const [editorDraft, setEditorDraft] = useState(() => defaultTaskDraft(taskFlowConfig, profiles));
+  const [editorDraft, setEditorDraft] = useState(() => defaultTaskDraft(taskFlowConfig, allowedProfiles));
   const [editorError, setEditorError] = useState("");
   const [savingTask, setSavingTask] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
@@ -521,8 +542,13 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     [api, board, notify, profileId, refreshAll, state.selectedTaskIds, taskFlowConfig],
   );
 
+  const validationContext = useMemo(
+    () => ({ profileId, profiles: allowedProfiles, subagents }),
+    [allowedProfiles, profileId, subagents],
+  );
+
   const handleCreateProject = useCallback(async () => {
-    const error = validateProjectDraft(state.createProject.draft, { profileId, subagents });
+    const error = validateProjectDraft(state.createProject.draft, validationContext);
     if (error) {
       state.setCreateProjectError(error);
       return;
@@ -555,7 +581,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     } finally {
       state.setModalBusy(false);
     }
-  }, [api, notify, profileId, refreshAll, state, subagents, taskFlowConfig]);
+  }, [api, notify, profileId, refreshAll, state, taskFlowConfig, validationContext]);
 
   const handleDeleteProject = useCallback(
     async (flowId: string) => {
@@ -589,7 +615,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   );
 
   const handleCreateTask = useCallback(async () => {
-    const error = validateTaskDraft(state.createTask.draft, { profileId, subagents });
+    const error = validateTaskDraft(state.createTask.draft, validationContext);
     if (error) {
       state.setCreateTaskError(error);
       return;
@@ -615,14 +641,14 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     } finally {
       state.setModalBusy(false);
     }
-  }, [api, notify, profileId, refreshAll, state, subagents, taskFlowConfig]);
+  }, [api, notify, profileId, refreshAll, state, taskFlowConfig, validationContext]);
 
   const handleSaveTask = useCallback(async () => {
     if (!state.selectedTaskId) {
       return;
     }
     const taskId = state.selectedTaskId;
-    const error = validateTaskDraft(editorDraft, { profileId, subagents });
+    const error = validateTaskDraft(editorDraft, validationContext);
     if (error) {
       setEditorError(error);
       return;
@@ -812,7 +838,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
       if (!state.selectedTaskId) {
         return;
       }
-      const error = validateReviewDraft(reviewDraft, { profileId, subagents });
+      const error = validateReviewDraft(reviewDraft, validationContext);
       if (error) {
         notify(error, "danger");
         return;
@@ -825,30 +851,63 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         notify(resolveTaskFlowError(error), "danger");
       }
     },
-    [api, notify, profileId, refreshAll, state.selectedTaskId, subagents, taskFlowConfig],
+    [api, notify, profileId, refreshAll, state.selectedTaskId, taskFlowConfig, validationContext],
   );
 
   const handleSaveSettings = useCallback(async () => {
-    const error = validateSettingsDraft(state.settings.draft, { profileId, subagents });
+    const draftAllowedProfiles = getTaskFlowAllowedProfiles(profileId, profiles, {
+      allowed_profile_ids: [profileId, ...state.settings.draft.taskflow_team_profile_ids],
+      orchestrator_profile_id: profileId,
+      profile_id: profileId,
+      taskflow_team_profile_ids: state.settings.draft.taskflow_team_profile_ids,
+    });
+    const draftSubagents = getTeamScopedSubagents(
+      profileId,
+      state.settings.draft.taskflow_team_profile_ids,
+      subagents,
+    );
+    const error = validateSettingsDraft(state.settings.draft, {
+      profileId,
+      profiles: draftAllowedProfiles,
+      subagents: draftSubagents,
+    });
     if (error) {
       state.setSettingsError(error);
       return;
     }
     state.setSettingsError("");
     state.setModalBusy(true);
+    let rosterSaved = false;
+    const previousTeamProfileIds = taskFlowTeam?.taskflow_team_profile_ids || [];
     try {
+      await updateTaskFlowTeam(api, profileId, buildTaskFlowTeamPatch(state.settings.draft));
+      rosterSaved = true;
       await updateConfig(buildSettingsPatch(state.settings.draft));
       notify("Task Flow settings saved.", "success");
       state.closeModal();
       await refreshAll(false);
+      await teamQuery.refetch();
+      await subagentsQuery.refetch();
     } catch (error) {
+      if (rosterSaved) {
+        try {
+          await updateTaskFlowTeam(api, profileId, { taskflow_team_profile_ids: previousTeamProfileIds });
+          await teamQuery.refetch();
+          await subagentsQuery.refetch();
+        } catch (rollbackError) {
+          state.setSettingsError(
+            `${resolveTaskFlowError(error)} Roster rollback failed: ${resolveTaskFlowError(rollbackError)}`,
+          );
+          return;
+        }
+      }
       state.setSettingsError(resolveTaskFlowError(error));
     } finally {
       state.setModalBusy(false);
     }
-  }, [notify, profileId, refreshAll, state, subagents, updateConfig]);
+  }, [api, notify, profileId, profiles, refreshAll, state, subagents, subagentsQuery, taskFlowTeam, teamQuery, updateConfig]);
 
-  const pageError = [projectsQuery.error, boardQuery.error, reviewQuery.error, subagentsQuery.error].find(Boolean);
+  const pageError = [projectsQuery.error, boardQuery.error, reviewQuery.error, subagentsQuery.error, teamQuery.error].find(Boolean);
 
   return (
     <section className="route-page route-page--taskflow taskflow-page" ref={sectionRef}>
@@ -920,7 +979,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
             onSubmitComment={(message) => void handleSubmitComment(message)}
             commenting={submittingComment}
             profileId={profileId}
-            profiles={profiles}
+            profiles={allowedProfiles}
             saving={savingTask}
             sessionError={sessionError}
             sessionRefreshing={refreshingSession}
@@ -942,6 +1001,8 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
       </div>
 
       <AgentFeedModal
+        actorRef={taskFlowConfig.task_flow_actor_ref}
+        actorType={taskFlowConfig.task_flow_actor_type}
         error={agentFeedQuery.error ? resolveTaskFlowError(agentFeedQuery.error) : ""}
         feed={agentFeed}
         loading={Boolean(agentFeedQuery.isFetching && !agentFeed)}
@@ -954,6 +1015,8 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
           setSessionInsights(null);
         }}
         open={state.activeModal === "agent-feed"}
+        profileId={profileId}
+        subagents={subagents}
       />
 
       <TaskSessionModal
@@ -994,7 +1057,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         open={state.activeModal === "manage-projects"}
         pendingDeleteId={state.deleteState.pendingProjectId}
         profileId={profileId}
-        profiles={profiles}
+        profiles={allowedProfiles}
         subagents={subagents}
       />
 
@@ -1009,7 +1072,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         onSubmit={() => void handleCreateTask()}
         open={state.activeModal === "task"}
         profileId={profileId}
-        profiles={profiles}
+        profiles={allowedProfiles}
         subagents={subagents}
       />
 
@@ -1023,7 +1086,8 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         onSubmit={() => void handleSaveSettings()}
         open={state.activeModal === "settings"}
         profileId={profileId}
-        profiles={profiles}
+        profiles={allowedProfiles}
+        teamProfiles={profiles}
         subagents={subagents}
       />
 

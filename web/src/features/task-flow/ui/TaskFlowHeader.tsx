@@ -72,10 +72,10 @@ export function TaskFlowHeader({
             className="button button--ghost button--compact"
             disabled={agentFeedDisabled}
             onClick={onOpenAgentFeed}
-            title={agentFeedDisabled ? "Select an AI profile or subagent actor in Task Flow settings." : undefined}
+            title={agentFeedDisabled ? "Select the Team Orchestrator or an employee in Task Flow settings." : undefined}
             type="button"
           >
-            Agent Feed <span className="button__count">{agentFeedCount}</span>
+            Team Feed <span className="button__count">{agentFeedCount}</span>
           </button>
           <button className="button button--ghost button--compact" onClick={onOpenSettings} type="button">
             Settings

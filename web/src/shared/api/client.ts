@@ -222,6 +222,26 @@ export class ApiClient {
     });
   }
 
+  async listTaskFlowSubagents(profileId: string, params: Record<string, unknown> = {}) {
+    return this.request<Record<string, unknown>>("/task-flow/subagents", {
+      params: { profile_id: profileId, ...params },
+    });
+  }
+
+  async getTaskFlowTeam(profileId: string) {
+    return this.request<Record<string, unknown>>("/task-flow/team", {
+      params: { profile_id: profileId },
+    });
+  }
+
+  async updateTaskFlowTeam(profileId: string, payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>("/task-flow/team", {
+      body: payload,
+      method: "PATCH",
+      params: { profile_id: profileId },
+    });
+  }
+
   async getSubagent(profileId: string, itemId: string) {
     return this.request<Record<string, unknown>>(`/subagents/${encodeURIComponent(itemId)}`, {
       params: { profile_id: profileId },

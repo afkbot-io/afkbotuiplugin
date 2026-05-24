@@ -221,7 +221,9 @@ const taskSessionInsights = {
 const subagents = [
   {
     name: "planner",
+    owner_ref: "default:planner",
     path: "profiles/default/subagents/planner.md",
+    profile_id: "default",
     summary: "Project planning specialist.",
     content: "# planner\n\nPlan migration slices and execution steps.",
   },
@@ -517,6 +519,23 @@ function matchApiRoute(pathname, requestUrl = "/") {
     };
   }
 
+  if (pathname === "/v1/plugins/afkbotui/task-flow/subagents") {
+    return {
+      subagents,
+    };
+  }
+
+  if (pathname === "/v1/plugins/afkbotui/task-flow/team") {
+    return {
+      team: {
+        allowed_profile_ids: ["default"],
+        orchestrator_profile_id: "default",
+        profile_id: "default",
+        taskflow_team_profile_ids: [],
+      },
+    };
+  }
+
   if (pathname === "/v1/plugins/afkbotui/subagents") {
     return { subagents };
   }
@@ -757,6 +776,22 @@ async function handleMutation(request, response, pathname) {
       [mapKey]: [...currentDocuments.filter((document) => document.id !== nextDocument.id), nextDocument],
     };
     sendJson(response, 200, { task_document: nextDocument });
+    return true;
+  }
+
+  if (pathname === "/v1/plugins/afkbotui/task-flow/team" && method === "PATCH") {
+    const payload = await readJsonBody(request);
+    const teamProfileIds = Array.isArray(payload?.taskflow_team_profile_ids)
+      ? payload.taskflow_team_profile_ids.map((item) => String(item)).filter(Boolean)
+      : [];
+    sendJson(response, 200, {
+      team: {
+        allowed_profile_ids: ["default", ...teamProfileIds],
+        orchestrator_profile_id: "default",
+        profile_id: "default",
+        taskflow_team_profile_ids: teamProfileIds,
+      },
+    });
     return true;
   }
 

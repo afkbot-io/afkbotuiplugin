@@ -33,11 +33,13 @@ export function ActorRefField({
   value,
 }: ActorRefFieldProps) {
   if (typeValue === TASK_FLOW_AI_PROFILE_TYPE) {
+    const hasCurrentValue = Boolean(value && !profiles.some((profile) => profile.id === value));
     return (
       <label className="field field--compact">
         <span className="field__label">{label}</span>
         <select name={name} onChange={(event) => onChange(event.target.value)} value={value}>
           {allowBlank ? <option value="">None</option> : null}
+          {hasCurrentValue ? <option value={value}>{value}</option> : null}
           {profiles.map((profile) => (
             <option key={profile.id || "unknown"} value={profile.id || ""}>
               {profile.title || profile.id || "profile"}
@@ -97,6 +99,5 @@ export function ActorRefField({
 
 function formatSubagentRefLabel(value: string) {
   const normalized = String(value || "").trim();
-  const [, subagentName] = normalized.split(":");
-  return subagentName || normalized || "Subagent";
+  return normalized || "Subagent";
 }

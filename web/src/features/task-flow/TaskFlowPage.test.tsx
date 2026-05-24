@@ -97,10 +97,14 @@ function deferred<T>() {
 function createApi({
   flowItems,
   sessionInsights,
+  subagentItems,
+  teamProfileIds = [],
   taskItems,
 }: {
   flowItems?: TaskFlowProject[];
   sessionInsights?: ReturnType<typeof buildSessionInsights>;
+  subagentItems?: Array<{ name: string; owner_ref?: string; path?: string; profile_id?: string; summary?: string }>;
+  teamProfileIds?: string[];
   taskItems?: Array<ReturnType<typeof buildTask>>;
 } = {}) {
   let flows: TaskFlowProject[] = flowItems || [
@@ -279,6 +283,14 @@ function createApi({
         total_count: 1,
       },
     })),
+    getTaskFlowTeam: vi.fn(async () => ({
+      team: {
+        allowed_profile_ids: ["default", ...teamProfileIds],
+        orchestrator_profile_id: "default",
+        profile_id: "default",
+        taskflow_team_profile_ids: teamProfileIds,
+      },
+    })),
     getTaskBoard: vi.fn(async (_profileId: string, params: Record<string, unknown> = {}) => ({
       board: (() => {
         const flowId = String(params.flow_id || "");
@@ -314,16 +326,20 @@ function createApi({
         return (taskItem.status === "review" || taskItem.review_actionable) && (!flowId || taskItem.flow_id === flowId);
       }),
     })),
-    listSubagents: vi.fn(async () => ({
-      subagents: [
+    listTaskFlowSubagents: vi.fn(async () => ({
+      subagents: subagentItems || [
         {
           name: "researcher",
+          owner_ref: "default:researcher",
           path: "default/subagents/researcher.md",
+          profile_id: "default",
           summary: "Research tasks",
         },
         {
           name: "reviewer",
+          owner_ref: "default:reviewer",
           path: "default/subagents/reviewer.md",
+          profile_id: "default",
           summary: "Review tasks",
         },
       ],
@@ -356,6 +372,14 @@ function createApi({
       documents.set(key, [...currentDocuments.filter((document) => document.id !== nextDocument.id), nextDocument]);
       return { task_document: nextDocument };
     }),
+    updateTaskFlowTeam: vi.fn(async (_profileId: string, payload: Record<string, unknown>) => ({
+      team: {
+        allowed_profile_ids: ["default", ...((payload.taskflow_team_profile_ids as string[] | undefined) || [])],
+        orchestrator_profile_id: "default",
+        profile_id: "default",
+        taskflow_team_profile_ids: (payload.taskflow_team_profile_ids as string[] | undefined) || [],
+      },
+    })),
     confirmTaskFlowDocument: vi.fn(async (_profileId: string, documentId: string) => {
       for (const [key, currentDocuments] of documents.entries()) {
         const match = currentDocuments.find((document) => document.id === documentId);
@@ -402,7 +426,13 @@ function renderTaskFlowPage({
   active = true,
   api = createApi(),
   config = {},
-}: { active?: boolean; api?: ReturnType<typeof createApi>; config?: Record<string, unknown> } = {}) {
+  profiles = [{ id: "default", title: "Default" }],
+}: {
+  active?: boolean;
+  api?: ReturnType<typeof createApi>;
+  config?: Record<string, unknown>;
+  profiles?: Array<{ id?: string | null; is_default?: boolean | null; title?: string | null }>;
+} = {}) {
   const notify = vi.fn();
   const updateConfig = vi.fn(async (patch: Record<string, unknown>) => patch);
 
@@ -419,7 +449,7 @@ function renderTaskFlowPage({
       }}
       notify={notify}
       profileId="default"
-      profiles={[{ id: "default", title: "Default" }]}
+      profiles={profiles}
       updateConfig={updateConfig}
     />,
   );
@@ -612,9 +642,13 @@ describe("TaskFlowPage", () => {
     });
 
     expect(await screen.findByText("Task Flow")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Agent Feed/i }));
+    await user.click(screen.getByRole("button", { name: /Team Feed/i }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Agent Feed" });
+    const dialog = await screen.findByRole("dialog", { name: "Team Feed" });
+    expect(within(dialog).getByText(/Team Orchestrator: default/i)).toBeInTheDocument();
+    expect(within(dialog).getByText("Orchestrator & Employees")).toBeInTheDocument();
+    expect(within(dialog).getByText("researcher")).toBeInTheDocument();
+    expect(within(dialog).getByText("reviewer")).toBeInTheDocument();
     expect(within(dialog).getByText("Work Queue")).toBeInTheDocument();
     expect(within(dialog).getByText("Mentions & wake events")).toBeInTheDocument();
     expect(within(dialog).getByText("mention_created")).toBeInTheDocument();
@@ -630,11 +664,33 @@ describe("TaskFlowPage", () => {
     expect(await screen.findByText("Inspector")).toBeInTheDocument();
   });
 
+  it("shows when the team feed roster is truncated", async () => {
+    const user = userEvent.setup();
+    const subagentItems = Array.from({ length: 10 }, (_, index) => ({
+      name: `worker-${index + 1}`,
+      path: `default/subagents/worker-${index + 1}.md`,
+      summary: `Worker ${index + 1}`,
+    }));
+    renderTaskFlowPage({
+      api: createApi({ subagentItems }),
+      config: {
+        task_flow_actor_ref: "default",
+        task_flow_actor_type: "ai_profile",
+      },
+    });
+
+    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Team Feed/i }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Team Feed" });
+    expect(within(dialog).getByText("+2 more employees available in owner and reviewer selects.")).toBeInTheDocument();
+  });
+
   it("does not request the AI agent feed for a human task-flow actor", async () => {
     const { api } = renderTaskFlowPage();
 
     expect(await screen.findByText("Task Flow")).toBeInTheDocument();
-    const feedButton = screen.getByRole("button", { name: /Agent Feed/i });
+    const feedButton = screen.getByRole("button", { name: /Team Feed/i });
     expect(feedButton).toBeDisabled();
     expect(api.getTaskFeed).not.toHaveBeenCalled();
   });
@@ -738,7 +794,7 @@ describe("TaskFlowPage", () => {
 
     expect(await screen.findByText("Task Flow")).toBeInTheDocument();
     await waitFor(() => {
-      expect(api.listSubagents).toHaveBeenCalledWith("default", { q: "" });
+      expect(api.listTaskFlowSubagents).toHaveBeenCalledWith("default", { q: "", team: 1 });
     });
 
     await user.click(screen.getByRole("button", { name: "New Task" }));
@@ -759,6 +815,55 @@ describe("TaskFlowPage", () => {
         }),
       );
       expect(notify).toHaveBeenCalledWith("Task created.", "success");
+    });
+  });
+
+  it("can assign tasks directly to subagents from teammate profiles", async () => {
+    const user = userEvent.setup();
+    const { api } = renderTaskFlowPage({
+      api: createApi({
+        subagentItems: [
+          {
+            name: "backend-engineer",
+            owner_ref: "default:backend-engineer",
+            path: "default/subagents/backend-engineer.md",
+            profile_id: "default",
+            summary: "Backend implementation",
+          },
+          {
+            name: "reviewer",
+            owner_ref: "analyst:reviewer",
+            path: "analyst/subagents/reviewer.md",
+            profile_id: "analyst",
+            summary: "Analyst review",
+          },
+        ],
+        teamProfileIds: ["analyst"],
+      }),
+      profiles: [
+        { id: "default", title: "Default" },
+        { id: "analyst", title: "Analyst" },
+      ],
+    });
+
+    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "New Task" }));
+    const dialog = await screen.findByRole("dialog", { name: "New Backlog Item" });
+
+    await user.type(within(dialog).getByLabelText("Title"), "Assign teammate subagent");
+    await user.type(within(dialog).getByLabelText("Description"), "Route this task to analyst reviewer.");
+    await user.selectOptions(within(dialog).getByLabelText("Owner Type"), "ai_subagent");
+    await user.selectOptions(within(dialog).getByLabelText("Owner Ref"), "analyst:reviewer");
+    await user.click(within(dialog).getByRole("button", { name: "Create Task" }));
+
+    await waitFor(() => {
+      expect(api.createTask).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          owner_ref: "analyst:reviewer",
+          owner_type: "ai_subagent",
+        }),
+      );
     });
   });
 
@@ -878,18 +983,31 @@ describe("TaskFlowPage", () => {
 
   it("saves task-flow settings through the shared updateConfig contract", async () => {
     const user = userEvent.setup();
-    const { notify, updateConfig } = renderTaskFlowPage();
+    const { api, notify, updateConfig } = renderTaskFlowPage({
+      profiles: [
+        { id: "default", title: "Default" },
+        { id: "analyst", title: "Analyst" },
+      ],
+    });
 
     expect(await screen.findByText("Task Flow")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Settings" }));
-    expect(await screen.findByText("Task Flow Settings")).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: "AI Team Settings" });
+    expect(within(dialog).getByText(/AI profile is the orchestrator/i)).toBeInTheDocument();
 
     const pollInput = screen.getByDisplayValue("5");
     await user.clear(pollInput);
     await user.type(pollInput, "9");
+    await user.click(within(dialog).getByRole("button", { name: "All Profiles" }));
     await user.click(screen.getByRole("button", { name: "Save Settings" }));
 
     await waitFor(() => {
+      expect(api.updateTaskFlowTeam).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          taskflow_team_profile_ids: ["analyst"],
+        }),
+      );
       expect(updateConfig).toHaveBeenCalledWith(
         expect.objectContaining({
           task_flow_poll_interval_sec: 9,
@@ -1425,7 +1543,8 @@ describe("TaskFlowPage", () => {
     );
 
     expect(api.listTaskFlows).not.toHaveBeenCalled();
-    expect(api.listSubagents).not.toHaveBeenCalled();
+    expect(api.listTaskFlowSubagents).not.toHaveBeenCalled();
+    expect(api.getTaskFlowTeam).not.toHaveBeenCalled();
     expect(api.getTaskBoard).not.toHaveBeenCalled();
     expect(api.listReviewTasks).not.toHaveBeenCalled();
 
@@ -1450,7 +1569,8 @@ describe("TaskFlowPage", () => {
 
     await waitFor(() => {
       expect(api.listTaskFlows).toHaveBeenCalled();
-      expect(api.listSubagents).toHaveBeenCalled();
+      expect(api.listTaskFlowSubagents).toHaveBeenCalled();
+      expect(api.getTaskFlowTeam).toHaveBeenCalled();
       expect(api.getTaskBoard).toHaveBeenCalled();
       expect(api.listReviewTasks).toHaveBeenCalled();
     });

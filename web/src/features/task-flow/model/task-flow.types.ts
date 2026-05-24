@@ -19,6 +19,13 @@ export type TaskFlowConfig = {
   task_flow_poll_interval_sec: number;
 };
 
+export type TaskFlowTeam = {
+  allowed_profile_ids: string[];
+  orchestrator_profile_id: string;
+  profile_id: string;
+  taskflow_team_profile_ids: string[];
+};
+
 export type TaskFlowProfile = {
   id?: string | null;
   is_default?: boolean | null;
@@ -27,7 +34,10 @@ export type TaskFlowProfile = {
 
 export type TaskFlowSubagent = {
   name: string;
+  origin?: string | null;
+  owner_ref?: string | null;
   path?: string | null;
+  profile_id?: string | null;
   summary?: string | null;
 };
 
@@ -267,4 +277,6 @@ export type TaskFlowSettingsDraft = {
   task_flow_actor_type: string;
   task_flow_board_limit_per_column: string;
   task_flow_poll_interval_sec: string;
+  taskflow_team_profile_ids: string[];
+  taskflow_team_template: string;
 };

@@ -456,3 +456,220 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
     assert observed["build_agent_inbox"]["owner_ref"] == "default:researcher"
     assert observed["build_agent_inbox"]["task_limit"] == 30
     assert observed["build_agent_inbox"]["event_limit"] == 20
+
+
+def test_task_flow_subagents_route_exposes_core_and_profile_team_members(monkeypatch, tmp_path) -> None:
+    core_path = tmp_path / "afkbot" / "subagents" / "backend-engineer.md"
+    profile_path = tmp_path / "profiles" / "default" / "subagents" / "reviewer.md"
+    core_path.parent.mkdir(parents=True)
+    profile_path.parent.mkdir(parents=True)
+    core_path.write_text("# backend-engineer\nOwn backend implementation.", encoding="utf-8")
+    profile_path.write_text("# reviewer\nOwn review gates.", encoding="utf-8")
+
+    class FakeLoader:
+        def __init__(self, _settings) -> None:
+            pass
+
+        async def list_subagents(self, profile_id: str):
+            assert profile_id == "default"
+            return [
+                SimpleNamespace(name="backend-engineer", origin="core", path=core_path),
+                SimpleNamespace(name="orchestrator", origin="core", path=core_path),
+                SimpleNamespace(name="reviewer", origin="profile", path=profile_path),
+            ]
+
+    class FakeRegistry:
+        def read_config(self) -> dict[str, object]:
+            return {}
+
+        def write_config(self, payload: dict[str, object]) -> None:
+            del payload
+
+        def reset_config(self) -> None:
+            pass
+
+    app = FastAPI()
+    monkeypatch.setattr(router_module, "get_settings", lambda: SimpleNamespace(root_dir=tmp_path))
+    monkeypatch.setattr(router_module, "SubagentLoader", FakeLoader)
+    app.include_router(
+        router_module.build_router(api_prefix="/v1/plugins/afkbotui", registry=FakeRegistry())
+    )
+    client = TestClient(app)
+
+    response = client.get("/v1/plugins/afkbotui/task-flow/subagents", params={"profile_id": "default"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["filtered_count"] == 2
+    assert payload["subagents"] == [
+        {
+            "name": "backend-engineer",
+            "origin": "core",
+            "owner_ref": "default:backend-engineer",
+            "path": "afkbot/subagents/backend-engineer.md",
+            "profile_id": "default",
+            "summary": "backend-engineer",
+        },
+        {
+            "name": "reviewer",
+            "origin": "profile",
+            "owner_ref": "default:reviewer",
+            "path": "profiles/default/subagents/reviewer.md",
+            "profile_id": "default",
+            "summary": "reviewer",
+        },
+    ]
+
+    filtered = client.get(
+        "/v1/plugins/afkbotui/task-flow/subagents",
+        params={"profile_id": "default", "q": "review"},
+    )
+    assert filtered.status_code == 200
+    assert [item["name"] for item in filtered.json()["subagents"]] == ["reviewer"]
+
+
+def test_task_flow_team_route_reads_and_updates_team_config_without_runtime_materialization(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    class FakeRegistry:
+        def read_config(self) -> dict[str, object]:
+            return {}
+
+        def write_config(self, payload: dict[str, object]) -> None:
+            del payload
+
+        def reset_config(self) -> None:
+            pass
+
+    class FakeProfileService:
+        async def list(self):
+            return [
+                SimpleNamespace(id="default"),
+                SimpleNamespace(id="analyst"),
+                SimpleNamespace(id="outsider"),
+            ]
+
+    class FakeTaskFlowTeamConfigService:
+        def __init__(self) -> None:
+            self.team_profile_ids: tuple[str, ...] | None = None
+
+        def load(self, profile_id: str) -> tuple[str, ...] | None:
+            assert profile_id == "default"
+            return self.team_profile_ids
+
+        def write(self, profile_id: str, team_profile_ids: tuple[str, ...]) -> None:
+            assert profile_id == "default"
+            self.team_profile_ids = team_profile_ids
+
+    team_configs = FakeTaskFlowTeamConfigService()
+    settings = SimpleNamespace(llm_model="gpt-4o-mini", llm_provider="openai", root_dir=tmp_path)
+    monkeypatch.setattr(router_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(router_module, "get_profile_service", lambda _settings: FakeProfileService())
+    monkeypatch.setattr(router_module, "get_taskflow_team_config_service", lambda _settings: team_configs)
+
+    app = FastAPI()
+    app.include_router(
+        router_module.build_router(api_prefix="/v1/plugins/afkbotui", registry=FakeRegistry())
+    )
+    client = TestClient(app)
+
+    initial = client.get("/v1/plugins/afkbotui/task-flow/team", params={"profile_id": "default"})
+    assert initial.status_code == 200
+    assert initial.json()["team"]["allowed_profile_ids"] == ["default"]
+
+    unknown = client.get("/v1/plugins/afkbotui/task-flow/team", params={"profile_id": "missing"})
+    assert unknown.status_code == 400
+    assert unknown.json()["detail"]["error_code"] == "invalid_task_flow_team"
+
+    updated = client.patch(
+        "/v1/plugins/afkbotui/task-flow/team",
+        json={"taskflow_team_profile_ids": ["analyst", "analyst", ""]},
+        params={"profile_id": "default"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["team"]["taskflow_team_profile_ids"] == ["analyst"]
+    assert updated.json()["team"]["allowed_profile_ids"] == ["default", "analyst"]
+    assert team_configs.team_profile_ids == ("analyst",)
+
+    invalid = client.patch(
+        "/v1/plugins/afkbotui/task-flow/team",
+        json={"taskflow_team_profile_ids": ["missing"]},
+        params={"profile_id": "default"},
+    )
+    assert invalid.status_code == 400
+    assert invalid.json()["detail"]["error_code"] == "invalid_task_flow_team"
+
+
+def test_task_flow_subagents_route_can_expand_allowed_team_profiles(monkeypatch, tmp_path) -> None:
+    default_path = tmp_path / "afkbot" / "subagents" / "backend-engineer.md"
+    analyst_path = tmp_path / "profiles" / "analyst" / "subagents" / "reviewer.md"
+    default_path.parent.mkdir(parents=True)
+    analyst_path.parent.mkdir(parents=True)
+    default_path.write_text("# backend-engineer\nOwn backend implementation.", encoding="utf-8")
+    analyst_path.write_text("# reviewer\nOwn analyst review gates.", encoding="utf-8")
+
+    class FakeLoader:
+        def __init__(self, _settings) -> None:
+            pass
+
+        async def list_subagents(self, profile_id: str):
+            if profile_id == "default":
+                return [SimpleNamespace(name="backend-engineer", origin="core", path=default_path)]
+            if profile_id == "analyst":
+                return [SimpleNamespace(name="reviewer", origin="profile", path=analyst_path)]
+            raise AssertionError(profile_id)
+
+    class FakeProfileService:
+        async def list(self):
+            return [SimpleNamespace(id="default"), SimpleNamespace(id="analyst")]
+
+    class FakeTaskFlowTeamConfigService:
+        def load(self, profile_id: str) -> tuple[str, ...]:
+            assert profile_id == "default"
+            return ("analyst",)
+
+    class FakeRegistry:
+        def read_config(self) -> dict[str, object]:
+            return {}
+
+        def write_config(self, payload: dict[str, object]) -> None:
+            del payload
+
+        def reset_config(self) -> None:
+            pass
+
+    settings = SimpleNamespace(root_dir=tmp_path)
+    monkeypatch.setattr(router_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(router_module, "get_profile_service", lambda _settings: FakeProfileService())
+    monkeypatch.setattr(router_module, "get_taskflow_team_config_service", lambda _settings: FakeTaskFlowTeamConfigService())
+    monkeypatch.setattr(router_module, "SubagentLoader", FakeLoader)
+
+    app = FastAPI()
+    app.include_router(
+        router_module.build_router(api_prefix="/v1/plugins/afkbotui", registry=FakeRegistry())
+    )
+    client = TestClient(app)
+
+    response = client.get(
+        "/v1/plugins/afkbotui/task-flow/subagents",
+        params={"profile_id": "default", "team": "1"},
+    )
+    assert response.status_code == 200
+    assert response.json()["subagents"] == [
+        {
+            "name": "backend-engineer",
+            "origin": "core",
+            "owner_ref": "default:backend-engineer",
+            "path": "afkbot/subagents/backend-engineer.md",
+            "profile_id": "default",
+            "summary": "backend-engineer",
+        },
+        {
+            "name": "reviewer",
+            "origin": "profile",
+            "owner_ref": "analyst:reviewer",
+            "path": "profiles/analyst/subagents/reviewer.md",
+            "profile_id": "analyst",
+            "summary": "reviewer",
+        },
+    ]
