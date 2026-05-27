@@ -229,6 +229,25 @@ function createApi({
       }
       return { ok: true };
     }),
+    updateTaskFlow: vi.fn(async (_profileId: string, flowId: string, payload: Record<string, unknown>) => {
+      const currentFlow = flows.find((flow) => flow.id === flowId);
+      const nextFlow = {
+        ...(currentFlow || {
+          created_by_ref: "web-user",
+          created_by_type: "human",
+          id: flowId,
+          status: "active",
+        }),
+        default_owner_ref: String(payload.default_owner_ref || ""),
+        default_owner_type: String(payload.default_owner_type || ""),
+        description: String(payload.description || ""),
+        labels: Array.isArray(payload.labels) ? payload.labels.map((label) => String(label)) : [],
+        title: String(payload.title || currentFlow?.title || flowId),
+        updated_at: "2026-04-21T12:10:00.000Z",
+      } satisfies TaskFlowProject;
+      flows = flows.map((flow) => (flow.id === flowId ? nextFlow : flow));
+      return { task_flow: nextFlow };
+    }),
     getTask: vi.fn(async (_profileId: string, taskId: string) => ({ task: tasks.get(taskId) || null })),
     getTaskContext: vi.fn(async (_profileId: string, taskId: string) => {
       const task = tasks.get(taskId) || null;
@@ -729,6 +748,35 @@ describe("TaskFlowPage", () => {
     await waitFor(() => {
       expect(api.createTaskFlow).toHaveBeenCalled();
       expect(notify).toHaveBeenCalledWith("Flow created.", "success");
+    });
+  });
+
+  it("edits an existing flow from the flow manager without changing the flow id", async () => {
+    const user = userEvent.setup();
+    const { api, notify } = renderTaskFlowPage();
+
+    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Flows" }));
+    const dialog = await screen.findByRole("dialog", { name: "Flow Library" });
+    const flowItem = within(dialog).getByText("Alpha Project").closest(".flow-manager__item") as HTMLElement;
+
+    await user.click(within(flowItem).getByRole("button", { name: "Edit" }));
+    await user.clear(within(dialog).getByLabelText("Title"));
+    await user.type(within(dialog).getByLabelText("Title"), "Renamed Alpha");
+    await user.clear(within(dialog).getByLabelText("Description"));
+    await user.type(within(dialog).getByLabelText("Description"), "Updated delivery scope.");
+    await user.click(within(dialog).getByRole("button", { name: "Save Flow" }));
+
+    await waitFor(() => {
+      expect(api.updateTaskFlow).toHaveBeenCalledWith(
+        "default",
+        "flow-alpha",
+        expect.objectContaining({
+          description: "Updated delivery scope.",
+          title: "Renamed Alpha",
+        }),
+      );
+      expect(notify).toHaveBeenCalledWith("Flow updated.", "success");
     });
   });
 

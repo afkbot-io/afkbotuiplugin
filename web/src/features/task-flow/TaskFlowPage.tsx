@@ -45,6 +45,7 @@ import {
   bulkDeleteTaskItems,
   putTaskDocument,
   requestTaskReviewChanges,
+  updateTaskProject,
 } from "@/features/task-flow/model/task-flow.api";
 import {
   getTaskSessionKey,
@@ -94,6 +95,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   const [refreshingSessionKeys, setRefreshingSessionKeys] = useState<Set<string>>(() => new Set());
   const [sessionInsights, setSessionInsights] = useState<TaskSessionInsights | null>(null);
   const [sessionError, setSessionError] = useState("");
+  const [editingFlowId, setEditingFlowId] = useState("");
   const sectionRef = useRef<HTMLElement | null>(null);
   const boardRef = useRef<HTMLDivElement | null>(null);
   const dragTaskIdRef = useRef("");
@@ -557,6 +559,81 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     }
   }, [api, notify, profileId, refreshAll, state, subagents, taskFlowConfig]);
 
+  const handleEditProject = useCallback((flowId: string) => {
+    const flow = flows.find((item) => item.id === flowId);
+    if (!flow) {
+      return;
+    }
+    setEditingFlowId(flow.id);
+    state.setCreateProjectError("");
+    state.setCreateProjectDraft({
+      default_owner_ref: String(flow.default_owner_ref || ""),
+      default_owner_type: String(flow.default_owner_type || ""),
+      description: String(flow.description || ""),
+      labels: (flow.labels || []).join(", "),
+      title: String(flow.title || ""),
+    });
+  }, [flows, state]);
+
+  const handleCancelProjectEdit = useCallback(() => {
+    setEditingFlowId("");
+    state.setCreateProjectError("");
+    state.setCreateProjectDraft({
+      ...state.createProject.draft,
+      description: "",
+      labels: "",
+      title: "",
+    });
+  }, [state]);
+
+  const handleUpdateProject = useCallback(async () => {
+    if (!editingFlowId) {
+      return;
+    }
+    const error = validateProjectDraft(state.createProject.draft, { profileId, subagents });
+    if (error) {
+      state.setCreateProjectError(error);
+      return;
+    }
+    state.setCreateProjectError("");
+    state.setModalBusy(true);
+    try {
+      await updateTaskProject(api, profileId, editingFlowId, state.createProject.draft, taskFlowConfig);
+      if (profileIdRef.current !== profileId) {
+        return;
+      }
+      setEditingFlowId("");
+      state.setCreateProjectDraft({
+        ...state.createProject.draft,
+        description: "",
+        labels: "",
+        title: "",
+      });
+      notify("Flow updated.", "success");
+      await refreshAll(false);
+    } catch (error) {
+      if (profileIdRef.current !== profileId) {
+        return;
+      }
+      state.setCreateProjectError(resolveTaskFlowError(error));
+    } finally {
+      state.setModalBusy(false);
+    }
+  }, [api, editingFlowId, notify, profileId, refreshAll, state, subagents, taskFlowConfig]);
+
+  const handleSubmitProject = useCallback(async () => {
+    if (editingFlowId) {
+      await handleUpdateProject();
+      return;
+    }
+    await handleCreateProject();
+  }, [editingFlowId, handleCreateProject, handleUpdateProject]);
+
+  const handleCloseProjectManager = useCallback(() => {
+    setEditingFlowId("");
+    state.closeModal();
+  }, [state]);
+
   const handleDeleteProject = useCallback(
     async (flowId: string) => {
       state.setDeleteError("");
@@ -971,6 +1048,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         busy={state.modalBusy}
         config={taskFlowConfig}
         draft={state.createProject.draft}
+        editingFlowId={editingFlowId}
         error={state.createProject.error || state.deleteState.error}
         flowDocuments={flowDocumentsQuery.data || []}
         flowDocumentsError={flowDocumentsQuery.error ? resolveTaskFlowError(flowDocumentsQuery.error) : ""}
@@ -978,11 +1056,13 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         flowSearchQuery={state.flowSearchQuery}
         flows={flows}
         busyDocumentId={savingDocumentId}
-        onCancel={state.closeModal}
+        onCancel={handleCloseProjectManager}
         onCancelDelete={state.clearPendingProjectDelete}
+        onCancelEdit={handleCancelProjectEdit}
         onConfirmFlowDocument={(document) => void handleConfirmFlowDocument(document)}
         onConfirmDelete={(flowId) => void handleDeleteProject(flowId)}
         onDraftChange={state.setCreateProjectDraft}
+        onEdit={handleEditProject}
         onFilter={(flowId) => {
           handleFlowFilterChange(flowId);
           state.clearPendingProjectDelete();
@@ -990,7 +1070,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         onRequestDelete={state.requestProjectDelete}
         onSaveFlowDocument={(draft, flowId, baseRevision) => void handleSaveFlowDocument(draft, flowId, baseRevision)}
         onSearchChange={state.setFlowSearchQuery}
-        onSubmit={() => void handleCreateProject()}
+        onSubmit={() => void handleSubmitProject()}
         open={state.activeModal === "manage-projects"}
         pendingDeleteId={state.deleteState.pendingProjectId}
         profileId={profileId}

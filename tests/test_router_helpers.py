@@ -342,6 +342,69 @@ def test_task_flow_task_routes_map_prompt_payload_to_description(monkeypatch) ->
     assert observed["update"]["reviewer_ref"] is None
 
 
+def test_task_flow_flow_update_route_forwards_metadata_patch(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    class DumpableFlow:
+        def model_dump(self, *, mode: str) -> dict[str, object]:
+            assert mode == "json"
+            return {
+                "description": "Updated scope",
+                "id": "flow-1",
+                "title": "Renamed Flow",
+            }
+
+    class FakeTaskFlowService:
+        async def update_flow(self, **kwargs: object) -> DumpableFlow:
+            observed.update(kwargs)
+            return DumpableFlow()
+
+    class FakeRegistry:
+        def read_config(self) -> dict[str, object]:
+            return {}
+
+        def write_config(self, payload: dict[str, object]) -> None:
+            del payload
+
+        def reset_config(self) -> None:
+            pass
+
+    monkeypatch.setattr(router_module, "get_settings", lambda: object())
+    monkeypatch.setattr(router_module, "get_task_flow_service", lambda _settings: FakeTaskFlowService())
+
+    app = FastAPI()
+    app.include_router(
+        router_module.build_router(api_prefix="/v1/plugins/afkbotui", registry=FakeRegistry())
+    )
+    client = TestClient(app)
+
+    response = client.patch(
+        "/v1/plugins/afkbotui/task-flow/flows/flow-1",
+        json={
+            "default_owner_ref": "default",
+            "default_owner_type": "ai_profile",
+            "description": "Updated scope",
+            "labels": ["delivery"],
+            "title": "Renamed Flow",
+        },
+        params={"profile_id": "default"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["task_flow"]["title"] == "Renamed Flow"
+    assert observed == {
+        "actor_ref": "web-user",
+        "actor_type": "human",
+        "default_owner_ref": "default",
+        "default_owner_type": "ai_profile",
+        "description": "Updated scope",
+        "flow_id": "flow-1",
+        "labels": ("delivery",),
+        "profile_id": "default",
+        "title": "Renamed Flow",
+    }
+
+
 def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) -> None:
     observed: dict[str, dict[str, object]] = {}
 

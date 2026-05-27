@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are tracked here.
 
+## 0.5.8 - 2026-05-27
+
+- add flow editing in the Task Flow `Flow Library` so operators can rename flows and update description, labels, and default owner without recreating the flow
+- expose `PATCH /v1/plugins/afkbotui/task-flow/flows/{flow_id}` for operator-side flow metadata updates
+- raise the plugin AFKBOT core requirement to `>=1.9.7` because flow updates are implemented in core
+- sync release metadata to version `0.5.8`
+
 ## 0.5.7 - 2026-05-27
 
 - add document deletion from the standalone `Docs` workspace with inline confirmation and revision-conflict protection

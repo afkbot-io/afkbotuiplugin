@@ -107,6 +107,20 @@ class TaskFlowCreatePayload(BaseModel):
     labels: tuple[str, ...] = ()
 
 
+class TaskFlowPatchPayload(BaseModel):
+    """Request body for editable task flow metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=240)
+    description: str | None = None
+    actor_type: str = Field(default="human", min_length=1)
+    actor_ref: str = Field(default="web-user", min_length=1)
+    default_owner_type: str | None = None
+    default_owner_ref: str | None = None
+    labels: tuple[str, ...] | None = None
+
+
 class TaskCreatePayload(BaseModel):
     """Request body for one task create action."""
 
@@ -603,6 +617,34 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 default_owner_ref=payload.default_owner_ref,
                 labels=payload.labels,
             )
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+        return {"task_flow": item.model_dump(mode="json")}
+
+    @router.patch("/task-flow/flows/{flow_id}")
+    async def task_flow_update(
+        flow_id: str,
+        payload: TaskFlowPatchPayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_task_flow_service(get_settings())
+        kwargs: dict[str, object] = {
+            "actor_ref": payload.actor_ref,
+            "actor_type": payload.actor_type,
+            "flow_id": flow_id,
+            "profile_id": profile_id,
+        }
+        for field_name in (
+            "default_owner_ref",
+            "default_owner_type",
+            "description",
+            "labels",
+            "title",
+        ):
+            if field_name in payload.model_fields_set:
+                kwargs[field_name] = getattr(payload, field_name)
+        try:
+            item = await service.update_flow(**kwargs)
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
         return {"task_flow": item.model_dump(mode="json")}

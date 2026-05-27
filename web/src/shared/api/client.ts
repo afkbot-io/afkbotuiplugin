@@ -335,6 +335,14 @@ export class ApiClient {
     });
   }
 
+  async updateTaskFlow(profileId: string, flowId: string, payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>(`/task-flow/flows/${encodeURIComponent(flowId)}`, {
+      body: payload,
+      method: "PATCH",
+      params: { profile_id: profileId },
+    });
+  }
+
   async deleteTaskFlow(profileId: string, flowId: string) {
     return this.request<Record<string, unknown>>(`/task-flow/flows/${encodeURIComponent(flowId)}`, {
       method: "DELETE",

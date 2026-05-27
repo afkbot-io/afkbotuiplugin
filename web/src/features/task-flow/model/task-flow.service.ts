@@ -77,6 +77,7 @@ type TaskFlowApi = {
   ) => Promise<{ task_document?: TaskFlowDocument }>;
   requestReviewChanges: (profileId: string, taskId: string, payload: Record<string, unknown>) => Promise<unknown>;
   updateTask: (profileId: string, taskId: string, payload: Record<string, unknown>) => Promise<{ task?: TaskFlowTask }>;
+  updateTaskFlow: (profileId: string, flowId: string, payload: Record<string, unknown>) => Promise<{ task_flow?: TaskFlowProject }>;
 };
 
 function coerceTaskFlowApi(api: unknown) {
@@ -326,6 +327,24 @@ export async function createTaskProject(
   const payload = await coerceTaskFlowApi(api).createTaskFlow(profileId, {
     created_by_ref: config.task_flow_actor_ref,
     created_by_type: normalizeActorType(config.task_flow_actor_type),
+    default_owner_ref: normalizeActorRef(draft.default_owner_type, draft.default_owner_ref, config),
+    default_owner_type: defaultOwnerType || null,
+    description: draft.description.trim() || null,
+    labels: parseCsv(draft.labels),
+    title: draft.title.trim(),
+  });
+  return payload.task_flow || null;
+}
+
+export async function updateTaskProject(
+  api: unknown,
+  profileId: string,
+  flowId: string,
+  draft: TaskFlowProjectDraft,
+  config: TaskFlowConfig,
+) {
+  const defaultOwnerType = normalizeActorType(draft.default_owner_type);
+  const payload = await coerceTaskFlowApi(api).updateTaskFlow(profileId, flowId, {
     default_owner_ref: normalizeActorRef(draft.default_owner_type, draft.default_owner_ref, config),
     default_owner_type: defaultOwnerType || null,
     description: draft.description.trim() || null,

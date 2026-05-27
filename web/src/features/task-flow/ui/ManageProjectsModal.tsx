@@ -33,7 +33,9 @@ import { ModalDialog } from "@/shared/ui/ModalDialog";
 type ManageProjectsModalProps = {
   activeFlowId: string;
   busy: boolean;
+  config: TaskFlowConfig;
   draft: TaskFlowProjectDraft;
+  editingFlowId: string;
   error: string;
   flowDocuments: TaskFlowDocument[];
   flowDocumentsError: string;
@@ -43,9 +45,11 @@ type ManageProjectsModalProps = {
   busyDocumentId: string;
   onCancel: () => void;
   onCancelDelete: () => void;
+  onCancelEdit: () => void;
   onConfirmFlowDocument: (document: TaskFlowDocument) => void;
   onConfirmDelete: (flowId: string) => void;
   onDraftChange: (draft: TaskFlowProjectDraft) => void;
+  onEdit: (flowId: string) => void;
   onFilter: (flowId: string) => void;
   onRequestDelete: (flowId: string) => void;
   onSaveFlowDocument: (draft: TaskFlowDocumentDraft, flowId: string, baseRevision?: number | null) => void;
@@ -56,7 +60,6 @@ type ManageProjectsModalProps = {
   profileId: string;
   profiles: TaskFlowProfile[];
   subagents: TaskFlowSubagent[];
-  config: TaskFlowConfig;
 };
 
 export function ManageProjectsModal({
@@ -64,6 +67,7 @@ export function ManageProjectsModal({
   busy,
   config,
   draft,
+  editingFlowId,
   error,
   flowDocuments,
   flowDocumentsError,
@@ -73,9 +77,11 @@ export function ManageProjectsModal({
   busyDocumentId,
   onCancel,
   onCancelDelete,
+  onCancelEdit,
   onConfirmFlowDocument,
   onConfirmDelete,
   onDraftChange,
+  onEdit,
   onFilter,
   onRequestDelete,
   onSaveFlowDocument,
@@ -89,6 +95,7 @@ export function ManageProjectsModal({
 }: ManageProjectsModalProps) {
   const visibleFlows = getVisibleProjects(flows, activeFlowId, flowSearchQuery);
   const activeFlow = flows.find((item) => item.id === activeFlowId) || null;
+  const editingFlow = flows.find((item) => item.id === editingFlowId) || null;
   const handleDefaultOwnerTypeChange = (defaultOwnerType: string) => {
     onDraftChange({
       ...draft,
@@ -190,6 +197,9 @@ export function ManageProjectsModal({
                           >
                             {isActive ? "Filtered on Board" : "Show on Board"}
                           </button>
+                          <button className="button button--ghost button--tiny" disabled={busy} onClick={() => onEdit(flow.id)} type="button">
+                            Edit
+                          </button>
                           {isDeletePending ? (
                             <div className="flow-manager__danger">
                               <p className="muted">Delete this flow and every task inside it?</p>
@@ -232,8 +242,8 @@ export function ManageProjectsModal({
           <section className="flow-manager__section flow-manager__section--form">
             <div className="panel-head panel-head--compact">
               <div>
-                <p className="panel-head__eyebrow">Add Flow</p>
-                <h4 className="flow-manager__title">Create a new flow</h4>
+                <p className="panel-head__eyebrow">{editingFlow ? "Edit Flow" : "Add Flow"}</p>
+                <h4 className="flow-manager__title">{editingFlow ? editingFlow.title || editingFlow.id : "Create a new flow"}</h4>
               </div>
             </div>
             <label className="field">
@@ -289,7 +299,18 @@ export function ManageProjectsModal({
               />
             </label>
             <div className="button-row">
-              <AsyncButton className="button button--primary" idleLabel="Add Flow" loading={busy} pendingLabel="Working…" type="submit" />
+              <AsyncButton
+                className="button button--primary"
+                idleLabel={editingFlow ? "Save Flow" : "Add Flow"}
+                loading={busy}
+                pendingLabel="Working…"
+                type="submit"
+              />
+              {editingFlow ? (
+                <button className="button button--ghost" disabled={busy} onClick={onCancelEdit} type="button">
+                  Cancel Edit
+                </button>
+              ) : null}
               <button className="button button--ghost" disabled={busy} onClick={onCancel} type="button">
                 Done
               </button>

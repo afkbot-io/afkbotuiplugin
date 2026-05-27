@@ -2,7 +2,7 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, and profile-local text libraries.
 
-Current release: `0.5.7`
+Current release: `0.5.8`
 
 ## Overview
 
@@ -18,7 +18,7 @@ Current frontend/runtime contract:
 
 The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*` or `web/dist/assets/features/*` payloads.
 
-## What Is In 0.5.7
+## What Is In 0.5.8
 
 - single-shell workspace with `Automations`, `Task Flow`, `Docs`, `Subagents`, `Skills`, and `Bootstrap`
 - React-native route surfaces for every section, with shared loaders, dialogs, async buttons, and responsive layout primitives
@@ -27,7 +27,7 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 - operator auth integration with login redirect, session badge, logout, and fail-closed handling when AFKBOT auth endpoints are missing
 - masked webhook metadata in ordinary automation list/detail payloads, with reveal only through `/automations/{id}/webhook-endpoint`
 - automation inspector with cron/webhook diagnostics, copy actions, graph preview, runtime path, and webhook URL rotation
-- Task Flow board with Plan-first status ordering, flow management modal, per-flow filtering, stable silent polling, inspector, review flows, comments, dependencies, runs, session activity, and live chat-style activity modal
+- Task Flow board with Plan-first status ordering, flow management modal, flow rename/edit/delete, per-flow filtering, stable silent polling, inspector, review flows, comments, dependencies, runs, session activity, and live chat-style activity modal
 - Task Flow AI-only agent feed, context bundle, and flow/task document controls expose assignments, wake signals, plans, specs, handoffs, and confirmed revisions directly in the board and flow library
 - Docs workspace for profile-wide Task Flow document search, scope/status filtering, preview, revision metadata, confirmation, and deletion
 - Task Flow owner controls, reviewer fallbacks, actor settings, and task cards recognize subagent owners from `owner_ref` values like `default:researcher`
@@ -51,7 +51,7 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 ### Task Flow
 
 - kanban-style board inside the same workspace shell
-- flow library modal with search, add, delete, quick selection, and project-level flow docs
+- flow library modal with search, add, rename/edit, delete, quick selection, and project-level flow docs
 - agent feed modal for the configured AI Task Flow actor, including assigned tasks, mentions, wake requests, recovery signals, and runtime claim rejects
 - task inspector with create/edit/delete, comments, dependencies, runs, review actions, live session activity, context bundle summaries, and flow/task docs
 - review actions stay available for review tasks that are already claimed or running by an AI reviewer
@@ -72,13 +72,14 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 
 ## Requirements
 
-- AFKBOT UI `0.5.7`
-- AFKBOT `>=1.9.6,<2.0.0`
+- AFKBOT UI `0.5.8`
+- AFKBOT `>=1.9.7,<2.0.0`
 - current AFKBOT `1.x` auth/chat runtime surface, including:
   - `/v1/auth/session`
   - `/v1/auth/logout`
   - operator-side automation webhook reveal support
   - Task Flow document workspace APIs
+  - Task Flow flow metadata update APIs
 
 ## Install
 
