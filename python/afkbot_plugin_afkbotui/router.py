@@ -7,7 +7,7 @@ from datetime import datetime
 from functools import lru_cache
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import func, select
 
@@ -606,6 +606,29 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
         return {"deleted": True, "flow_id": flow_id}
+
+    @router.get("/task-flow/documents")
+    async def task_flow_document_workspace(
+        profile_id: str = "default",
+        query: str | None = None,
+        scope_type: Literal["flow", "task"] | None = None,
+        confirmation_status: str | None = None,
+        limit: int = Query(default=100, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, object]:
+        service = get_task_flow_service(get_settings())
+        try:
+            payload = await service.list_documents(
+                profile_id=profile_id,
+                scope_type=scope_type,
+                confirmation_status=confirmation_status,
+                query=query,
+                limit=limit,
+                offset=offset,
+            )
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+        return {"task_documents": [item.model_dump(mode="json") for item in payload]}
 
     @router.get("/task-flow/docs")
     async def task_flow_document_list(

@@ -142,6 +142,7 @@ describe("ApiClient text-library resources", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({ task_documents: [] }))
+      .mockResolvedValueOnce(jsonResponse({ task_documents: [{ id: "doc-2" }] }))
       .mockResolvedValueOnce(jsonResponse({ task_document: { id: "doc-1" } }))
       .mockResolvedValueOnce(jsonResponse({ task_document: { id: "doc-1", confirmation_status: "confirmed" } }))
       .mockResolvedValueOnce(jsonResponse({ context: { task: { id: "task-1" } } }))
@@ -151,6 +152,7 @@ describe("ApiClient text-library resources", () => {
     const client = new ApiClient("/v1/plugins/afkbotui");
 
     await client.listTaskFlowDocuments("default", "flow", "flow-1");
+    await client.listTaskFlowDocumentWorkspace("default", { confirmation_status: "draft", query: "plan", scope_type: "task" });
     await client.putTaskFlowDocument("default", { document_key: "plan", scope_id: "flow-1", scope_type: "flow" });
     await client.confirmTaskFlowDocument("default", "doc-1", { expected_revision: 2 });
     await client.getTaskContext("default", "task-1");
@@ -164,21 +166,26 @@ describe("ApiClient text-library resources", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
+      `${origin}/v1/plugins/afkbotui/task-flow/documents?profile_id=default&confirmation_status=draft&query=plan&scope_type=task`,
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
       `${origin}/v1/plugins/afkbotui/task-flow/docs?profile_id=default`,
       expect.objectContaining({ method: "PUT" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
+      4,
       `${origin}/v1/plugins/afkbotui/task-flow/docs/doc-1/confirm?profile_id=default`,
       expect.objectContaining({ method: "POST" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
+      5,
       `${origin}/v1/plugins/afkbotui/task-flow/tasks/task-1/context?profile_id=default`,
       expect.objectContaining({ method: "GET" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      5,
+      6,
       `${origin}/v1/plugins/afkbotui/task-flow/feed?profile_id=default&owner_ref=default&owner_type=ai_profile`,
       expect.objectContaining({ method: "GET" }),
     );

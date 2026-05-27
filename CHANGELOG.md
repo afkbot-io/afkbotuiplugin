@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are tracked here.
 
+## 0.5.6 - 2026-05-27
+
+- add a standalone `Docs` workspace route for profile-wide Task Flow documents with search, scope/status filters, document preview, revision metadata, and confirm actions
+- expose `GET /v1/plugins/afkbotui/task-flow/documents` so the UI can list flow and task documents without requiring a selected board task
+- raise the plugin AFKBOT core requirement to `>=1.9.3` because the profile-wide Task Flow document service is provided by newer core releases
+- sync release metadata to version `0.5.6`
+
 ## 0.5.5 - 2026-05-15
 
 - add Task Flow AI-only agent feed, context bundle, and flow/task document controls so operators can see AI assignments, mentions, wake/recovery signals, plans, specs, handoffs, and confirmed document revisions from the board and flow library

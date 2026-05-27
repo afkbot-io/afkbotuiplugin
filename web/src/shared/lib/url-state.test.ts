@@ -20,7 +20,7 @@ describe("url-state", () => {
   });
 
   it("keeps the route contract aligned with the shipped UI", () => {
-    expect(ROUTES).toEqual(["automations", "task-flow", "subagents", "skills", "bootstrap"]);
+    expect(ROUTES).toEqual(["automations", "task-flow", "docs", "subagents", "skills", "bootstrap"]);
     expect(normalizeRoute("invalid")).toBe("automations");
     expect(normalizeRoute("skills")).toBe("skills");
   });

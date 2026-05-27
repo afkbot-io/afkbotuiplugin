@@ -1,4 +1,4 @@
-export const ROUTES = ["automations", "task-flow", "subagents", "skills", "bootstrap"] as const;
+export const ROUTES = ["automations", "task-flow", "docs", "subagents", "skills", "bootstrap"] as const;
 
 export type RouteId = (typeof ROUTES)[number];
 

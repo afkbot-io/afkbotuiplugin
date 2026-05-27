@@ -348,6 +348,12 @@ export class ApiClient {
     });
   }
 
+  async listTaskFlowDocumentWorkspace(profileId: string, params: Record<string, unknown> = {}) {
+    return this.request<Record<string, unknown>>("/task-flow/documents", {
+      params: { profile_id: profileId, ...params },
+    });
+  }
+
   async putTaskFlowDocument(profileId: string, payload: Record<string, unknown>) {
     return this.request<Record<string, unknown>>("/task-flow/docs", {
       body: payload,

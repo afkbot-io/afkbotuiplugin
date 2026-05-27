@@ -31,6 +31,10 @@ const LazyTaskFlowRoute = lazy(async () => ({
   default: (await import("@/features/task-flow/TaskFlowPage")).TaskFlowPage,
 }));
 
+const LazyTaskDocumentsRoute = lazy(async () => ({
+  default: (await import("@/features/task-documents/TaskDocumentsPage")).TaskDocumentsPage,
+}));
+
 const LazySubagentsPage = lazy(async () => ({
   default: (await import("@/features/subagents/SubagentsPage")).SubagentsPage,
 }));
@@ -53,6 +57,11 @@ export const routeConfigs: RouteConfig[] = [
     component: LazyTaskFlowRoute,
     id: "task-flow",
     label: routeLabel("task-flow"),
+  },
+  {
+    component: LazyTaskDocumentsRoute,
+    id: "docs",
+    label: routeLabel("docs"),
   },
   {
     component: LazySubagentsPage,

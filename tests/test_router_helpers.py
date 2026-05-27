@@ -354,6 +354,10 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
             return self.payload
 
     class FakeTaskFlowService:
+        async def list_documents(self, **kwargs: object) -> list[Dumpable]:
+            observed["list_documents"] = kwargs
+            return [Dumpable({"id": "doc-task-qa", "document_key": "qa"})]
+
         async def list_flow_documents(self, **kwargs: object) -> list[Dumpable]:
             observed["list_flow_documents"] = kwargs
             return [Dumpable({"id": "doc-flow-plan", "document_key": "plan"})]
@@ -406,6 +410,28 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
         router_module.build_router(api_prefix="/v1/plugins/afkbotui", registry=FakeRegistry())
     )
     client = TestClient(app)
+
+    workspace_docs_response = client.get(
+        "/v1/plugins/afkbotui/task-flow/documents",
+        params={
+            "confirmation_status": "draft",
+            "limit": 25,
+            "offset": 5,
+            "profile_id": "default",
+            "query": "qa",
+            "scope_type": "task",
+        },
+    )
+    assert workspace_docs_response.status_code == 200
+    assert workspace_docs_response.json()["task_documents"][0]["id"] == "doc-task-qa"
+    assert observed["list_documents"] == {
+        "confirmation_status": "draft",
+        "limit": 25,
+        "offset": 5,
+        "profile_id": "default",
+        "query": "qa",
+        "scope_type": "task",
+    }
 
     docs_response = client.get(
         "/v1/plugins/afkbotui/task-flow/docs",

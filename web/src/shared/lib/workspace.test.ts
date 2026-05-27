@@ -81,6 +81,7 @@ describe("workspace helpers", () => {
 
   it("keeps user-facing helpers stable", () => {
     expect(routeLabel("task-flow")).toBe("Task Flow");
+    expect(routeLabel("docs")).toBe("Docs");
     expect(routeLabel("automations")).toBe("Automations");
     expect(normalizeError(new Error("boom"))).toBe("boom");
     expect(normalizeConfig(undefined)).toEqual(defaultConfig);
