@@ -15,6 +15,11 @@ type DocumentWorkspaceApi = {
     documentId: string,
     payload: Record<string, unknown>,
   ) => Promise<{ task_document?: TaskFlowDocument }>;
+  deleteTaskFlowDocument: (
+    profileId: string,
+    documentId: string,
+    payload: Record<string, unknown>,
+  ) => Promise<{ deleted?: boolean; task_document?: TaskFlowDocument }>;
   listTaskFlowDocumentWorkspace: (
     profileId: string,
     params?: Record<string, unknown>,
@@ -52,6 +57,7 @@ export const TaskDocumentsPage = forwardRef<RouteHandle, AppRouteProps>(function
   const [scopeType, setScopeType] = useState("");
   const [confirmationStatus, setConfirmationStatus] = useState("");
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
+  const [pendingDeleteId, setPendingDeleteId] = useState("");
   const trimmedQuery = query.trim();
   const queryKey = ["task-flow-documents", profileId, trimmedQuery, scopeType, confirmationStatus];
 
@@ -85,12 +91,16 @@ export const TaskDocumentsPage = forwardRef<RouteHandle, AppRouteProps>(function
   useEffect(() => {
     if (!documents.length) {
       setSelectedDocumentId("");
+      setPendingDeleteId("");
       return;
     }
     if (!documents.some((document) => document.id === selectedDocumentId)) {
       setSelectedDocumentId(documents[0].id);
     }
-  }, [documents, selectedDocumentId]);
+    if (pendingDeleteId && !documents.some((document) => document.id === pendingDeleteId)) {
+      setPendingDeleteId("");
+    }
+  }, [documents, pendingDeleteId, selectedDocumentId]);
 
   const confirmedCount = documents.filter(isConfirmed).length;
   const draftCount = documents.length - confirmedCount;
@@ -106,6 +116,25 @@ export const TaskDocumentsPage = forwardRef<RouteHandle, AppRouteProps>(function
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["task-flow-documents", profileId] });
       notify("Document confirmed.", "success");
+    },
+    onError(error) {
+      notify(normalizeError(error), "danger");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (document: TaskFlowDocument) => {
+      return coerceDocumentApi(api).deleteTaskFlowDocument(profileId, document.id, {
+        actor_ref: String(config.task_flow_actor_ref || "web-user"),
+        actor_type: String(config.task_flow_actor_type || "human"),
+        expected_revision: document.revision,
+      });
+    },
+    onSuccess: async () => {
+      setPendingDeleteId("");
+      setSelectedDocumentId("");
+      await queryClient.invalidateQueries({ queryKey: ["task-flow-documents", profileId] });
+      notify("Document deleted.", "success");
     },
     onError(error) {
       notify(normalizeError(error), "danger");
@@ -208,8 +237,13 @@ export const TaskDocumentsPage = forwardRef<RouteHandle, AppRouteProps>(function
           {selectedDocument ? (
             <DocumentPreview
               busy={confirmMutation.isPending && confirmMutation.variables?.id === selectedDocument.id}
+              deleting={deleteMutation.isPending && deleteMutation.variables?.id === selectedDocument.id}
               document={selectedDocument}
+              onCancelDelete={() => setPendingDeleteId("")}
               onConfirm={() => confirmMutation.mutate(selectedDocument)}
+              onConfirmDelete={() => deleteMutation.mutate(selectedDocument)}
+              onRequestDelete={() => setPendingDeleteId(selectedDocument.id)}
+              pendingDelete={pendingDeleteId === selectedDocument.id}
             />
           ) : (
             <div className="inspector-empty">
@@ -234,12 +268,22 @@ function Metric({ label, value }: { label: string; value: number }) {
 
 function DocumentPreview({
   busy,
+  deleting,
   document,
+  onCancelDelete,
   onConfirm,
+  onConfirmDelete,
+  onRequestDelete,
+  pendingDelete,
 }: {
   busy: boolean;
+  deleting: boolean;
   document: TaskFlowDocument;
+  onCancelDelete: () => void;
   onConfirm: () => void;
+  onConfirmDelete: () => void;
+  onRequestDelete: () => void;
+  pendingDelete: boolean;
 }) {
   const confirmed = isConfirmed(document);
 
@@ -278,15 +322,36 @@ function DocumentPreview({
         <pre>{document.body || "No body yet."}</pre>
       </div>
 
+      {pendingDelete ? (
+        <div className="inline-alert inline-alert--warning docs-preview__delete" role="alert">
+          <p>Delete this document and every revision?</p>
+          <div className="button-row">
+            <button className="button button--ghost button--tiny" disabled={deleting} onClick={onCancelDelete} type="button">
+              Cancel
+            </button>
+            <AsyncButton
+              className="button button--danger button--tiny"
+              idleLabel="Delete Document"
+              loading={deleting}
+              onClick={onConfirmDelete}
+              pendingLabel="Deleting…"
+            />
+          </div>
+        </div>
+      ) : null}
+
       <div className="button-row">
         <AsyncButton
           className="button button--primary"
-          disabled={confirmed}
+          disabled={confirmed || deleting}
           idleLabel="Confirm"
           loading={busy}
           onClick={onConfirm}
           pendingLabel="Confirming…"
         />
+        <button className="button button--danger" disabled={busy || deleting} onClick={onRequestDelete} type="button">
+          Delete
+        </button>
       </div>
     </article>
   );

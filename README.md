@@ -2,7 +2,7 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, and profile-local text libraries.
 
-Current release: `0.5.6`
+Current release: `0.5.7`
 
 ## Overview
 
@@ -18,7 +18,7 @@ Current frontend/runtime contract:
 
 The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*` or `web/dist/assets/features/*` payloads.
 
-## What Is In 0.5.6
+## What Is In 0.5.7
 
 - single-shell workspace with `Automations`, `Task Flow`, `Docs`, `Subagents`, `Skills`, and `Bootstrap`
 - React-native route surfaces for every section, with shared loaders, dialogs, async buttons, and responsive layout primitives
@@ -29,7 +29,7 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 - automation inspector with cron/webhook diagnostics, copy actions, graph preview, runtime path, and webhook URL rotation
 - Task Flow board with Plan-first status ordering, flow management modal, per-flow filtering, stable silent polling, inspector, review flows, comments, dependencies, runs, session activity, and live chat-style activity modal
 - Task Flow AI-only agent feed, context bundle, and flow/task document controls expose assignments, wake signals, plans, specs, handoffs, and confirmed revisions directly in the board and flow library
-- Docs workspace for profile-wide Task Flow document search, scope/status filtering, preview, revision metadata, and confirmation
+- Docs workspace for profile-wide Task Flow document search, scope/status filtering, preview, revision metadata, confirmation, and deletion
 - Task Flow owner controls, reviewer fallbacks, actor settings, and task cards recognize subagent owners from `owner_ref` values like `default:researcher`
 - named Task Flow priority chips replace raw `pNN` scores with low-to-critical labels and direction markers
 - inspector discussion and live activity panels keep long content inside their panes, collapse oversized comments, and keep the comment composer at the bottom
@@ -72,8 +72,8 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 
 ## Requirements
 
-- AFKBOT UI `0.5.6`
-- AFKBOT `>=1.9.3,<2.0.0`
+- AFKBOT UI `0.5.7`
+- AFKBOT `>=1.9.6,<2.0.0`
 - current AFKBOT `1.x` auth/chat runtime surface, including:
   - `/v1/auth/session`
   - `/v1/auth/logout`
@@ -169,6 +169,7 @@ Release preparation, `dist` integrity checks, and version-sync rules are documen
 - `GET /v1/plugins/afkbotui/task-flow/docs`
 - `PUT /v1/plugins/afkbotui/task-flow/docs`
 - `POST /v1/plugins/afkbotui/task-flow/docs/{document_id}/confirm`
+- `DELETE /v1/plugins/afkbotui/task-flow/docs/{document_id}`
 - `GET /v1/plugins/afkbotui/task-flow/sessions/activity`
 - `POST /v1/plugins/afkbotui/task-flow/tasks`
 - `GET /v1/plugins/afkbotui/task-flow/tasks/{task_id}`

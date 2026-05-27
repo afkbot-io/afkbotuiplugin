@@ -19,6 +19,7 @@ describe("TaskDocumentsPage", () => {
   it("lists workspace documents with filters and preview", async () => {
     const api = {
       confirmTaskFlowDocument: vi.fn(),
+      deleteTaskFlowDocument: vi.fn(),
       listTaskFlowDocumentWorkspace: vi.fn(async () => ({
         task_documents: [
           {
@@ -71,6 +72,7 @@ describe("TaskDocumentsPage", () => {
     const notify = vi.fn();
     const api = {
       confirmTaskFlowDocument: vi.fn(async () => ({ task_document: { id: "doc-1" } })),
+      deleteTaskFlowDocument: vi.fn(),
       listTaskFlowDocumentWorkspace: vi.fn(async () => ({
         task_documents: [
           {
@@ -107,5 +109,50 @@ describe("TaskDocumentsPage", () => {
       expected_revision: 3,
     });
     await waitFor(() => expect(notify).toHaveBeenCalledWith("Document confirmed.", "success"));
+  });
+
+  it("deletes the selected document after inline confirmation", async () => {
+    const notify = vi.fn();
+    const api = {
+      confirmTaskFlowDocument: vi.fn(),
+      deleteTaskFlowDocument: vi.fn(async () => ({ deleted: true, task_document: { id: "doc-1" } })),
+      listTaskFlowDocumentWorkspace: vi.fn(async () => ({
+        task_documents: [
+          {
+            body: "Old roadmap.",
+            confirmation_status: "draft",
+            document_key: "roadmap",
+            id: "doc-1",
+            revision: 4,
+            scope_id: "flow-1",
+            scope_type: "flow",
+            title: "Roadmap",
+          },
+        ],
+      })),
+    };
+
+    renderWithClient(
+      <TaskDocumentsPage
+        active
+        api={api}
+        config={{ task_flow_actor_ref: "lead", task_flow_actor_type: "human" }}
+        notify={notify}
+        profileId="default"
+        profiles={[]}
+        updateConfig={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    expect(screen.getByText("Delete this document and every revision?")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Delete Document" }));
+
+    expect(api.deleteTaskFlowDocument).toHaveBeenCalledWith("default", "doc-1", {
+      actor_ref: "lead",
+      actor_type: "human",
+      expected_revision: 4,
+    });
+    await waitFor(() => expect(notify).toHaveBeenCalledWith("Document deleted.", "success"));
   });
 });

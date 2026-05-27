@@ -370,6 +370,14 @@ export class ApiClient {
     });
   }
 
+  async deleteTaskFlowDocument(profileId: string, documentId: string, payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>(`/task-flow/docs/${encodeURIComponent(documentId)}`, {
+      body: payload,
+      method: "DELETE",
+      params: { profile_id: profileId },
+    });
+  }
+
   async getTaskBoard(profileId: string, params: Record<string, unknown> = {}) {
     return this.request<Record<string, unknown>>("/task-flow/board", {
       params: { profile_id: profileId, ...params },

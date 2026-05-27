@@ -224,6 +224,18 @@ class TaskDocumentPutPayload(BaseModel):
 class TaskDocumentConfirmPayload(BaseModel):
     """Request body for confirming one Task Flow document revision."""
 
+    model_config = ConfigDict(extra="forbid")
+
+    actor_type: str = Field(default="human", min_length=1)
+    actor_ref: str = Field(default="web-user", min_length=1)
+    expected_revision: int | None = Field(default=None, ge=1)
+
+
+class TaskDocumentDeletePayload(BaseModel):
+    """Request body for deleting one Task Flow document."""
+
+    model_config = ConfigDict(extra="forbid")
+
     actor_type: str = Field(default="human", min_length=1)
     actor_ref: str = Field(default="web-user", min_length=1)
     expected_revision: int | None = Field(default=None, ge=1)
@@ -697,6 +709,25 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
         return {"task_document": item.model_dump(mode="json")}
+
+    @router.delete("/task-flow/docs/{document_id}")
+    async def task_flow_document_delete(
+        document_id: str,
+        payload: TaskDocumentDeletePayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_task_flow_service(get_settings())
+        try:
+            item = await service.delete_document(
+                profile_id=profile_id,
+                document_id=document_id,
+                actor_type=payload.actor_type,
+                actor_ref=payload.actor_ref,
+                expected_revision=payload.expected_revision,
+            )
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+        return {"deleted": True, "task_document": item.model_dump(mode="json")}
 
     @router.get("/task-flow/board")
     async def task_flow_board(

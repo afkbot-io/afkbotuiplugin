@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are tracked here.
 
+## 0.5.7 - 2026-05-27
+
+- add document deletion from the standalone `Docs` workspace with inline confirmation and revision-conflict protection
+- expose `DELETE /v1/plugins/afkbotui/task-flow/docs/{document_id}` for operator-side Task Flow document deletion
+- raise the plugin AFKBOT core requirement to `>=1.9.6` because document deletion is implemented in core
+- sync release metadata to version `0.5.7`
+
 ## 0.5.6 - 2026-05-27
 
 - add a standalone `Docs` workspace route for profile-wide Task Flow documents with search, scope/status filters, document preview, revision metadata, and confirm actions

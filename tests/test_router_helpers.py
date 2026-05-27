@@ -370,6 +370,10 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
             observed["confirm_document"] = kwargs
             return Dumpable({"id": kwargs["document_id"], "confirmation_status": "confirmed"})
 
+        async def delete_document(self, **kwargs: object) -> Dumpable:
+            observed["delete_document"] = kwargs
+            return Dumpable({"id": kwargs["document_id"], "document_key": "plan"})
+
         async def build_task_context(self, **kwargs: object) -> Dumpable:
             observed["build_task_context"] = kwargs
             return Dumpable({"task": {"id": kwargs["task_id"], "title": "Task"}})
@@ -465,6 +469,17 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
     )
     assert confirm_response.status_code == 200
     assert observed["confirm_document"]["expected_revision"] == 2
+
+    delete_response = client.request(
+        "DELETE",
+        "/v1/plugins/afkbotui/task-flow/docs/doc-task-plan",
+        json={"actor_ref": "default", "actor_type": "ai_profile", "expected_revision": 2},
+        params={"profile_id": "default"},
+    )
+    assert delete_response.status_code == 200
+    assert delete_response.json()["deleted"] is True
+    assert observed["delete_document"]["document_id"] == "doc-task-plan"
+    assert observed["delete_document"]["expected_revision"] == 2
 
     context_response = client.get(
         "/v1/plugins/afkbotui/task-flow/tasks/task-1/context",

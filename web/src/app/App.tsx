@@ -63,7 +63,7 @@ export function App() {
       } catch (error: unknown) {
         if ((error as { status?: number })?.status === 404) {
           const authError = new Error(
-            `AFKBOT UI ${__APP_VERSION__} requires AFKBOT 1.9.3+ with core auth, automation webhook reveal, and Task Flow document APIs available.`,
+            `AFKBOT UI ${__APP_VERSION__} requires AFKBOT 1.9.6+ with core auth, automation webhook reveal, and Task Flow document APIs available.`,
           );
           (authError as Error & { code: string; status: number }).code = "ui_auth_endpoint_missing";
           (authError as Error & { code: string; status: number }).status = 404;
