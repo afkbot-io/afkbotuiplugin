@@ -147,6 +147,7 @@ describe("ApiClient text-library resources", () => {
       .mockResolvedValueOnce(jsonResponse({ context: { task: { id: "task-1" } } }))
       .mockResolvedValueOnce(jsonResponse({ feed: { owner_ref: "cto", owner_type: "employee" } }))
       .mockResolvedValueOnce(jsonResponse({ employees: [{ id: "backend-engineer" }] }))
+      .mockResolvedValueOnce(jsonResponse({ employee: { id: "backend-engineer" } }))
       .mockResolvedValueOnce(jsonResponse({ org_chart: { root_employee_ids: ["cto"] } }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -158,6 +159,7 @@ describe("ApiClient text-library resources", () => {
     await client.getTaskContext("default", "task-1");
     await client.getTaskFeed("default", { owner_ref: "cto", owner_type: "employee" });
     await client.listTaskFlowEmployees("default", { q: "backend" });
+    await client.createTaskFlowEmployee("default", { id: "backend-engineer", manager_id: "cto", name: "Backend Engineer", role: "developer", title: "Backend Engineer" });
     await client.getTaskFlowOrgChart("default");
     const origin = window.location.origin;
 
@@ -193,6 +195,14 @@ describe("ApiClient text-library resources", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       7,
+      `${origin}/v1/plugins/afkbotui/task-flow/employees?profile_id=default`,
+      expect.objectContaining({
+        body: JSON.stringify({ id: "backend-engineer", manager_id: "cto", name: "Backend Engineer", role: "developer", title: "Backend Engineer" }),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      8,
       `${origin}/v1/plugins/afkbotui/task-flow/org-chart?profile_id=default`,
       expect.objectContaining({ method: "GET" }),
     );

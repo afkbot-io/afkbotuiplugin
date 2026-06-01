@@ -1994,14 +1994,13 @@ select::-ms-expand {
 }
 
 .employees-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(22rem, 0.75fr);
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
   min-height: 0;
 }
 
 .employees-graph,
-.employees-roster,
 .employees-validation {
   display: flex;
   flex-direction: column;
@@ -2012,11 +2011,11 @@ select::-ms-expand {
 }
 
 .employees-graph {
-  min-height: min(68vh, 42rem);
+  min-height: min(82vh, 64rem);
 }
 
 .employees-graph__canvas {
-  min-height: 34rem;
+  min-height: clamp(42rem, 74vh, 62rem);
   border: 1px solid var(--stroke);
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -2026,11 +2025,14 @@ select::-ms-expand {
 }
 
 .employees-graph__canvas .react-flow__node {
-  width: 15rem;
+  width: 14.5rem;
   padding: 0.85rem 0.95rem;
   border: 1px solid rgba(42, 124, 255, 0.28);
   border-radius: var(--radius-md);
   color: var(--text-strong);
+  cursor: pointer;
+  font-size: 0.78rem;
+  line-height: 1.25;
   white-space: pre-line;
   background:
     radial-gradient(circle at top left, rgba(42, 124, 255, 0.1), transparent 46%),
@@ -2038,9 +2040,24 @@ select::-ms-expand {
   box-shadow: var(--shadow-soft);
 }
 
+.employees-graph__canvas .react-flow__node:hover,
+.employees-graph__canvas .react-flow__node:focus-visible {
+  border-color: rgba(42, 124, 255, 0.72);
+  box-shadow:
+    0 0 0 1px rgba(42, 124, 255, 0.22),
+    var(--shadow-soft);
+}
+
 .employees-graph__canvas .react-flow__edge-path {
   stroke: rgba(42, 124, 255, 0.62);
   stroke-width: 2;
+}
+
+.employees-graph__canvas .react-flow__handle {
+  width: 0.55rem;
+  height: 0.55rem;
+  border: 1px solid rgba(172, 194, 255, 0.78);
+  background: rgb(42, 124, 255);
 }
 
 .employees-graph__canvas .react-flow__controls,
@@ -2051,27 +2068,9 @@ select::-ms-expand {
   background: rgba(10, 13, 19, 0.92);
 }
 
-.employees-roster {
-  max-height: min(68vh, 42rem);
-}
-
-.employees-roster__list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-  min-height: 0;
-  overflow: auto;
-  padding-right: 0.15rem;
-}
-
-.employees-roster__item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 1rem;
-  border: 1px solid var(--stroke);
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.03);
+.employees-graph__canvas .react-flow__minimap {
+  width: 12rem;
+  height: 7rem;
 }
 
 .employees-validation {
@@ -2831,6 +2830,27 @@ select::-ms-expand {
 
 .modal-card .button-row {
   padding-top: 0.6rem;
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.form-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.form-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
 }
 
 .task-panel--open .task-pane__shell,

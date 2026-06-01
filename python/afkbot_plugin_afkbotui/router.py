@@ -70,6 +70,22 @@ class UiPluginConfigEnvelope(BaseModel):
     config: UiPluginConfigPatchPayload
 
 
+class TaskFlowEmployeeCreatePayload(BaseModel):
+    """Request body for creating a profile-local Task Flow employee."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=160)
+    title: str = Field(min_length=1, max_length=160)
+    role: str = Field(min_length=1, max_length=120)
+    manager_id: str | None = Field(default=None, max_length=120)
+    body: str = Field(default="", max_length=8000)
+    allowed_tools: list[str] = Field(default_factory=list, max_length=80)
+    can_use_subagents: bool = False
+    subagent_allowlist: list[str] = Field(default_factory=list, max_length=80)
+
+
 class AutomationCreatePayload(BaseModel):
     """Request body for automation creation."""
 
@@ -810,6 +826,23 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 ).lower()
             ]
         return {"employees": records, "filtered_count": len(records)}
+
+    @router.post("/task-flow/employees")
+    async def create_task_flow_employee(
+        payload: TaskFlowEmployeeCreatePayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = EmployeeService(get_settings())
+        content = _render_task_flow_employee_markdown(payload)
+        try:
+            employee = await service.upsert_employee(
+                profile_id=profile_id,
+                employee_id=payload.id,
+                content=content,
+            )
+        except EmployeeServiceError as exc:
+            raise _employee_http_error(exc) from exc
+        return {"employee": _serialize_task_flow_employee(employee)}
 
     @router.get("/task-flow/org-chart")
     async def task_flow_org_chart(profile_id: str = "default") -> dict[str, object]:
@@ -1853,6 +1886,67 @@ def _serialize_task_flow_employee(employee: object) -> dict[str, object]:
         "path": f"profiles/{profile_id}/employees/{employee_id}.md",
         "summary": summary,
     }
+
+
+def _render_task_flow_employee_markdown(payload: TaskFlowEmployeeCreatePayload) -> str:
+    allowed_tools = payload.allowed_tools or [
+        "task.*",
+        "memory.*",
+        "file.read",
+        "diffs.render",
+        "web.*",
+        "http.request",
+    ]
+    body = payload.body.strip() or (
+        f"{payload.name} owns focused Task Flow work for this profile and reports durable "
+        "progress, blockers, and handoff notes."
+    )
+    lines = [
+        "---",
+        f"id: {_frontmatter_scalar(payload.id)}",
+        f"name: {_frontmatter_scalar(payload.name)}",
+        f"title: {_frontmatter_scalar(payload.title)}",
+        f"role: {_frontmatter_scalar(payload.role)}",
+        "status: active",
+    ]
+    if payload.manager_id:
+        lines.append(f"manager_id: {_frontmatter_scalar(payload.manager_id)}")
+    lines.extend(
+        [
+            "can_delegate_to: []",
+            f"allowed_tools: {_frontmatter_list(allowed_tools)}",
+            f"can_use_subagents: {str(payload.can_use_subagents).lower()}",
+            f"subagent_allowlist: {_frontmatter_list(payload.subagent_allowlist)}",
+            "max_active_tasks: 1",
+            "---",
+            "",
+            f"# {_markdown_line(payload.name)}",
+            "",
+            body,
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _frontmatter_scalar(value: str) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _frontmatter_list(values: list[str]) -> str:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        value = _frontmatter_scalar(item)
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+    return "[" + ", ".join(f'"{item}"' for item in normalized) + "]"
+
+
+def _markdown_line(value: str) -> str:
+    return " ".join(str(value or "").split()) or "Employee"
 
 
 def _normalize_task_flow_actor_type(value: object) -> str:

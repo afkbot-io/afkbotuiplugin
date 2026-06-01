@@ -13,6 +13,7 @@ import type {
   TaskFlowComment,
   TaskFlowConfig,
   TaskFlowEmployeeFeed,
+  TaskFlowEmployeeDraft,
   TaskFlowContextBundle,
   TaskFlowDependency,
   TaskFlowDocument,
@@ -23,6 +24,7 @@ import type {
   TaskFlowReviewDraft,
   TaskFlowReviewTask,
   TaskFlowRun,
+  TaskFlowEmployee,
   TaskFlowEmployeeOption,
   TaskFlowOrgChart,
   TaskFlowTask,
@@ -63,6 +65,10 @@ type TaskFlowApi = {
     profileId: string,
     params?: Record<string, unknown>,
   ) => Promise<{ employees?: Array<Record<string, unknown>> }>;
+  createTaskFlowEmployee: (
+    profileId: string,
+    payload: TaskFlowEmployeeDraft,
+  ) => Promise<{ employee?: TaskFlowEmployee }>;
   getTaskFlowOrgChart: (profileId: string) => Promise<{ org_chart?: TaskFlowOrgChart }>;
   listTaskFlowDocuments: (
     profileId: string,
@@ -110,6 +116,11 @@ export async function listTaskFlowEmployees(api: unknown, profileId: string) {
 export async function getTaskFlowOrgChart(api: unknown, profileId: string) {
   const payload = await coerceTaskFlowApi(api).getTaskFlowOrgChart(profileId);
   return normalizeTaskFlowOrgChart(payload.org_chart, profileId);
+}
+
+export async function createTaskFlowEmployee(api: unknown, profileId: string, draft: TaskFlowEmployeeDraft) {
+  const payload = await coerceTaskFlowApi(api).createTaskFlowEmployee(profileId, draft);
+  return payload.employee || null;
 }
 
 export async function getTaskFlowBoard(api: unknown, profileId: string, flowId: string, config: TaskFlowConfig) {

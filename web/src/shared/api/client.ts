@@ -228,6 +228,14 @@ export class ApiClient {
     });
   }
 
+  async createTaskFlowEmployee(profileId: string, payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>("/task-flow/employees", {
+      body: payload,
+      method: "POST",
+      params: { profile_id: profileId },
+    });
+  }
+
   async getTaskFlowOrgChart(profileId: string) {
     return this.request<Record<string, unknown>>("/task-flow/org-chart", {
       params: { profile_id: profileId },

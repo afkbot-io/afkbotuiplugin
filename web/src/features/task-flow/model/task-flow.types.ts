@@ -61,6 +61,18 @@ export type TaskFlowEmployee = {
   title: string;
 };
 
+export type TaskFlowEmployeeDraft = {
+  allowed_tools?: string[];
+  body?: string;
+  can_use_subagents?: boolean;
+  id: string;
+  manager_id?: string | null;
+  name: string;
+  role: string;
+  subagent_allowlist?: string[];
+  title: string;
+};
+
 export type TaskFlowOrgChart = {
   edges: Array<[string, string]>;
   employees: Record<string, TaskFlowEmployee>;

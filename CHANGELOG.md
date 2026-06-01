@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.4 - 2026-06-01
+
+- expand Employees into a full-width React Flow workspace, remove the persistent roster side panel, and open employee details in a modal from graph node clicks
+- add tree/compact layout controls and a subtree-based graph layout so profile teams are readable by manager branch instead of compressed into crossed rows
+- add Task Flow employee creation from the Employees route, including drag-from-node creation for manager/report edges
+- sync release metadata to version `1.0.4`
+
 ## 1.0.3 - 2026-06-01
 
 - add a top-level Employees workspace route with an interactive React Flow org chart, roster, delegation, tool policy, and org validation details
