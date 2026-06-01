@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.2 - 2026-06-01
+
+- fix the Python plugin router for AFKBOT `1.9.9` by removing stale Task Flow `ai_profile`/`ai_subagent` imports and using the employee service endpoints shipped by core
+- expose `/task-flow/employees` and `/task-flow/org-chart` from the backend package so the React workspace can load employee rosters after a fresh GitHub install
+- normalize old persisted Task Flow actor config to a safe human actor while accepting the new canonical `employee` actor type
+- sync release metadata to version `1.0.2`
+
 ## 1.0.1 - 2026-06-01
 
 - switch Task Flow UI to the employee-only workforce model: owners, reviewers, feeds, settings, and project defaults use canonical `employee` principals instead of profile/subagent actors

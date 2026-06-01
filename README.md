@@ -2,7 +2,7 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, and profile-local text libraries.
 
-Current release: `1.0.1`
+Current release: `1.0.2`
 
 ## Overview
 
@@ -18,7 +18,7 @@ Current frontend/runtime contract:
 
 The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*` or `web/dist/assets/features/*` payloads.
 
-## What Is In 1.0.1
+## What Is In 1.0.2
 
 - single-shell workspace with `Automations`, `Task Flow`, `Subagents`, `Skills`, and `Bootstrap`
 - React-native route surfaces for every section, with shared loaders, dialogs, async buttons, and responsive layout primitives
@@ -73,7 +73,7 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 
 ## Requirements
 
-- AFKBOT UI `1.0.1`
+- AFKBOT UI `1.0.2`
 - AFKBOT `>=1.9.9,<2.0.0`
 - current AFKBOT `1.x` auth/chat runtime surface, including:
   - `/v1/auth/session`
@@ -166,9 +166,8 @@ Release preparation, `dist` integrity checks, and version-sync rules are documen
 - `DELETE /v1/plugins/afkbotui/task-flow/flows/{flow_id}`
 - `GET /v1/plugins/afkbotui/task-flow/board`
 - `GET /v1/plugins/afkbotui/task-flow/feed`
-- `GET /v1/plugins/afkbotui/task-flow/team`
-- `PATCH /v1/plugins/afkbotui/task-flow/team`
-- `GET /v1/plugins/afkbotui/task-flow/subagents` (`team=1` expands to the configured allowed profile roster)
+- `GET /v1/plugins/afkbotui/task-flow/employees`
+- `GET /v1/plugins/afkbotui/task-flow/org-chart`
 - `GET /v1/plugins/afkbotui/task-flow/docs`
 - `PUT /v1/plugins/afkbotui/task-flow/docs`
 - `POST /v1/plugins/afkbotui/task-flow/docs/{document_id}/confirm`
