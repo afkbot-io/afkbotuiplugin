@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.3 - 2026-06-01
+
+- add a top-level Employees workspace route with an interactive React Flow org chart, roster, delegation, tool policy, and org validation details
+- add a Task Flow Employees action so operators can jump from the board to the employee graph without hunting through settings
+- render flow titles on task-card badges instead of raw flow ids while keeping the id in the badge tooltip
+- sync release metadata to version `1.0.3`
+
 ## 1.0.2 - 2026-06-01
 
 - fix the Python plugin router for AFKBOT `1.9.9` by removing stale Task Flow `ai_profile`/`ai_subagent` imports and using the employee service endpoints shipped by core

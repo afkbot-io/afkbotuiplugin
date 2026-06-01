@@ -1,6 +1,6 @@
 {
   "name": "afkbotui",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Unified AFKBOT workspace plugin for automations, Task Flow, subagents, skills, and bootstrap files.",
   "private": true,
   "type": "module",
@@ -24,6 +24,7 @@
   "license": "ISC",
   "dependencies": {
     "@tanstack/react-query": "^5.99.2",
+    "@xyflow/react": "^12.11.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   },

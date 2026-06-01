@@ -19,6 +19,7 @@ import { SurfaceLoader } from "@/shared/ui/SurfaceLoader";
 type TaskBoardProps = {
   board: TaskFlowBoard | null;
   boardRef: RefObject<HTMLDivElement | null>;
+  flowTitleById?: Map<string, string>;
   loading: boolean;
   onBoardMouseDown: (event: MouseEvent<HTMLElement>) => void;
   onDragEnd: () => void;
@@ -33,6 +34,7 @@ type TaskBoardProps = {
 export function TaskBoard({
   board,
   boardRef,
+  flowTitleById = new Map(),
   loading,
   onBoardMouseDown,
   onDragEnd,
@@ -88,6 +90,7 @@ export function TaskBoard({
               {(column.tasks || []).length ? (
                 column.tasks.map((task) => (
                   <TaskCard
+                    flowTitleById={flowTitleById}
                     key={task.id}
                     onDragEnd={onDragEnd}
                     onDragStart={onDragStart}
@@ -112,6 +115,7 @@ export function TaskBoard({
 }
 
 function TaskCard({
+  flowTitleById,
   onDragEnd,
   onDragStart,
   onOpen,
@@ -120,6 +124,7 @@ function TaskCard({
   selectedTaskIds,
   task,
 }: {
+  flowTitleById: Map<string, string>;
   onDragEnd: () => void;
   onDragStart: (taskId: string) => void;
   onOpen: (taskId: string) => void;
@@ -131,6 +136,7 @@ function TaskCard({
   const isSelected = task.id === selectedTaskId || selectedTaskIds.has(task.id);
   const previewCopy = task.last_comment_message || task.description || task.prompt || "No description yet.";
   const ownerSummary = formatTaskOwnerSummary(task);
+  const flowTitle = task.flow_id ? flowTitleById.get(task.flow_id) || task.flow_id : "";
   const activeSession = task.active_session?.dialog_active;
   const runningElapsed = formatTaskRunningElapsed(task);
   const disabled = isActiveRuntimeStatus(task.status);
@@ -174,7 +180,7 @@ function TaskCard({
           <span className="badge badge--accent" title={formatTaskPriorityTitle(task.priority)}>
             {formatTaskPriorityLabel(task.priority)}
           </span>
-          {task.flow_id ? <span className="badge">{task.flow_id}</span> : null}
+          {flowTitle ? <span className="badge" title={task.flow_id || undefined}>{flowTitle}</span> : null}
           {task.requires_review ? <span className="badge badge--warning">review</span> : null}
           {task.last_comment_created_at ? <span className="badge badge--muted">{formatDateTime(task.last_comment_created_at)}</span> : null}
           {task.due_at ? (

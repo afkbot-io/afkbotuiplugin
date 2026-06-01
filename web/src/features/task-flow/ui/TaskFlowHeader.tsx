@@ -8,6 +8,7 @@ type TaskFlowHeaderProps = {
   onClearSelection: () => void;
   onCreateTask: () => void;
   onDeleteSelected: () => void;
+  onOpenEmployees: () => void;
   onFilterChange: (flowId: string) => void;
   onOpenEmployeeFeed: () => void;
   onManageFlows: () => void;
@@ -27,6 +28,7 @@ export function TaskFlowHeader({
   onClearSelection,
   onCreateTask,
   onDeleteSelected,
+  onOpenEmployees,
   onFilterChange,
   onOpenEmployeeFeed,
   onManageFlows,
@@ -76,6 +78,9 @@ export function TaskFlowHeader({
             type="button"
           >
             Employee Feed <span className="button__count">{employeeFeedCount}</span>
+          </button>
+          <button className="button button--ghost button--compact" onClick={onOpenEmployees} type="button">
+            Employees
           </button>
           <button className="button button--ghost button--compact" onClick={onOpenSettings} type="button">
             Settings

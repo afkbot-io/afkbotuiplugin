@@ -64,6 +64,8 @@ export function routeLabel(route: RouteId) {
   switch (route) {
     case "task-flow":
       return "Task Flow";
+    case "employees":
+      return "Employees";
     case "subagents":
       return "Subagents";
     case "skills":

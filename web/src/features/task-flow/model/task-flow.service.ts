@@ -24,6 +24,7 @@ import type {
   TaskFlowReviewTask,
   TaskFlowRun,
   TaskFlowEmployeeOption,
+  TaskFlowOrgChart,
   TaskFlowTask,
   TaskFlowTaskDetail,
   TaskFlowTaskDraft,
@@ -62,6 +63,7 @@ type TaskFlowApi = {
     profileId: string,
     params?: Record<string, unknown>,
   ) => Promise<{ employees?: Array<Record<string, unknown>> }>;
+  getTaskFlowOrgChart: (profileId: string) => Promise<{ org_chart?: TaskFlowOrgChart }>;
   listTaskFlowDocuments: (
     profileId: string,
     scopeType: string,
@@ -103,6 +105,11 @@ export async function listTaskFlowEmployees(api: unknown, profileId: string) {
     summary: `${String(employee.name || employee.id || "")} - ${String(employee.title || employee.role || "")}`.trim(),
   }));
   return rows.flatMap(mapTaskFlowEmployeeOption);
+}
+
+export async function getTaskFlowOrgChart(api: unknown, profileId: string) {
+  const payload = await coerceTaskFlowApi(api).getTaskFlowOrgChart(profileId);
+  return normalizeTaskFlowOrgChart(payload.org_chart, profileId);
 }
 
 export async function getTaskFlowBoard(api: unknown, profileId: string, flowId: string, config: TaskFlowConfig) {
@@ -508,4 +515,25 @@ function mapTaskFlowEmployeeOption(item: Record<string, unknown>): TaskFlowEmplo
       status: String(item.status || "").trim(),
     },
   ];
+}
+
+function normalizeTaskFlowOrgChart(payload: TaskFlowOrgChart | null | undefined, profileId: string): TaskFlowOrgChart {
+  const employees = payload?.employees && typeof payload.employees === "object" ? payload.employees : {};
+  return {
+    edges: Array.isArray(payload?.edges)
+      ? payload.edges
+          .map((edge) => [String(edge?.[0] || "").trim(), String(edge?.[1] || "").trim()] as [string, string])
+          .filter(([source, target]) => source && target)
+      : [],
+    employees,
+    profile_id: String(payload?.profile_id || profileId),
+    root_employee_ids: Array.isArray(payload?.root_employee_ids)
+      ? payload.root_employee_ids.map((item) => String(item || "").trim()).filter(Boolean)
+      : [],
+    validation: {
+      issues: Array.isArray(payload?.validation?.issues) ? payload.validation.issues : [],
+      profile_id: String(payload?.validation?.profile_id || payload?.profile_id || profileId),
+      valid: Boolean(payload?.validation?.valid ?? true),
+    },
+  };
 }

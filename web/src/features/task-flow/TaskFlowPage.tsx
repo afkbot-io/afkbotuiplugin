@@ -71,6 +71,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     active = true,
     api,
     config,
+    navigateToRoute = () => undefined,
     notify,
     profileId,
     profiles,
@@ -177,6 +178,10 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   const reviewTasks = reviewQuery.data || [];
   const employeeFeed = employeeFeedEnabled ? employeeFeedQuery.data || null : null;
   const employees = employeesQuery.data || [];
+  const flowTitleById = useMemo(
+    () => new Map(flows.map((flow) => [flow.id, flow.title || flow.id])),
+    [flows],
+  );
   const selectedListTask = useMemo(
     () => findBoardTask(board, state.selectedTaskId),
     [board, state.selectedTaskId],
@@ -868,6 +873,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         onClearSelection={state.clearSelection}
         onCreateTask={() => state.openTaskModal(state.flowFilter)}
         onDeleteSelected={state.openDeleteSelectedModal}
+        onOpenEmployees={() => navigateToRoute("employees")}
         onFilterChange={handleFlowFilterChange}
         onOpenEmployeeFeed={state.openEmployeeFeedModal}
         onManageFlows={state.openManageProjectsModal}
@@ -888,6 +894,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
           <TaskBoard
             board={board}
             boardRef={boardRef}
+            flowTitleById={flowTitleById}
             loading={Boolean(boardQuery.isFetching && !board)}
             onBoardMouseDown={handleBoardMouseDown}
             onDragEnd={() => {

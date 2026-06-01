@@ -263,6 +263,7 @@ export function App() {
                   active={active}
                   api={api}
                   config={configState}
+                  navigateToRoute={(routeId) => routeState.setRoute(routeId)}
                   notify={showToast}
                   profileId={selectedProfileId}
                   profiles={profiles}

@@ -35,7 +35,16 @@ export type TaskFlowEmployeeOption = {
   status?: string | null;
 };
 
+export type TaskFlowOrgChartIssue = {
+  code?: string | null;
+  employee_id?: string | null;
+  message?: string | null;
+  severity?: string | null;
+  target_employee_id?: string | null;
+};
+
 export type TaskFlowEmployee = {
+  allowed_tools?: string[];
   body?: string | null;
   can_delegate_to?: string[];
   can_use_subagents?: boolean | null;
@@ -50,6 +59,18 @@ export type TaskFlowEmployee = {
   status: "active" | "disabled" | "archived" | string;
   subagent_allowlist?: string[];
   title: string;
+};
+
+export type TaskFlowOrgChart = {
+  edges: Array<[string, string]>;
+  employees: Record<string, TaskFlowEmployee>;
+  profile_id: string;
+  root_employee_ids: string[];
+  validation: {
+    issues: TaskFlowOrgChartIssue[];
+    profile_id?: string | null;
+    valid: boolean;
+  };
 };
 
 export type TaskFlowSession = {
