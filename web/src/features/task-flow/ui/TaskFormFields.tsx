@@ -1,8 +1,7 @@
 import { ActorRefField } from "@/features/task-flow/ui/ActorRefField";
 import {
   resolveActorRefForType,
-  TASK_FLOW_AI_PROFILE_TYPE,
-  TASK_FLOW_AI_SUBAGENT_TYPE,
+  TASK_FLOW_EMPLOYEE_TYPE,
   TASK_FLOW_HUMAN_TYPE,
   TASK_FLOW_STATUS_OPTIONS,
 } from "@/features/task-flow/model/task-flow.api";
@@ -10,7 +9,7 @@ import type {
   TaskFlowConfig,
   TaskFlowProfile,
   TaskFlowProject,
-  TaskFlowSubagent,
+  TaskFlowEmployeeOption,
   TaskFlowTaskDraft,
 } from "@/features/task-flow/model/task-flow.types";
 
@@ -24,7 +23,7 @@ type TaskFormFieldsProps = {
   showBlockedReason?: boolean;
   showFlowField?: boolean;
   showStatus?: boolean;
-  subagents: TaskFlowSubagent[];
+  employees: TaskFlowEmployeeOption[];
 };
 
 export function TaskFormFields({
@@ -37,7 +36,7 @@ export function TaskFormFields({
   showBlockedReason = false,
   showFlowField = false,
   showStatus = false,
-  subagents,
+  employees,
 }: TaskFormFieldsProps) {
   const handleFieldChange = <K extends keyof TaskFlowTaskDraft>(key: K, value: TaskFlowTaskDraft[K]) => {
     onChange({
@@ -55,7 +54,7 @@ export function TaskFormFields({
         previousType: draft.owner_type,
         profileId,
         profiles,
-        subagents,
+        employees,
         type: ownerType,
       }),
       owner_type: ownerType,
@@ -72,7 +71,7 @@ export function TaskFormFields({
         previousType: draft.reviewer_type,
         profileId,
         profiles,
-        subagents,
+        employees,
         type: reviewerType,
       }),
       reviewer_type: reviewerType,
@@ -137,8 +136,7 @@ export function TaskFormFields({
           <span className="field__label">Owner Type</span>
           <select onChange={(event) => handleOwnerTypeChange(event.target.value)} value={draft.owner_type}>
             <option value="">None</option>
-            <option value={TASK_FLOW_AI_PROFILE_TYPE}>AI Profile</option>
-            <option value={TASK_FLOW_AI_SUBAGENT_TYPE}>Subagent</option>
+            <option value={TASK_FLOW_EMPLOYEE_TYPE}>Employee</option>
             <option value={TASK_FLOW_HUMAN_TYPE}>Human</option>
           </select>
         </label>
@@ -149,7 +147,7 @@ export function TaskFormFields({
           onChange={(value) => handleFieldChange("owner_ref", value)}
           profileId={profileId}
           profiles={profiles}
-          subagents={subagents}
+          employees={employees}
           typeValue={draft.owner_type}
           value={draft.owner_ref}
         />
@@ -159,8 +157,7 @@ export function TaskFormFields({
           <span className="field__label">Reviewer Type</span>
           <select onChange={(event) => handleReviewerTypeChange(event.target.value)} value={draft.reviewer_type}>
             <option value="">None</option>
-            <option value={TASK_FLOW_AI_PROFILE_TYPE}>AI Profile</option>
-            <option value={TASK_FLOW_AI_SUBAGENT_TYPE}>Subagent</option>
+            <option value={TASK_FLOW_EMPLOYEE_TYPE}>Employee</option>
             <option value={TASK_FLOW_HUMAN_TYPE}>Human</option>
           </select>
         </label>
@@ -172,7 +169,7 @@ export function TaskFormFields({
           onChange={(value) => handleFieldChange("reviewer_ref", value)}
           profileId={profileId}
           profiles={profiles}
-          subagents={subagents}
+          employees={employees}
           typeValue={draft.reviewer_type}
           value={draft.reviewer_ref}
         />

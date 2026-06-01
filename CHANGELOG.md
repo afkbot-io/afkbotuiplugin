@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.1 - 2026-06-01
+
+- switch Task Flow UI to the employee-only workforce model: owners, reviewers, feeds, settings, and project defaults use canonical `employee` principals instead of profile/subagent actors
+- add employee org chart and employee feed surfaces so operators can inspect manager/report relationships, assignments, mentions, wake signals, and active runtime context from the board
+- remove stale Task Flow team roster and subagent-owner endpoints from the e2e contract, while keeping CLI subagents as a separate capability outside Task Flow ownership
+- allow real employee ids such as `orchestrator`, require AFKBOT `1.9.9+`, and sync release metadata to version `1.0.1`
+
 ## 1.0.0 - 2026-05-24
 
 - add a Task Flow team roster endpoint and settings UI so strict backend scheduling and the board share the same allowed teammate profiles, while packaged core employees remain assignable without exposing core templates through the editable Subagents library

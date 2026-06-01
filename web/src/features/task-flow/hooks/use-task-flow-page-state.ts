@@ -49,12 +49,10 @@ export function useTaskFlowPageState({
   config,
   profileId,
   profiles,
-  teamProfileIds = [],
 }: {
   config: TaskFlowConfig;
   profileId: string;
   profiles: TaskFlowProfile[];
-  teamProfileIds?: string[];
 }) {
   const [flowFilter, setFlowFilter] = useState("");
   const [flowSearchQuery, setFlowSearchQuery] = useState("");
@@ -72,7 +70,7 @@ export function useTaskFlowPageState({
     error: "",
   }));
   const [settings, setSettings] = useState<SettingsState>(() => ({
-    draft: settingsDraftFromConfig(config, teamProfileIds),
+    draft: settingsDraftFromConfig(config),
     error: "",
   }));
   const [deleteState, setDeleteState] = useState<DeleteState>({
@@ -100,14 +98,14 @@ export function useTaskFlowPageState({
     setModalBusy(false);
     setCreateProject({ draft: defaultProjectDraft(profiles), error: "" });
     setCreateTask({ draft: defaultTaskDraft(config, profiles), error: "" });
-    setSettings({ draft: settingsDraftFromConfig(config, teamProfileIds), error: "" });
+    setSettings({ draft: settingsDraftFromConfig(config), error: "" });
     setDeleteState({ error: "", pendingProjectId: "" });
     setReview({ draft: defaultReviewDraft(), error: "" });
-  }, [config, profileId, profiles, teamProfileIds]);
+  }, [config, profileId, profiles]);
 
   useEffect(() => {
-    setSettings({ draft: settingsDraftFromConfig(config, teamProfileIds), error: "" });
-  }, [config, teamProfileIds]);
+    setSettings({ draft: settingsDraftFromConfig(config), error: "" });
+  }, [config]);
 
   useEffect(() => {
     if (!previousSelectedTaskIdRef.current) {
@@ -149,7 +147,7 @@ export function useTaskFlowPageState({
         setActiveModal("delete-selected");
         setDeleteState((current) => ({ ...current, error: "" }));
       },
-      openAgentFeedModal() {
+      openEmployeeFeedModal() {
         setActiveModal("agent-feed");
       },
       openDeleteTaskModal() {
@@ -166,7 +164,7 @@ export function useTaskFlowPageState({
       },
       openSettingsModal() {
         setActiveModal("settings");
-        setSettings({ draft: settingsDraftFromConfig(config, teamProfileIds), error: "" });
+        setSettings({ draft: settingsDraftFromConfig(config), error: "" });
       },
       openSessionFeed() {
         setSessionFeedOpen(true);
@@ -272,7 +270,6 @@ export function useTaskFlowPageState({
       selectedTaskIds,
       sessionFeedOpen,
       settings,
-      teamProfileIds,
     ],
   );
 }

@@ -6,13 +6,13 @@ import {
   normalizeNumberField,
   parseCsv,
   TASK_FLOW_STATUS_OPTIONS,
-  isAiExecutorActorType,
+  isEmployeeActorType,
 } from "@/features/task-flow/model/task-flow.forms";
 import type {
   TaskFlowBoard,
   TaskFlowComment,
   TaskFlowConfig,
-  TaskFlowAgentFeed,
+  TaskFlowEmployeeFeed,
   TaskFlowContextBundle,
   TaskFlowDependency,
   TaskFlowDocument,
@@ -23,8 +23,7 @@ import type {
   TaskFlowReviewDraft,
   TaskFlowReviewTask,
   TaskFlowRun,
-  TaskFlowSubagent,
-  TaskFlowTeam,
+  TaskFlowEmployeeOption,
   TaskFlowTask,
   TaskFlowTaskDetail,
   TaskFlowTaskDraft,
@@ -48,8 +47,7 @@ type TaskFlowApi = {
   getTask: (profileId: string, taskId: string) => Promise<{ task?: TaskFlowTask }>;
   getTaskBoard: (profileId: string, params?: Record<string, unknown>) => Promise<{ board?: TaskFlowBoard }>;
   getTaskContext: (profileId: string, taskId: string) => Promise<{ context?: TaskFlowContextBundle }>;
-  getTaskFeed: (profileId: string, params?: Record<string, unknown>) => Promise<{ feed?: TaskFlowAgentFeed }>;
-  getTaskFlowTeam: (profileId: string) => Promise<{ team?: TaskFlowTeam }>;
+  getTaskFeed: (profileId: string, params?: Record<string, unknown>) => Promise<{ feed?: TaskFlowEmployeeFeed }>;
   getTaskSessionInsights: (
     profileId: string,
     taskId: string,
@@ -60,14 +58,10 @@ type TaskFlowApi = {
     turns?: TaskSessionInsights["turns"];
   }>;
   listReviewTasks: (profileId: string, params?: Record<string, unknown>) => Promise<{ review_tasks?: TaskFlowReviewTask[] }>;
-  listSubagents?: (
+  listTaskFlowEmployees: (
     profileId: string,
     params?: Record<string, unknown>,
-  ) => Promise<{ subagents?: Array<Record<string, unknown>> }>;
-  listTaskFlowSubagents: (
-    profileId: string,
-    params?: Record<string, unknown>,
-  ) => Promise<{ subagents?: Array<Record<string, unknown>> }>;
+  ) => Promise<{ employees?: Array<Record<string, unknown>> }>;
   listTaskFlowDocuments: (
     profileId: string,
     scopeType: string,
@@ -79,7 +73,6 @@ type TaskFlowApi = {
   listTaskFlows: (profileId: string) => Promise<{ task_flows?: TaskFlowProject[] }>;
   listTaskRuns: (profileId: string, taskId: string, params?: Record<string, unknown>) => Promise<{ task_runs?: TaskFlowRun[] }>;
   putTaskFlowDocument: (profileId: string, payload: Record<string, unknown>) => Promise<{ task_document?: TaskFlowDocument }>;
-  updateTaskFlowTeam: (profileId: string, payload: Record<string, unknown>) => Promise<{ team?: TaskFlowTeam }>;
   confirmTaskFlowDocument: (
     profileId: string,
     documentId: string,
@@ -93,45 +86,23 @@ function coerceTaskFlowApi(api: unknown) {
   return api as TaskFlowApi;
 }
 
-function isMissingTaskFlowEndpoint(error: unknown) {
-  return Boolean(error && typeof error === "object" && Number((error as { status?: number }).status) === 404);
-}
-
 export async function listTaskProjects(api: unknown, profileId: string) {
   const payload = await coerceTaskFlowApi(api).listTaskFlows(profileId);
   return Array.isArray(payload.task_flows) ? payload.task_flows : [];
 }
 
-export async function listTaskFlowSubagents(api: unknown, profileId: string) {
+export async function listTaskFlowEmployees(api: unknown, profileId: string) {
   const taskFlowApi = coerceTaskFlowApi(api);
-  let payload: { subagents?: Array<Record<string, unknown>> };
-  try {
-    payload = await taskFlowApi.listTaskFlowSubagents(profileId, { q: "", team: 1 });
-  } catch (error) {
-    if (!isMissingTaskFlowEndpoint(error) || typeof taskFlowApi.listSubagents !== "function") {
-      throw error;
-    }
-    payload = await taskFlowApi.listSubagents(profileId, { q: "" });
-  }
-  return (Array.isArray(payload.subagents) ? payload.subagents : []).flatMap(mapTaskFlowSubagent);
-}
-
-export async function getTaskFlowTeam(api: unknown, profileId: string) {
-  let payload: { team?: TaskFlowTeam };
-  try {
-    payload = await coerceTaskFlowApi(api).getTaskFlowTeam(profileId);
-  } catch (error) {
-    if (!isMissingTaskFlowEndpoint(error)) {
-      throw error;
-    }
-    payload = {};
-  }
-  return normalizeTaskFlowTeam(payload.team, profileId);
-}
-
-export async function updateTaskFlowTeam(api: unknown, profileId: string, payload: Record<string, unknown>) {
-  const response = await coerceTaskFlowApi(api).updateTaskFlowTeam(profileId, payload);
-  return normalizeTaskFlowTeam(response.team, profileId);
+  const employeesPayload = await taskFlowApi.listTaskFlowEmployees(profileId, { q: "" });
+  const rows = (employeesPayload.employees || []).map((employee) => ({
+    name: String(employee.id || ""),
+    owner_ref: String(employee.id || ""),
+    path: String(employee.path || ""),
+    profile_id: String(employee.profile_id || profileId),
+    status: String(employee.status || ""),
+    summary: `${String(employee.name || employee.id || "")} - ${String(employee.title || employee.role || "")}`.trim(),
+  }));
+  return rows.flatMap(mapTaskFlowEmployeeOption);
 }
 
 export async function getTaskFlowBoard(api: unknown, profileId: string, flowId: string, config: TaskFlowConfig) {
@@ -174,10 +145,10 @@ export async function getTaskContext(api: unknown, profileId: string, taskId: st
   return normalizeTaskContext(payload.context);
 }
 
-export async function getAgentFeed(api: unknown, profileId: string, config: TaskFlowConfig) {
+export async function getEmployeeFeed(api: unknown, profileId: string, config: TaskFlowConfig) {
   const ownerType = normalizeActorType(config.task_flow_actor_type) || "human";
-  if (!isAiExecutorActorType(ownerType)) {
-    return normalizeAgentFeed(null, ownerType, config.task_flow_actor_ref);
+  if (!isEmployeeActorType(ownerType)) {
+    return normalizeEmployeeFeed(null, ownerType, config.task_flow_actor_ref);
   }
   const payload = await coerceTaskFlowApi(api).getTaskFeed(profileId, {
     event_limit: 20,
@@ -185,7 +156,7 @@ export async function getAgentFeed(api: unknown, profileId: string, config: Task
     owner_ref: config.task_flow_actor_ref,
     owner_type: ownerType,
   });
-  return normalizeAgentFeed(payload.feed, ownerType, config.task_flow_actor_ref);
+  return normalizeEmployeeFeed(payload.feed, ownerType, config.task_flow_actor_ref);
 }
 
 export async function listTaskDocuments(api: unknown, profileId: string, scopeType: string, scopeId: string) {
@@ -303,7 +274,7 @@ function normalizeTaskContext(context: TaskFlowContextBundle | null | undefined)
   };
 }
 
-function normalizeAgentFeed(feed: TaskFlowAgentFeed | null | undefined, ownerType: string, ownerRef: string): TaskFlowAgentFeed {
+function normalizeEmployeeFeed(feed: TaskFlowEmployeeFeed | null | undefined, ownerType: string, ownerRef: string): TaskFlowEmployeeFeed {
   return {
     blocked_count: Number(feed?.blocked_count || 0),
     mention_event_count: Number(feed?.mention_event_count || 0),
@@ -521,7 +492,7 @@ function mergeSessionProgressEvents(existingEvents: TaskSessionInsights["progres
   return merged.slice(-18);
 }
 
-function mapTaskFlowSubagent(item: Record<string, unknown>): TaskFlowSubagent[] {
+function mapTaskFlowEmployeeOption(item: Record<string, unknown>): TaskFlowEmployeeOption[] {
   const name = String(item.name || "").trim();
   if (!name) {
     return [];
@@ -534,22 +505,7 @@ function mapTaskFlowSubagent(item: Record<string, unknown>): TaskFlowSubagent[] 
       path: String(item.path || "").trim(),
       profile_id: String(item.profile_id || "").trim(),
       summary: String(item.summary || "").trim(),
+      status: String(item.status || "").trim(),
     },
   ];
-}
-
-function normalizeTaskFlowTeam(payload: TaskFlowTeam | undefined, profileId: string): TaskFlowTeam {
-  const teamProfileIds = Array.isArray(payload?.taskflow_team_profile_ids)
-    ? payload.taskflow_team_profile_ids.map((item) => String(item || "").trim()).filter(Boolean)
-    : [];
-  const allowedProfileIds = Array.isArray(payload?.allowed_profile_ids)
-    ? payload.allowed_profile_ids.map((item) => String(item || "").trim()).filter(Boolean)
-    : [];
-  const normalizedProfileId = String(payload?.profile_id || profileId || "default").trim() || "default";
-  return {
-    allowed_profile_ids: allowedProfileIds.length ? allowedProfileIds : [normalizedProfileId, ...teamProfileIds],
-    orchestrator_profile_id: String(payload?.orchestrator_profile_id || normalizedProfileId).trim() || normalizedProfileId,
-    profile_id: normalizedProfileId,
-    taskflow_team_profile_ids: teamProfileIds,
-  };
 }

@@ -1,9 +1,8 @@
-import type { TaskFlowConfig, TaskFlowProfile, TaskFlowSubagent } from "@/features/task-flow/model/task-flow.types";
+import type { TaskFlowConfig, TaskFlowProfile, TaskFlowEmployeeOption } from "@/features/task-flow/model/task-flow.types";
 import {
   getProfileIdFallback,
-  getSubagentOwnerRefOptions,
-  TASK_FLOW_AI_PROFILE_TYPE,
-  TASK_FLOW_AI_SUBAGENT_TYPE,
+  getEmployeeOwnerRefOptions,
+  TASK_FLOW_EMPLOYEE_TYPE,
   TASK_FLOW_HUMAN_TYPE,
 } from "@/features/task-flow/model/task-flow.api";
 
@@ -14,7 +13,7 @@ type ActorRefFieldProps = {
   name: string;
   profileId: string;
   profiles: TaskFlowProfile[];
-  subagents: TaskFlowSubagent[];
+  employees: TaskFlowEmployeeOption[];
   typeValue: string;
   value: string;
   onChange: (value: string) => void;
@@ -28,45 +27,26 @@ export function ActorRefField({
   onChange,
   profileId,
   profiles,
-  subagents,
+  employees,
   typeValue,
   value,
 }: ActorRefFieldProps) {
-  if (typeValue === TASK_FLOW_AI_PROFILE_TYPE) {
-    const hasCurrentValue = Boolean(value && !profiles.some((profile) => profile.id === value));
-    return (
-      <label className="field field--compact">
-        <span className="field__label">{label}</span>
-        <select name={name} onChange={(event) => onChange(event.target.value)} value={value}>
-          {allowBlank ? <option value="">None</option> : null}
-          {hasCurrentValue ? <option value={value}>{value}</option> : null}
-          {profiles.map((profile) => (
-            <option key={profile.id || "unknown"} value={profile.id || ""}>
-              {profile.title || profile.id || "profile"}
-            </option>
-          ))}
-        </select>
-      </label>
-    );
-  }
-
-  if (typeValue === TASK_FLOW_AI_SUBAGENT_TYPE) {
-    const options = getSubagentOwnerRefOptions(profileId || getProfileIdFallback(profiles), subagents);
+  if (typeValue === TASK_FLOW_EMPLOYEE_TYPE) {
+    const options = getEmployeeOwnerRefOptions(profileId || getProfileIdFallback(profiles), employees);
     const hasCurrentValue = Boolean(value && !options.some((option) => option.value === value));
-    const emptyLabel = allowBlank ? "None" : options.length ? "Select subagent" : "No subagents available";
+    const emptyLabel = allowBlank ? "None" : options.length ? "Select employee" : "No employees available";
     return (
       <label className="field field--compact">
         <span className="field__label">{label}</span>
-        <select
-          disabled={!options.length && !value}
-          name={name}
-          onChange={(event) => onChange(event.target.value)}
-          value={value}
-        >
+        <select disabled={!options.length && !value} name={name} onChange={(event) => onChange(event.target.value)} value={value}>
           {allowBlank || !value || !options.length ? <option disabled={!allowBlank} value="">{emptyLabel}</option> : null}
-          {hasCurrentValue ? <option value={value}>{formatSubagentRefLabel(value)}</option> : null}
+          {hasCurrentValue ? <option value={value}>{value}</option> : null}
           {options.map((option) => (
-            <option key={option.value} value={option.value}>
+            <option
+              disabled={option.status !== "active"}
+              key={option.value}
+              value={option.value}
+            >
               {option.summary ? `${option.label} (${option.summary})` : option.label}
             </option>
           ))}
@@ -95,9 +75,4 @@ export function ActorRefField({
       <input disabled name={name} value={value} />
     </label>
   );
-}
-
-function formatSubagentRefLabel(value: string) {
-  const normalized = String(value || "").trim();
-  return normalized || "Subagent";
 }

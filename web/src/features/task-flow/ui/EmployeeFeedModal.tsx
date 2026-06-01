@@ -1,28 +1,24 @@
-import {
-  TASK_FLOW_AI_PROFILE_TYPE,
-  TASK_FLOW_AI_SUBAGENT_TYPE,
-} from "@/features/task-flow/model/task-flow.api";
-import type { TaskFlowAgentFeed, TaskFlowSubagent } from "@/features/task-flow/model/task-flow.types";
+import type { TaskFlowEmployeeFeed, TaskFlowEmployeeOption } from "@/features/task-flow/model/task-flow.types";
 import { formatStatusLabel, truncate } from "@/features/task-flow/model/task-flow.presentation";
 import { formatDateTime } from "@/shared/lib/time";
 import { ModalDialog } from "@/shared/ui/ModalDialog";
 import { SurfaceLoader } from "@/shared/ui/SurfaceLoader";
 
-type AgentFeedModalProps = {
+type EmployeeFeedModalProps = {
   actorRef: string;
   actorType: string;
   error: string;
-  feed: TaskFlowAgentFeed | null;
+  feed: TaskFlowEmployeeFeed | null;
   loading: boolean;
   onClose: () => void;
   onRefresh: () => void;
   onSelectTask: (taskId: string) => void;
   open: boolean;
   profileId: string;
-  subagents: TaskFlowSubagent[];
+  employees: TaskFlowEmployeeOption[];
 };
 
-export function AgentFeedModal({
+export function EmployeeFeedModal({
   actorRef,
   actorType,
   error,
@@ -33,15 +29,15 @@ export function AgentFeedModal({
   onSelectTask,
   open,
   profileId,
-  subagents,
-}: AgentFeedModalProps) {
-  const teamRole = actorType === TASK_FLOW_AI_PROFILE_TYPE ? "Team Orchestrator" : "Employee";
-  const actorLabel = actorType === TASK_FLOW_AI_SUBAGENT_TYPE ? formatSubagentActor(actorRef) : actorRef || profileId;
-  const workerPreview = subagents.slice(0, 8);
-  const hiddenWorkerCount = Math.max(0, subagents.length - workerPreview.length);
+  employees,
+}: EmployeeFeedModalProps) {
+  const teamRole = actorType === "employee" ? "Employee" : "Operator";
+  const actorLabel = actorRef || profileId;
+  const workerPreview = employees.slice(0, 8);
+  const hiddenWorkerCount = Math.max(0, employees.length - workerPreview.length);
 
   return (
-    <ModalDialog closeLabel="Close agent feed modal" eyebrow="AI Team Queue" onClose={onClose} open={open} title="Team Feed" wide>
+    <ModalDialog closeLabel="Close employee feed modal" eyebrow="Employee Queue" onClose={onClose} open={open} title="Employee Feed" wide>
       <div className="agent-feed-modal">
         <div className="agent-feed-modal__statusbar">
           <div>
@@ -151,13 +147,4 @@ export function AgentFeedModal({
       </div>
     </ModalDialog>
   );
-}
-
-function formatSubagentActor(actorRef: string) {
-  const normalized = String(actorRef || "").trim();
-  const separatorIndex = normalized.indexOf(":");
-  if (separatorIndex <= 0 || separatorIndex !== normalized.lastIndexOf(":")) {
-    return normalized || "unassigned";
-  }
-  return `${normalized.slice(separatorIndex + 1)} (${normalized.slice(0, separatorIndex)})`;
 }

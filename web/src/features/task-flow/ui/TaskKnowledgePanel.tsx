@@ -154,7 +154,7 @@ export function TaskKnowledgePanel({
               <span className="field__label">Body</span>
               <textarea
                 onChange={(event) => setDraft((current) => ({ ...current, body: event.target.value }))}
-                placeholder="Persist plan, spec, handoff, QA notes, or decisions for every agent working this flow."
+                placeholder="Persist plan, spec, handoff, QA notes, or decisions for every employee working this flow."
                 rows={6}
                 value={draft.body}
               />

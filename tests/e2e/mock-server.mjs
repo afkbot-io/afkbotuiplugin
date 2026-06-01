@@ -42,8 +42,8 @@ let taskFlows = [
     id: "flow-alpha",
     title: "Alpha Project",
     description: "Primary migration stream for workspace shell improvements.",
-    default_owner_type: "ai_profile",
-    default_owner_ref: "default",
+    default_owner_type: "employee",
+    default_owner_ref: "cto",
     created_by_type: "human",
     created_by_ref: "web-user",
     labels: ["migration", "workspace"],
@@ -74,8 +74,8 @@ const boardTasks = [
     profile_id: "default",
     flow_id: "flow-alpha",
     due_at: "2026-04-22T10:00:00.000Z",
-    owner_type: "ai_profile",
-    owner_ref: "default",
+    owner_type: "employee",
+    owner_ref: "cto",
     reviewer_type: "",
     reviewer_ref: "",
     requires_review: false,
@@ -226,6 +226,43 @@ const subagents = [
     profile_id: "default",
     summary: "Project planning specialist.",
     content: "# planner\n\nPlan migration slices and execution steps.",
+  },
+];
+
+const employees = [
+  {
+    id: "cto",
+    profile_id: "default",
+    name: "Ada CTO",
+    title: "Technical Director",
+    role: "cto",
+    status: "active",
+    manager_id: null,
+    reports: ["planner"],
+    derived_reports: ["planner"],
+    can_delegate_to: ["planner"],
+    allowed_tools: ["task.*"],
+    can_use_subagents: true,
+    subagent_allowlist: ["planner"],
+    max_active_tasks: 1,
+    body: "Owns Task Flow decomposition and delivery coordination.",
+  },
+  {
+    id: "planner",
+    profile_id: "default",
+    name: "Planner",
+    title: "Project Planner",
+    role: "planner",
+    status: "active",
+    manager_id: "cto",
+    reports: [],
+    derived_reports: [],
+    can_delegate_to: [],
+    allowed_tools: ["task.*"],
+    can_use_subagents: false,
+    subagent_allowlist: [],
+    max_active_tasks: 1,
+    body: "Plans migration slices and execution steps.",
   },
 ];
 
@@ -413,8 +450,8 @@ function matchApiRoute(pathname, requestUrl = "/") {
       feed: {
         blocked_count: 0,
         mention_event_count: 1,
-        owner_ref: "default",
-        owner_type: "ai_profile",
+        owner_ref: "cto",
+        owner_type: "employee",
         recent_events: [
           {
             id: 31,
@@ -426,9 +463,39 @@ function matchApiRoute(pathname, requestUrl = "/") {
         ],
         review_count: 0,
         running_count: 0,
-        tasks: boardTasks.filter((task) => task.owner_type === "ai_profile"),
+        tasks: boardTasks.filter((task) => task.owner_type === "employee"),
         todo_count: 1,
         total_count: 1,
+      },
+    };
+  }
+
+  if (pathname === "/v1/plugins/afkbotui/task-flow/employees") {
+    const query = String(requestUrlObject.searchParams.get("q") || "").trim().toLowerCase();
+    const filteredEmployees = query
+      ? employees.filter((employee) =>
+          [employee.id, employee.name, employee.title, employee.role].some((value) =>
+            String(value).toLowerCase().includes(query),
+          ),
+        )
+      : employees;
+    return {
+      employees: filteredEmployees,
+    };
+  }
+
+  if (pathname === "/v1/plugins/afkbotui/task-flow/org-chart") {
+    return {
+      org_chart: {
+        profile_id: "default",
+        employees: Object.fromEntries(employees.map((employee) => [employee.id, employee])),
+        root_employee_ids: ["cto"],
+        edges: [["cto", "planner"]],
+        validation: {
+          profile_id: "default",
+          valid: true,
+          issues: [],
+        },
       },
     };
   }
@@ -516,23 +583,6 @@ function matchApiRoute(pathname, requestUrl = "/") {
       },
       session: null,
       turns: [],
-    };
-  }
-
-  if (pathname === "/v1/plugins/afkbotui/task-flow/subagents") {
-    return {
-      subagents,
-    };
-  }
-
-  if (pathname === "/v1/plugins/afkbotui/task-flow/team") {
-    return {
-      team: {
-        allowed_profile_ids: ["default"],
-        orchestrator_profile_id: "default",
-        profile_id: "default",
-        taskflow_team_profile_ids: [],
-      },
     };
   }
 
@@ -776,22 +826,6 @@ async function handleMutation(request, response, pathname) {
       [mapKey]: [...currentDocuments.filter((document) => document.id !== nextDocument.id), nextDocument],
     };
     sendJson(response, 200, { task_document: nextDocument });
-    return true;
-  }
-
-  if (pathname === "/v1/plugins/afkbotui/task-flow/team" && method === "PATCH") {
-    const payload = await readJsonBody(request);
-    const teamProfileIds = Array.isArray(payload?.taskflow_team_profile_ids)
-      ? payload.taskflow_team_profile_ids.map((item) => String(item)).filter(Boolean)
-      : [];
-    sendJson(response, 200, {
-      team: {
-        allowed_profile_ids: ["default", ...teamProfileIds],
-        orchestrator_profile_id: "default",
-        profile_id: "default",
-        taskflow_team_profile_ids: teamProfileIds,
-      },
-    });
     return true;
   }
 

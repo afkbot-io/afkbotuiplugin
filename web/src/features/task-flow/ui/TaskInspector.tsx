@@ -9,15 +9,14 @@ import {
   truncate,
 } from "@/features/task-flow/model/task-flow.presentation";
 import {
-  TASK_FLOW_AI_PROFILE_TYPE,
-  TASK_FLOW_AI_SUBAGENT_TYPE,
+  TASK_FLOW_EMPLOYEE_TYPE,
   TASK_FLOW_HUMAN_TYPE,
   resolveActorRefForType,
 } from "@/features/task-flow/model/task-flow.api";
 import type {
   TaskFlowConfig,
   TaskFlowProfile,
-  TaskFlowSubagent,
+  TaskFlowEmployeeOption,
   TaskFlowTaskDetail,
   TaskFlowTaskDraft,
   TaskSessionInsights,
@@ -49,7 +48,7 @@ type TaskInspectorProps = {
   sessionError: string;
   sessionRefreshing?: boolean;
   sessionInsights: TaskSessionInsights | null;
-  subagents: TaskFlowSubagent[];
+  employees: TaskFlowEmployeeOption[];
 };
 
 export function TaskInspector({
@@ -75,7 +74,7 @@ export function TaskInspector({
   sessionError,
   sessionRefreshing = false,
   sessionInsights,
-  subagents,
+  employees,
 }: TaskInspectorProps) {
   const [comment, setComment] = useState("");
   const [expandedCommentIds, setExpandedCommentIds] = useState<Set<string>>(() => new Set());
@@ -146,7 +145,7 @@ export function TaskInspector({
         previousType: current.owner_type,
         profileId,
         profiles,
-        subagents,
+        employees,
         type: ownerType,
       }),
       owner_type: ownerType,
@@ -174,7 +173,7 @@ export function TaskInspector({
             profiles={profiles}
             showBlockedReason
             showStatus
-            subagents={subagents}
+            employees={employees}
           />
           {error ? <div className="inline-alert inline-alert--danger" role="alert">{error}</div> : null}
           <div className="button-row">
@@ -190,7 +189,7 @@ export function TaskInspector({
             <div className="panel-head panel-head--compact">
               <div>
                 <p className="panel-head__eyebrow">Session</p>
-                <h4 className="panel-head__title">Agent Session</h4>
+                <h4 className="panel-head__title">Employee Session</h4>
               </div>
             </div>
             <TaskSessionSummaryCard
@@ -229,8 +228,7 @@ export function TaskInspector({
                   value={reviewDraft.owner_type}
                 >
                   <option value="">Keep current</option>
-                  <option value={TASK_FLOW_AI_PROFILE_TYPE}>AI Profile</option>
-                  <option value={TASK_FLOW_AI_SUBAGENT_TYPE}>Subagent</option>
+                  <option value={TASK_FLOW_EMPLOYEE_TYPE}>Employee</option>
                   <option value={TASK_FLOW_HUMAN_TYPE}>Human</option>
                 </select>
               </label>
@@ -242,7 +240,7 @@ export function TaskInspector({
                 onChange={(value) => setReviewDraft((current) => ({ ...current, owner_ref: value }))}
                 profileId={profileId}
                 profiles={profiles}
-                subagents={subagents}
+                employees={employees}
                 typeValue={reviewDraft.owner_type}
                 value={reviewDraft.owner_ref}
               />

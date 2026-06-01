@@ -2,7 +2,7 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, and profile-local text libraries.
 
-Current release: `1.0.0`
+Current release: `1.0.1`
 
 ## Overview
 
@@ -18,7 +18,7 @@ Current frontend/runtime contract:
 
 The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*` or `web/dist/assets/features/*` payloads.
 
-## What Is In 1.0.0
+## What Is In 1.0.1
 
 - single-shell workspace with `Automations`, `Task Flow`, `Subagents`, `Skills`, and `Bootstrap`
 - React-native route surfaces for every section, with shared loaders, dialogs, async buttons, and responsive layout primitives
@@ -28,9 +28,9 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 - masked webhook metadata in ordinary automation list/detail payloads, with reveal only through `/automations/{id}/webhook-endpoint`
 - automation inspector with cron/webhook diagnostics, copy actions, graph preview, runtime path, and webhook URL rotation
 - Task Flow board with Plan-first status ordering, flow management modal, per-flow filtering, stable silent polling, inspector, review flows, comments, dependencies, runs, session activity, and live chat-style activity modal
-- Task Flow Team Feed, context bundle, and flow/task document controls expose the selected orchestrator or employee assignments, wake signals, plans, specs, handoffs, and confirmed revisions directly in the board and flow library
-- Task Flow team settings store the profile roster used by strict backend scheduling: the current profile stays the Team Orchestrator, selected teammate profiles can be added by roster templates, and subagents from every allowed teammate profile become assignable workers
-- Task Flow owner controls, reviewer fallbacks, actor settings, and task cards recognize core and profile subagent employees from `owner_ref` values like `default:researcher`
+- Task Flow Employee Feed, context bundle, and flow/task document controls expose employee assignments, wake signals, plans, specs, handoffs, and confirmed revisions directly in the board and flow library
+- Task Flow employees are profile-local workforce descriptors; profile is the organization boundary, flow is the project, and owner/reviewer/actor controls use canonical `employee` principals
+- Task Flow employee settings and org chart views show managers, direct reports, delegation scope, and runtime-safe owner choices without treating CLI subagents as Task Flow owners
 - named Task Flow priority chips replace raw `pNN` scores with low-to-critical labels and direction markers
 - inspector discussion and live activity panels keep long content inside their panes, collapse oversized comments, and keep the comment composer at the bottom
 - Task Flow create/edit routes submit canonical `description` payloads while still reading legacy `prompt` tasks during mixed-version upgrades
@@ -52,8 +52,8 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 
 - kanban-style board inside the same workspace shell
 - flow library modal with search, add, delete, quick selection, and project-level flow docs
-- Team Feed modal for the configured AI Task Flow orchestrator or employee, including assigned tasks, mentions, wake requests, recovery signals, runtime claim rejects, and the available team roster
-- settings controls and roster templates for selecting allowed teammate profiles; those profiles and their subagents become valid AI owners/reviewers without exposing the internal orchestrator as an editable subagent
+- Employee Feed modal for the selected Task Flow employee, including assigned tasks, mentions, wake requests, recovery signals, runtime claim rejects, and org chart context
+- employee controls for selecting active Task Flow owners/reviewers from profile-local employee descriptors; CLI subagents remain a separate tool capability, not a Task Flow principal
 - task inspector with create/edit/delete, comments, dependencies, runs, review actions, live session activity, context bundle summaries, and flow/task docs
 - review actions stay available for review tasks that are already claimed or running by an AI reviewer
 - durable flow/task document editing and revision confirmation for plans, specs, roadmaps, decisions, handoffs, QA notes, and agent-readable project knowledge
@@ -73,13 +73,13 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 
 ## Requirements
 
-- AFKBOT UI `1.0.0`
-- AFKBOT `>=1.9.0,<2.0.0`
+- AFKBOT UI `1.0.1`
+- AFKBOT `>=1.9.9,<2.0.0`
 - current AFKBOT `1.x` auth/chat runtime surface, including:
   - `/v1/auth/session`
   - `/v1/auth/logout`
   - operator-side automation webhook reveal support
-  - Task Flow team roster config support
+  - Task Flow employee/org-chart support
 
 ## Install
 

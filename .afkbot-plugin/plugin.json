@@ -1,8 +1,8 @@
 {
   "plugin_id": "afkbotui",
   "name": "AFKBOT UI",
-  "version": "1.0.0",
-  "afkbot_version": ">=1.9.0,<2.0.0",
+  "version": "1.0.1",
+  "afkbot_version": ">=1.9.9,<2.0.0",
   "kind": "embedded",
   "entrypoint": "afkbot_plugin_afkbotui.plugin:register",
   "description": "Unified AFKBOT workspace for automations, Task Flow, and profile-local subagents, skills, and bootstrap files.",
@@ -50,8 +50,7 @@
         "description": "Actor type used for Task Flow and operator-side actions.",
         "choices": [
           "human",
-          "ai_profile",
-          "ai_subagent"
+          "employee"
         ]
       },
       "task_flow_actor_ref": {

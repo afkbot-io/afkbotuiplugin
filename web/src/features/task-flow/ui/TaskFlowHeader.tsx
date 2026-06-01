@@ -9,14 +9,14 @@ type TaskFlowHeaderProps = {
   onCreateTask: () => void;
   onDeleteSelected: () => void;
   onFilterChange: (flowId: string) => void;
-  onOpenAgentFeed: () => void;
+  onOpenEmployeeFeed: () => void;
   onManageFlows: () => void;
   onOpenReview: () => void;
   onOpenSettings: () => void;
   onRefresh: () => void;
-  agentFeedDisabled: boolean;
+  employeeFeedDisabled: boolean;
   refreshing: boolean;
-  agentFeedCount: number;
+  employeeFeedCount: number;
   reviewCount: number;
   selectedCount: number;
 };
@@ -28,14 +28,14 @@ export function TaskFlowHeader({
   onCreateTask,
   onDeleteSelected,
   onFilterChange,
-  onOpenAgentFeed,
+  onOpenEmployeeFeed,
   onManageFlows,
   onOpenReview,
   onOpenSettings,
   onRefresh,
-  agentFeedDisabled,
+  employeeFeedDisabled,
   refreshing,
-  agentFeedCount,
+  employeeFeedCount,
   reviewCount,
   selectedCount,
 }: TaskFlowHeaderProps) {
@@ -70,12 +70,12 @@ export function TaskFlowHeader({
           </button>
           <button
             className="button button--ghost button--compact"
-            disabled={agentFeedDisabled}
-            onClick={onOpenAgentFeed}
-            title={agentFeedDisabled ? "Select the Team Orchestrator or an employee in Task Flow settings." : undefined}
+            disabled={employeeFeedDisabled}
+            onClick={onOpenEmployeeFeed}
+            title={employeeFeedDisabled ? "Select the root employee or an employee in Task Flow settings." : undefined}
             type="button"
           >
-            Team Feed <span className="button__count">{agentFeedCount}</span>
+            Employee Feed <span className="button__count">{employeeFeedCount}</span>
           </button>
           <button className="button button--ghost button--compact" onClick={onOpenSettings} type="button">
             Settings

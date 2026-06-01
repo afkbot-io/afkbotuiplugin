@@ -1,4 +1,4 @@
-export type TaskFlowActorType = "ai_profile" | "ai_subagent" | "human" | string;
+export type TaskFlowActorType = "employee" | "human" | string;
 
 export type TaskFlowStatus =
   | "plan"
@@ -19,26 +19,37 @@ export type TaskFlowConfig = {
   task_flow_poll_interval_sec: number;
 };
 
-export type TaskFlowTeam = {
-  allowed_profile_ids: string[];
-  orchestrator_profile_id: string;
-  profile_id: string;
-  taskflow_team_profile_ids: string[];
-};
-
 export type TaskFlowProfile = {
   id?: string | null;
   is_default?: boolean | null;
   title?: string | null;
 };
 
-export type TaskFlowSubagent = {
+export type TaskFlowEmployeeOption = {
   name: string;
   origin?: string | null;
   owner_ref?: string | null;
   path?: string | null;
   profile_id?: string | null;
   summary?: string | null;
+  status?: string | null;
+};
+
+export type TaskFlowEmployee = {
+  body?: string | null;
+  can_delegate_to?: string[];
+  can_use_subagents?: boolean | null;
+  derived_reports?: string[];
+  id: string;
+  manager_id?: string | null;
+  max_active_tasks?: number | null;
+  name: string;
+  profile_id?: string | null;
+  reports?: string[];
+  role: string;
+  status: "active" | "disabled" | "archived" | string;
+  subagent_allowlist?: string[];
+  title: string;
 };
 
 export type TaskFlowSession = {
@@ -186,7 +197,7 @@ export type TaskFlowContextBundle = {
   task_documents?: TaskFlowDocument[];
 };
 
-export type TaskFlowAgentFeed = {
+export type TaskFlowEmployeeFeed = {
   blocked_count?: number;
   mention_event_count?: number;
   owner_ref: string;
@@ -277,6 +288,4 @@ export type TaskFlowSettingsDraft = {
   task_flow_actor_type: string;
   task_flow_board_limit_per_column: string;
   task_flow_poll_interval_sec: string;
-  taskflow_team_profile_ids: string[];
-  taskflow_team_template: string;
 };
