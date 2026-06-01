@@ -69,6 +69,7 @@ export type TaskFlowEmployeeDraft = {
   manager_id?: string | null;
   name: string;
   role: string;
+  status?: "active" | "disabled" | "archived";
   subagent_allowlist?: string[];
   title: string;
 };

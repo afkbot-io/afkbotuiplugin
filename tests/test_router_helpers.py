@@ -357,6 +357,12 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
         def __init__(self, payload: dict[str, object]) -> None:
             self.payload = payload
 
+        def __getattr__(self, name: str) -> object:
+            try:
+                return self.payload[name]
+            except KeyError as exc:
+                raise AttributeError(name) from exc
+
         def model_dump(self, *, mode: str) -> dict[str, object]:
             assert mode == "json"
             return self.payload
@@ -471,6 +477,12 @@ def test_task_flow_employee_routes_expose_employee_roster_and_org_chart(monkeypa
         def __init__(self, payload: dict[str, object]) -> None:
             self.payload = payload
 
+        def __getattr__(self, name: str) -> object:
+            try:
+                return self.payload[name]
+            except KeyError as exc:
+                raise AttributeError(name) from exc
+
         def model_dump(self, *, mode: str) -> dict[str, object]:
             assert mode == "json"
             return self.payload
@@ -539,6 +551,7 @@ def test_task_flow_employee_routes_expose_employee_roster_and_org_chart(monkeypa
             assert employee_id == "developer"
             assert "manager_id: cto" in content
             assert "allowed_tools:" in content
+            status = "disabled" if "status: disabled" in content else "active"
             return Dumpable(
                 {
                     "allowed_tools": ["task.*"],
@@ -553,7 +566,30 @@ def test_task_flow_employee_routes_expose_employee_roster_and_org_chart(monkeypa
                     "profile_id": "default",
                     "reports": [],
                     "role": "developer",
-                    "status": "active",
+                    "status": status,
+                    "subagent_allowlist": [],
+                    "title": "Developer",
+                }
+            )
+
+        async def delete_employee(self, *, profile_id: str, employee_id: str):
+            assert profile_id == "default"
+            assert employee_id == "developer"
+            return Dumpable(
+                {
+                    "allowed_tools": ["task.*"],
+                    "body": "# Developer\nBuilds features.",
+                    "can_delegate_to": [],
+                    "can_use_subagents": False,
+                    "derived_reports": [],
+                    "id": "developer",
+                    "manager_id": "cto",
+                    "max_active_tasks": 1,
+                    "name": "Developer",
+                    "profile_id": "default",
+                    "reports": [],
+                    "role": "developer",
+                    "status": "disabled",
                     "subagent_allowlist": [],
                     "title": "Developer",
                 }
@@ -615,3 +651,42 @@ def test_task_flow_employee_routes_expose_employee_roster_and_org_chart(monkeypa
     assert created.status_code == 200
     assert created.json()["employee"]["id"] == "developer"
     assert created.json()["employee"]["manager_id"] == "cto"
+
+    updated = client.put(
+        "/v1/plugins/afkbotui/task-flow/employees/developer",
+        params={"profile_id": "default"},
+        json={
+            "id": "developer",
+            "name": "Developer",
+            "title": "Senior Developer",
+            "role": "developer",
+            "status": "disabled",
+            "manager_id": "cto",
+            "body": "Builds features.",
+            "allowed_tools": ["task.*"],
+            "can_use_subagents": False,
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["employee"]["id"] == "developer"
+    assert updated.json()["employee"]["status"] == "disabled"
+
+    mismatched = client.put(
+        "/v1/plugins/afkbotui/task-flow/employees/developer",
+        params={"profile_id": "default"},
+        json={
+            "id": "other",
+            "name": "Developer",
+            "title": "Developer",
+            "role": "developer",
+        },
+    )
+    assert mismatched.status_code == 400
+    assert mismatched.json()["detail"]["error_code"] == "employee_id_mismatch"
+
+    deleted = client.delete(
+        "/v1/plugins/afkbotui/task-flow/employees/developer",
+        params={"profile_id": "default"},
+    )
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True

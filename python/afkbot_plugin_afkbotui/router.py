@@ -79,6 +79,7 @@ class TaskFlowEmployeeCreatePayload(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     title: str = Field(min_length=1, max_length=160)
     role: str = Field(min_length=1, max_length=120)
+    status: Literal["active", "disabled", "archived"] = "active"
     manager_id: str | None = Field(default=None, max_length=120)
     body: str = Field(default="", max_length=8000)
     allowed_tools: list[str] = Field(default_factory=list, max_length=80)
@@ -843,6 +844,51 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         except EmployeeServiceError as exc:
             raise _employee_http_error(exc) from exc
         return {"employee": _serialize_task_flow_employee(employee)}
+
+    @router.put("/task-flow/employees/{employee_id}")
+    async def update_task_flow_employee(
+        employee_id: str,
+        payload: TaskFlowEmployeeCreatePayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        if payload.id != employee_id:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error_code": "employee_id_mismatch",
+                    "reason": "Employee id in the payload must match the URL.",
+                },
+            )
+        service = EmployeeService(get_settings())
+        content = _render_task_flow_employee_markdown(payload)
+        try:
+            employee = await service.upsert_employee(
+                profile_id=profile_id,
+                employee_id=employee_id,
+                content=content,
+            )
+        except EmployeeServiceError as exc:
+            raise _employee_http_error(exc) from exc
+        return {"employee": _serialize_task_flow_employee(employee)}
+
+    @router.delete("/task-flow/employees/{employee_id}")
+    async def delete_task_flow_employee(employee_id: str, profile_id: str = "default") -> dict[str, object]:
+        service = EmployeeService(get_settings())
+        try:
+            chart = await service.build_org_chart(profile_id=profile_id)
+            employee = chart.employees.get(employee_id)
+            if employee is not None and employee.derived_reports:
+                raise EmployeeServiceError(
+                    error_code="employee_has_reports",
+                    reason=(
+                        f"Employee {employee_id} manages other employees. Reassign or delete those "
+                        "reports before deleting this employee."
+                    ),
+                )
+            employee = await service.delete_employee(profile_id=profile_id, employee_id=employee_id)
+        except EmployeeServiceError as exc:
+            raise _employee_http_error(exc) from exc
+        return {"deleted": True, "employee": _serialize_task_flow_employee(employee)}
 
     @router.get("/task-flow/org-chart")
     async def task_flow_org_chart(profile_id: str = "default") -> dict[str, object]:
@@ -1889,14 +1935,7 @@ def _serialize_task_flow_employee(employee: object) -> dict[str, object]:
 
 
 def _render_task_flow_employee_markdown(payload: TaskFlowEmployeeCreatePayload) -> str:
-    allowed_tools = payload.allowed_tools or [
-        "task.*",
-        "memory.*",
-        "file.read",
-        "diffs.render",
-        "web.*",
-        "http.request",
-    ]
+    allowed_tools = payload.allowed_tools
     body = payload.body.strip() or (
         f"{payload.name} owns focused Task Flow work for this profile and reports durable "
         "progress, blockers, and handoff notes."
@@ -1907,7 +1946,7 @@ def _render_task_flow_employee_markdown(payload: TaskFlowEmployeeCreatePayload) 
         f"name: {_frontmatter_scalar(payload.name)}",
         f"title: {_frontmatter_scalar(payload.title)}",
         f"role: {_frontmatter_scalar(payload.role)}",
-        "status: active",
+        f"status: {_frontmatter_scalar(payload.status)}",
     ]
     if payload.manager_id:
         lines.append(f"manager_id: {_frontmatter_scalar(payload.manager_id)}")
@@ -1986,7 +2025,12 @@ def _task_http_error(exc: TaskFlowServiceError) -> HTTPException:
 def _employee_http_error(exc: EmployeeServiceError) -> HTTPException:
     """Map employee service errors to HTTP responses."""
 
-    status_code = 404 if exc.error_code.endswith("_not_found") else 400
+    if exc.error_code.endswith("_not_found"):
+        status_code = 404
+    elif exc.error_code in {"employee_in_use", "employee_has_reports"}:
+        status_code = 409
+    else:
+        status_code = 400
     return HTTPException(
         status_code=status_code,
         detail={"error_code": exc.error_code, "reason": exc.reason},

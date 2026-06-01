@@ -69,6 +69,12 @@ type TaskFlowApi = {
     profileId: string,
     payload: TaskFlowEmployeeDraft,
   ) => Promise<{ employee?: TaskFlowEmployee }>;
+  updateTaskFlowEmployee: (
+    profileId: string,
+    employeeId: string,
+    payload: TaskFlowEmployeeDraft,
+  ) => Promise<{ employee?: TaskFlowEmployee }>;
+  deleteTaskFlowEmployee: (profileId: string, employeeId: string) => Promise<unknown>;
   getTaskFlowOrgChart: (profileId: string) => Promise<{ org_chart?: TaskFlowOrgChart }>;
   listTaskFlowDocuments: (
     profileId: string,
@@ -121,6 +127,15 @@ export async function getTaskFlowOrgChart(api: unknown, profileId: string) {
 export async function createTaskFlowEmployee(api: unknown, profileId: string, draft: TaskFlowEmployeeDraft) {
   const payload = await coerceTaskFlowApi(api).createTaskFlowEmployee(profileId, draft);
   return payload.employee || null;
+}
+
+export async function updateTaskFlowEmployee(api: unknown, profileId: string, employeeId: string, draft: TaskFlowEmployeeDraft) {
+  const payload = await coerceTaskFlowApi(api).updateTaskFlowEmployee(profileId, employeeId, draft);
+  return payload.employee || null;
+}
+
+export async function deleteTaskFlowEmployee(api: unknown, profileId: string, employeeId: string) {
+  await coerceTaskFlowApi(api).deleteTaskFlowEmployee(profileId, employeeId);
 }
 
 export async function getTaskFlowBoard(api: unknown, profileId: string, flowId: string, config: TaskFlowConfig) {

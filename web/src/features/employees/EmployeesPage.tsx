@@ -15,9 +15,11 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useState, type For
 import type { AppRouteProps, RouteHandle } from "@/app/routes";
 import {
   createTaskFlowEmployee,
+  deleteTaskFlowEmployee,
   getTaskFlowOrgChart,
   listTaskFlowEmployees,
   resolveTaskFlowError,
+  updateTaskFlowEmployee,
 } from "@/features/task-flow/model/task-flow.api";
 import type { TaskFlowEmployee, TaskFlowEmployeeDraft, TaskFlowOrgChart } from "@/features/task-flow/model/task-flow.types";
 import { ModalDialog } from "@/shared/ui/ModalDialog";
@@ -32,6 +34,8 @@ export const EmployeesPage = forwardRef<RouteHandle, AppRouteProps>(function Emp
 ) {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [createParentId, setCreateParentId] = useState<string>("");
+  const [editingEmployeeId, setEditingEmployeeId] = useState<string>("");
+  const [deletingEmployeeId, setDeletingEmployeeId] = useState<string>("");
   const [layoutMode, setLayoutMode] = useState<"tree" | "compact">("tree");
   const [layoutVersion, setLayoutVersion] = useState(0);
 
@@ -59,6 +63,31 @@ export const EmployeesPage = forwardRef<RouteHandle, AppRouteProps>(function Emp
     onError: (error) => notify(resolveTaskFlowError(error), "danger"),
   });
 
+  const updateEmployeeMutation = useMutation({
+    mutationFn: ({ employeeId, draft }: { employeeId: string; draft: TaskFlowEmployeeDraft }) =>
+      updateTaskFlowEmployee(api, profileId, employeeId, draft),
+    onSuccess: async (employee) => {
+      setEditingEmployeeId("");
+      if (employee?.id) {
+        setSelectedEmployeeId(employee.id);
+      }
+      await refresh();
+      notify("Employee updated", "success");
+    },
+    onError: (error) => notify(resolveTaskFlowError(error), "danger"),
+  });
+
+  const deleteEmployeeMutation = useMutation({
+    mutationFn: (employeeId: string) => deleteTaskFlowEmployee(api, profileId, employeeId),
+    onSuccess: async () => {
+      setDeletingEmployeeId("");
+      setSelectedEmployeeId("");
+      await refresh();
+      notify("Employee deleted", "success");
+    },
+    onError: (error) => notify(resolveTaskFlowError(error), "danger"),
+  });
+
   const refresh = async () => {
     await Promise.all([employeesQuery.refetch(), orgChartQuery.refetch()]);
   };
@@ -69,10 +98,18 @@ export const EmployeesPage = forwardRef<RouteHandle, AppRouteProps>(function Emp
   const employeeRows = useMemo(() => buildEmployeeRows(orgChart), [orgChart]);
   const graph = useMemo(() => buildGraph(orgChart, layoutMode), [orgChart, layoutMode]);
   const selectedEmployee = selectedEmployeeId ? orgChart?.employees[selectedEmployeeId] || null : null;
+  const editingEmployee = editingEmployeeId ? orgChart?.employees[editingEmployeeId] || null : null;
+  const deletingEmployee = deletingEmployeeId ? orgChart?.employees[deletingEmployeeId] || null : null;
   const createParent = createParentId && createParentId !== ROOT_CREATE_ID ? orgChart?.employees[createParentId] || null : null;
   const defaultCreateParentId = employeeRows.some((employee) => employee.id === "cto") ? "cto" : ROOT_CREATE_ID;
   const loading = (employeesQuery.isFetching && !employeesQuery.data) || (orgChartQuery.isFetching && !orgChart);
   const error = employeesQuery.error || orgChartQuery.error;
+
+  useEffect(() => {
+    if (selectedEmployeeId && orgChart && !orgChart.employees[selectedEmployeeId]) {
+      setSelectedEmployeeId("");
+    }
+  }, [orgChart, selectedEmployeeId]);
 
   return (
     <section className="route-page employees-page">
@@ -178,14 +215,43 @@ export const EmployeesPage = forwardRef<RouteHandle, AppRouteProps>(function Emp
         </div>
       )}
 
-      <EmployeeDetailsModal employee={selectedEmployee} onClose={() => setSelectedEmployeeId("")} />
-      <CreateEmployeeModal
+      <EmployeeDetailsModal
+        busy={deleteEmployeeMutation.isPending}
+        employee={selectedEmployee}
+        onClose={() => setSelectedEmployeeId("")}
+        onDelete={(employeeId) => setDeletingEmployeeId(employeeId)}
+        onEdit={(employeeId) => setEditingEmployeeId(employeeId)}
+      />
+      <EmployeeFormModal
         busy={createEmployeeMutation.isPending}
         employeeCount={employeeRows.length}
+        employees={employeeRows}
+        mode="create"
         onClose={() => setCreateParentId("")}
         onSubmit={(draft) => createEmployeeMutation.mutate(draft)}
         parent={createParent}
         parentId={createParentId}
+      />
+      <EmployeeFormModal
+        busy={updateEmployeeMutation.isPending}
+        employee={editingEmployee}
+        employeeCount={employeeRows.length}
+        employees={employeeRows}
+        mode="edit"
+        onClose={() => setEditingEmployeeId("")}
+        onSubmit={(draft) => {
+          if (editingEmployee?.id) {
+            updateEmployeeMutation.mutate({ employeeId: editingEmployee.id, draft });
+          }
+        }}
+        parent={editingEmployee?.manager_id ? orgChart?.employees[editingEmployee.manager_id] || null : null}
+        parentId={editingEmployee?.manager_id || ROOT_CREATE_ID}
+      />
+      <DeleteEmployeeModal
+        busy={deleteEmployeeMutation.isPending}
+        employee={deletingEmployee}
+        onClose={() => setDeletingEmployeeId("")}
+        onConfirm={(employeeId) => deleteEmployeeMutation.mutate(employeeId)}
       />
     </section>
   );
@@ -238,12 +304,24 @@ function EmployeeGraph({
   );
 }
 
-function EmployeeDetailsModal({ employee, onClose }: { employee: TaskFlowEmployee | null | undefined; onClose: () => void }) {
+function EmployeeDetailsModal({
+  busy,
+  employee,
+  onClose,
+  onDelete,
+  onEdit,
+}: {
+  busy: boolean;
+  employee: TaskFlowEmployee | null | undefined;
+  onClose: () => void;
+  onDelete: (employeeId: string) => void;
+  onEdit: (employeeId: string) => void;
+}) {
   if (!employee) {
     return null;
   }
   return (
-    <ModalDialog closeLabel="Close employee details" eyebrow={employee.id} onClose={onClose} open title={employee.name} wide>
+    <ModalDialog busy={busy} closeLabel="Close employee details" eyebrow={employee.id} onClose={onClose} open title={employee.name} wide>
       <div className="modal-section">
         <p className="muted">{employee.title} · {employee.role}</p>
         <p>{employee.body || "No employee brief yet."}</p>
@@ -255,49 +333,77 @@ function EmployeeDetailsModal({ employee, onClose }: { employee: TaskFlowEmploye
           {employee.allowed_tools?.length ? <span className="badge badge--ai">{employee.allowed_tools.length} tools</span> : null}
           {employee.can_use_subagents ? <span className="badge badge--live">subagents</span> : null}
         </div>
+        <div className="modal-actions">
+          <button className="button button--ghost" disabled={busy} onClick={() => onEdit(employee.id)} type="button">
+            Edit
+          </button>
+          <button className="button button--danger" disabled={busy} onClick={() => onDelete(employee.id)} type="button">
+            Delete
+          </button>
+        </div>
       </div>
     </ModalDialog>
   );
 }
 
-function CreateEmployeeModal({
+function EmployeeFormModal({
   busy,
+  employee,
   employeeCount,
+  employees,
+  mode,
   onClose,
   onSubmit,
   parent,
   parentId,
 }: {
   busy: boolean;
+  employee?: TaskFlowEmployee | null;
   employeeCount: number;
+  employees: TaskFlowEmployee[];
+  mode: "create" | "edit";
   onClose: () => void;
   onSubmit: (draft: TaskFlowEmployeeDraft) => void;
   parent: TaskFlowEmployee | null | undefined;
   parentId: string;
 }) {
-  const [draft, setDraft] = useState(() => defaultEmployeeDraft(parentId, employeeCount));
+  const [draft, setDraft] = useState(() => employeeToDraft(employee) || defaultEmployeeDraft(parentId, employeeCount));
   useEffect(() => {
-    setDraft(defaultEmployeeDraft(parentId, employeeCount));
-  }, [employeeCount, parentId]);
+    setDraft(employeeToDraft(employee) || defaultEmployeeDraft(parentId, employeeCount));
+  }, [employee, employeeCount, parentId]);
 
-  if (!parentId) {
+  if (mode === "create" && !parentId) {
+    return null;
+  }
+  if (mode === "edit" && !employee) {
     return null;
   }
   const update = (patch: Partial<TaskFlowEmployeeDraft>) => setDraft((current) => ({ ...current, ...patch }));
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    onSubmit({ ...draft, manager_id: parentId === ROOT_CREATE_ID ? null : parentId });
+    onSubmit({
+      ...draft,
+      allowed_tools: draft.allowed_tools || [],
+      manager_id: draft.manager_id === ROOT_CREATE_ID ? null : draft.manager_id || null,
+      status: draft.status || "active",
+      subagent_allowlist: draft.subagent_allowlist || [],
+    });
   };
+  const unavailableManagerIds = new Set([employee?.id || "", ...(employee?.derived_reports || [])].filter(Boolean));
+  const managerOptions = employees.filter((item) => !unavailableManagerIds.has(item.id));
+  const toolsValue = (draft.allowed_tools || []).join(", ");
+  const subagentsValue = (draft.subagent_allowlist || []).join(", ");
+  const isEdit = mode === "edit";
 
   return (
     <ModalDialog
       busy={busy}
-      closeLabel="Close employee creation"
+      closeLabel={isEdit ? "Close employee editor" : "Close employee creation"}
       description={parent ? `Reports to ${parent.name}` : "Root employee for this profile"}
-      eyebrow="New Employee"
+      eyebrow={isEdit ? draft.id : "New Employee"}
       onClose={onClose}
       open={Boolean(parentId)}
-      title="Create Employee"
+      title={isEdit ? "Edit Employee" : "Create Employee"}
       wide
     >
       <form className="modal-form" onSubmit={handleSubmit}>
@@ -305,7 +411,7 @@ function CreateEmployeeModal({
           <label className="field">
             <span>ID</span>
             <input
-              disabled={busy}
+              disabled={busy || isEdit}
               onChange={(event) => update({ id: slugifyEmployeeId(event.target.value) })}
               required
               value={draft.id}
@@ -317,7 +423,7 @@ function CreateEmployeeModal({
               disabled={busy}
               onChange={(event) => {
                 const name = event.target.value;
-                update({ id: slugifyEmployeeId(name), name, title: draft.title || name });
+                update({ id: isEdit ? draft.id : slugifyEmployeeId(name), name, title: draft.title || name });
               }}
               required
               value={draft.name}
@@ -331,7 +437,60 @@ function CreateEmployeeModal({
             <span>Role</span>
             <input disabled={busy} onChange={(event) => update({ role: slugifyEmployeeId(event.target.value) })} required value={draft.role} />
           </label>
+          <label className="field">
+            <span>Status</span>
+            <select disabled={busy} onChange={(event) => update({ status: event.target.value as TaskFlowEmployeeDraft["status"] })} value={draft.status || "active"}>
+              <option value="active">active</option>
+              <option value="disabled">disabled</option>
+              <option value="archived">archived</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Manager</span>
+            <select
+              disabled={busy}
+              onChange={(event) => update({ manager_id: event.target.value || null })}
+              value={draft.manager_id || ""}
+            >
+              <option value="">Root employee</option>
+              {managerOptions.map((item) => (
+                <option key={item.id} value={item.id}>{item.name} ({item.id})</option>
+              ))}
+            </select>
+          </label>
         </div>
+        <div className="form-grid form-grid--two">
+          <label className="field">
+            <span>Allowed tools</span>
+            <input
+              disabled={busy}
+              onChange={(event) => update({ allowed_tools: parseCsv(event.target.value) })}
+              placeholder="task.*, file.read"
+              value={toolsValue}
+            />
+          </label>
+          <label className="field">
+            <span>Subagent allowlist</span>
+            <input
+              disabled={busy}
+              onChange={(event) => update({ subagent_allowlist: parseCsv(event.target.value) })}
+              placeholder="reviewer, researcher"
+              value={subagentsValue}
+            />
+          </label>
+        </div>
+        <label className="field field--checkbox">
+          <span>Runtime permissions</span>
+          <span className="checkbox-row">
+            <input
+              checked={Boolean(draft.can_use_subagents)}
+              disabled={busy}
+              onChange={(event) => update({ can_use_subagents: event.target.checked })}
+              type="checkbox"
+            />
+            <span>Can invoke subagent tools from employee sessions</span>
+          </span>
+        </label>
         <label className="field">
           <span>Description</span>
           <textarea disabled={busy} onChange={(event) => update({ body: event.target.value })} rows={6} value={draft.body || ""} />
@@ -341,10 +500,51 @@ function CreateEmployeeModal({
             Cancel
           </button>
           <button className="button button--primary" disabled={busy || !draft.id || !draft.name || !draft.title || !draft.role} type="submit">
-            Create
+            {isEdit ? "Save" : "Create"}
           </button>
         </div>
       </form>
+    </ModalDialog>
+  );
+}
+
+function DeleteEmployeeModal({
+  busy,
+  employee,
+  onClose,
+  onConfirm,
+}: {
+  busy: boolean;
+  employee: TaskFlowEmployee | null | undefined;
+  onClose: () => void;
+  onConfirm: (employeeId: string) => void;
+}) {
+  if (!employee) {
+    return null;
+  }
+  const reportCount = employee.derived_reports?.length || 0;
+  const blockedByReports = reportCount > 0;
+
+  return (
+    <ModalDialog busy={busy} closeLabel="Close delete employee modal" eyebrow={employee.id} onClose={onClose} open title={`Delete ${employee.name}`} wide>
+      <div className="modal-section">
+        <p className="muted">
+          Delete this employee descriptor from the selected profile. Task Flow tasks, flows, review assignments, and reports must be reassigned first.
+        </p>
+        {blockedByReports ? (
+          <div className="inline-alert inline-alert--danger" role="alert">
+            This employee manages {reportCount} report{reportCount === 1 ? "" : "s"}. Reassign or delete those employees before removing this manager.
+          </div>
+        ) : null}
+        <div className="modal-actions">
+          <button className="button button--ghost" disabled={busy} onClick={onClose} type="button">
+            Cancel
+          </button>
+          <button className="button button--danger" disabled={busy || blockedByReports} onClick={() => onConfirm(employee.id)} type="button">
+            {busy ? "Deleting…" : "Delete Employee"}
+          </button>
+        </div>
+      </div>
     </ModalDialog>
   );
 }
@@ -446,9 +646,42 @@ function defaultEmployeeDraft(parentId: string, employeeCount: number): TaskFlow
     manager_id: parentId === ROOT_CREATE_ID ? null : parentId || null,
     name: isRoot ? "CTO" : "",
     role: isRoot ? "executive_orchestrator" : "specialist",
+    status: "active",
     subagent_allowlist: [],
     title: isRoot ? "Technical Director" : "",
   };
+}
+
+function employeeToDraft(employee: TaskFlowEmployee | null | undefined): TaskFlowEmployeeDraft | null {
+  if (!employee) {
+    return null;
+  }
+  return {
+    allowed_tools: employee.allowed_tools || [],
+    body: employee.body || "",
+    can_use_subagents: Boolean(employee.can_use_subagents),
+    id: employee.id,
+    manager_id: employee.manager_id || null,
+    name: employee.name,
+    role: employee.role,
+    status: employee.status === "disabled" || employee.status === "archived" ? employee.status : "active",
+    subagent_allowlist: employee.subagent_allowlist || [],
+    title: employee.title,
+  };
+}
+
+function parseCsv(value: string): string[] {
+  const seen = new Set<string>();
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => {
+      if (!item || seen.has(item)) {
+        return false;
+      }
+      seen.add(item);
+      return true;
+    });
 }
 
 function slugifyEmployeeId(value: string) {

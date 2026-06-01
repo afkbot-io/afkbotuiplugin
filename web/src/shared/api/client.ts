@@ -236,6 +236,21 @@ export class ApiClient {
     });
   }
 
+  async updateTaskFlowEmployee(profileId: string, employeeId: string, payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>(`/task-flow/employees/${encodeURIComponent(employeeId)}`, {
+      body: payload,
+      method: "PUT",
+      params: { profile_id: profileId },
+    });
+  }
+
+  async deleteTaskFlowEmployee(profileId: string, employeeId: string) {
+    return this.request<Record<string, unknown>>(`/task-flow/employees/${encodeURIComponent(employeeId)}`, {
+      method: "DELETE",
+      params: { profile_id: profileId },
+    });
+  }
+
   async getTaskFlowOrgChart(profileId: string) {
     return this.request<Record<string, unknown>>("/task-flow/org-chart", {
       params: { profile_id: profileId },

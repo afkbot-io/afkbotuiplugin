@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.5 - 2026-06-01
+
+- add full employee edit and delete flows from the Employees graph detail modal
+- expose Task Flow employee update/delete API routes with conflict responses for employees that still own Task Flow references or manage reports
+- extend employee forms with manager, status, allowed tools, subagent permission, and subagent allowlist fields
+- sync release metadata to version `1.0.5`
+
 ## 1.0.4 - 2026-06-01
 
 - expand Employees into a full-width React Flow workspace, remove the persistent roster side panel, and open employee details in a modal from graph node clicks
