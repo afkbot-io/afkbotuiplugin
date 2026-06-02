@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.9 - 2026-06-02
+
+- require AFKBOT `1.9.14+` so Task Flow UI installs only on the core release
+  that treats the actual uv-tool receipt as the source of truth for update
+  replay
+- sync release metadata to version `1.0.9`
+
 ## 1.0.8 - 2026-06-02
 
 - require AFKBOT `1.9.13+` so uv-tool GitHub installs stay on the GitHub/archive
