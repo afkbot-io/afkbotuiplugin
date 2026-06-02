@@ -528,6 +528,34 @@ describe("TaskFlowPage", () => {
     dateNowSpy.mockRestore();
   });
 
+  it("marks manager escalation tasks with their source task", async () => {
+    const escalationTask = buildTask({
+      flow_id: "flow-alpha",
+      id: "task-escalation",
+      labels: ["manager-escalation", "autonomous-routing"],
+      source_ref: "task-blocked",
+      source_type: "manager_escalation",
+      status: "todo",
+      title: "Manager escalation for blocked work",
+    });
+
+    renderTaskFlowPage({
+      api: createApi({
+        taskItems: [escalationTask],
+      }),
+    });
+
+    const card = (await screen.findByText("Manager escalation for blocked work")).closest(".task-card");
+    expect(card).not.toBeNull();
+    expect(within(card as HTMLElement).getByText("Alpha Project")).toHaveAttribute("title", "flow-alpha");
+    expect(within(card as HTMLElement).getByText("manager escalation: task-blocked")).toHaveAttribute(
+      "aria-label",
+      "Manager escalation source task task-blocked",
+    );
+    expect(within(card as HTMLElement).getByText("autonomous-routing")).toBeInTheDocument();
+    expect(within(card as HTMLElement).queryByText("manager-escalation")).not.toBeInTheDocument();
+  });
+
   it("keeps board refresh controls stable during background polling", async () => {
     const api = createApi();
 

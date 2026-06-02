@@ -1,5 +1,7 @@
 export type TaskFlowActorType = "employee" | "human" | string;
 
+export type TaskFlowSourceType = "manager_escalation" | string;
+
 export type TaskFlowStatus =
   | "plan"
   | "todo"
@@ -118,6 +120,8 @@ export type TaskFlowTask = {
   requires_review?: boolean | null;
   reviewer_ref?: string | null;
   reviewer_type?: TaskFlowActorType | null;
+  source_ref?: string | null;
+  source_type?: TaskFlowSourceType | null;
   status: TaskFlowStatus;
   title: string;
 };

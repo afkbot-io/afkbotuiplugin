@@ -2,6 +2,15 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.10 - 2026-06-02
+
+- require AFKBOT `1.9.15+` so manager escalation task badges are only shown
+  against a core runtime that creates and wakes autonomous recovery tasks
+- show Task Flow manager escalation source badges and task labels directly on
+  board cards so blocked-work recovery chains are readable without opening the
+  task inspector
+- sync release metadata to version `1.0.10`
+
 ## 1.0.9 - 2026-06-02
 
 - require AFKBOT `1.9.14+` so Task Flow UI installs only on the core release

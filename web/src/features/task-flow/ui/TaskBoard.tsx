@@ -31,6 +31,9 @@ type TaskBoardProps = {
   selectedTaskIds: Set<string>;
 };
 
+const MANAGER_ESCALATION_LABEL = "manager-escalation";
+const MANAGER_ESCALATION_SOURCE_TYPE = "manager_escalation";
+
 export function TaskBoard({
   board,
   boardRef,
@@ -140,6 +143,11 @@ function TaskCard({
   const activeSession = task.active_session?.dialog_active;
   const runningElapsed = formatTaskRunningElapsed(task);
   const disabled = isActiveRuntimeStatus(task.status);
+  const sourceLabel = formatTaskSourceLabel(task.source_type);
+  const taskLabels = (task.labels || [])
+    .filter((label) => label && (!sourceLabel || label.toLowerCase() !== MANAGER_ESCALATION_LABEL))
+    .slice(0, 3);
+  const sourceBadgeText = task.source_ref ? `${sourceLabel}: ${task.source_ref}` : sourceLabel;
 
   return (
     <article
@@ -181,6 +189,20 @@ function TaskCard({
             {formatTaskPriorityLabel(task.priority)}
           </span>
           {flowTitle ? <span className="badge" title={task.flow_id || undefined}>{flowTitle}</span> : null}
+          {sourceLabel ? (
+            <span
+              aria-label={task.source_ref ? `Manager escalation source task ${task.source_ref}` : sourceLabel}
+              className="badge badge--review"
+              title={task.source_ref ? `Source task ${task.source_ref}` : undefined}
+            >
+              {sourceBadgeText}
+            </span>
+          ) : null}
+          {taskLabels.map((label) => (
+            <span className="badge badge--muted" key={label}>
+              {label}
+            </span>
+          ))}
           {task.requires_review ? <span className="badge badge--warning">review</span> : null}
           {task.last_comment_created_at ? <span className="badge badge--muted">{formatDateTime(task.last_comment_created_at)}</span> : null}
           {task.due_at ? (
@@ -190,4 +212,11 @@ function TaskCard({
       </button>
     </article>
   );
+}
+
+function formatTaskSourceLabel(sourceType?: string | null) {
+  if (sourceType === MANAGER_ESCALATION_SOURCE_TYPE) {
+    return "manager escalation";
+  }
+  return "";
 }
