@@ -533,6 +533,8 @@ describe("TaskFlowPage", () => {
 
     await user.click(screen.getByRole("button", { name: /fix planner output/i }));
     expect(await screen.findByText("Inspector")).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Task sections" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Jump to Comments" }));
 
     const titleInput = screen.getByDisplayValue("Fix planner output");
     await user.clear(titleInput);

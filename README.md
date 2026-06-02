@@ -2,7 +2,7 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, and profile-local text libraries.
 
-Current release: `1.0.5`
+Current release: `1.0.6`
 
 ## Overview
 
@@ -18,7 +18,7 @@ Current frontend/runtime contract:
 
 The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*` or `web/dist/assets/features/*` payloads.
 
-## What Is In 1.0.5
+## What Is In 1.0.6
 
 - single-shell workspace with `Automations`, `Task Flow`, `Subagents`, `Skills`, and `Bootstrap`
 - React-native route surfaces for every section, with shared loaders, dialogs, async buttons, and responsive layout primitives
@@ -27,14 +27,15 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 - operator auth integration with login redirect, session badge, logout, and fail-closed handling when AFKBOT auth endpoints are missing
 - masked webhook metadata in ordinary automation list/detail payloads, with reveal only through `/automations/{id}/webhook-endpoint`
 - automation inspector with cron/webhook diagnostics, copy actions, graph preview, runtime path, and webhook URL rotation
-- Task Flow board with Plan-first status ordering, flow management modal, per-flow filtering, stable silent polling, inspector, review flows, comments, dependencies, runs, session activity, and live chat-style activity modal
+- Task Flow board with Plan-first status ordering, flow management modal, per-flow filtering, stable silent polling, inspector, review flows, comments, dependencies, runs, session activity, local inspector section navigation, and live chat-style activity modal
 - Task Flow Employee Feed, context bundle, and flow/task document controls expose employee assignments, wake signals, plans, specs, handoffs, and confirmed revisions directly in the board and flow library
 - Task Flow employees are profile-local workforce descriptors; profile is the organization boundary, flow is the project, and owner/reviewer/actor controls use canonical `employee` principals
 - Task Flow employee settings and org chart views show managers, direct reports, delegation scope, and runtime-safe owner choices without treating CLI subagents as Task Flow owners
 - Employees is a first-class workspace route with a full-width React Flow org chart, tree/compact layout controls, click-through employee details, create/edit/delete modals, drag-from-node creation, delegation, tool policy, and org validation details
 - Task cards show human-readable flow title badges instead of raw flow ids
 - named Task Flow priority chips replace raw `pNN` scores with low-to-critical labels and direction markers
-- inspector discussion and live activity panels keep long content inside their panes, collapse oversized comments, and keep the comment composer at the bottom
+- inspector discussion and live activity panels keep long content inside their panes, collapse oversized comments, keep the comment composer at the bottom, and let operators jump directly to comments or activity from the task section menu
+- Task Flow comments normalize legacy `web-user` human placeholders to the validated local human principal required by AFKBOT core
 - Task Flow create/edit routes submit canonical `description` payloads while still reading legacy `prompt` tasks during mixed-version upgrades
 - profile-local CRUD surfaces for subagents, skills, and bootstrap files with richer markdown-derived summaries
 - last selected profile is restored when the workspace opens without an explicit profile parameter
@@ -75,8 +76,8 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 
 ## Requirements
 
-- AFKBOT UI `1.0.5`
-- AFKBOT `>=1.9.9,<2.0.0`
+- AFKBOT UI `1.0.6`
+- AFKBOT `>=1.9.11,<2.0.0`
 - current AFKBOT `1.x` auth/chat runtime surface, including:
   - `/v1/auth/session`
   - `/v1/auth/logout`

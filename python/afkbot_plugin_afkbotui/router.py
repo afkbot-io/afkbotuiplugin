@@ -30,6 +30,7 @@ from afkbot.services.profile_runtime import ProfileServiceError, get_profile_ser
 from afkbot.services.skills import get_profile_skill_service
 from afkbot.services.subagents.profile_service import get_profile_subagent_service
 from afkbot.services.task_flow import TaskFlowServiceError, get_task_flow_service
+from afkbot.services.task_flow.human_ref import resolve_local_human_ref
 from afkbot.settings import get_settings
 
 _TASK_COMMENT_PREVIEW_SCHEMA_READY = False
@@ -1140,12 +1141,18 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         profile_id: str = "default",
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.actor_type,
+            actor_ref=payload.actor_ref,
+            config=config,
+        )
         try:
             item = await service.add_task_comment(
                 profile_id=profile_id,
                 task_id=task_id,
-                actor_type=payload.actor_type,
-                actor_ref=payload.actor_ref,
+                actor_type=actor_type,
+                actor_ref=actor_ref,
                 message=payload.message,
                 comment_type=payload.comment_type,
                 task_run_id=payload.task_run_id,
@@ -1995,9 +2002,25 @@ def _normalize_task_flow_actor_type(value: object) -> str:
 
 def _normalize_task_flow_actor_ref(*, actor_type: str, value: object) -> str:
     raw = str(value or "").strip()
-    if actor_type == "human" and raw in {"", "default"}:
-        return "web-user"
-    return raw or ("web-user" if actor_type == "human" else "cto")
+    if actor_type == "human" and raw in {"", "default", "web-user"}:
+        return resolve_local_human_ref(get_settings())
+    return raw or (resolve_local_human_ref(get_settings()) if actor_type == "human" else "cto")
+
+
+def _resolve_task_flow_actor_identity(
+    *,
+    actor_type: object,
+    actor_ref: object,
+    config: UiPluginConfig,
+) -> tuple[str, str]:
+    """Resolve UI actor input into the public Task Flow principal identity."""
+
+    resolved_actor_type = _normalize_task_flow_actor_type(actor_type or config.task_flow_actor_type)
+    resolved_actor_ref = _normalize_task_flow_actor_ref(
+        actor_type=resolved_actor_type,
+        value=actor_ref or config.task_flow_actor_ref,
+    )
+    return resolved_actor_type, resolved_actor_ref
 
 
 def _automation_http_error(exc: AutomationsServiceError) -> HTTPException:

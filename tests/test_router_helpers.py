@@ -130,7 +130,7 @@ def test_infer_task_session_profile_id_uses_task_profile_for_employee_owner() ->
     assert _infer_task_session_profile_id(payload) == "backlog"
 
 
-def test_config_accepts_employee_task_flow_actor_type_and_normalizes_legacy_actor() -> None:
+def test_config_accepts_employee_task_flow_actor_type_and_normalizes_legacy_actor(monkeypatch) -> None:
     class FakeRegistry:
         def __init__(self) -> None:
             self._config: dict[str, object] = {
@@ -147,6 +147,8 @@ def test_config_accepts_employee_task_flow_actor_type_and_normalizes_legacy_acto
         def reset_config(self) -> None:
             self._config = {}
 
+    monkeypatch.setattr(router_module, "resolve_local_human_ref", lambda _settings: "cli_user:local")
+
     app = FastAPI()
     app.include_router(
         router_module.build_router(api_prefix="/v1/plugins/afkbotui", registry=FakeRegistry())
@@ -156,7 +158,7 @@ def test_config_accepts_employee_task_flow_actor_type_and_normalizes_legacy_acto
     legacy_response = client.get("/v1/plugins/afkbotui/config")
     assert legacy_response.status_code == 200
     assert legacy_response.json()["config"]["task_flow_actor_type"] == "human"
-    assert legacy_response.json()["config"]["task_flow_actor_ref"] == "web-user"
+    assert legacy_response.json()["config"]["task_flow_actor_ref"] == "cli_user:local"
 
     response = client.patch(
         "/v1/plugins/afkbotui/config",
@@ -402,6 +404,20 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
             }
             return Dumpable({"owner_ref": owner_ref, "owner_type": owner_type, "tasks": []})
 
+        async def add_task_comment(self, **kwargs: object) -> Dumpable:
+            observed["add_task_comment"] = kwargs
+            return Dumpable(
+                {
+                    "id": 1,
+                    "task_id": kwargs["task_id"],
+                    "actor_type": kwargs["actor_type"],
+                    "actor_ref": kwargs["actor_ref"],
+                    "message": kwargs["message"],
+                    "comment_type": kwargs["comment_type"],
+                    "created_at": "2026-06-02T00:00:00Z",
+                }
+            )
+
     class FakeRegistry:
         def read_config(self) -> dict[str, object]:
             return {"task_flow_actor_ref": "cto", "task_flow_actor_type": "employee"}
@@ -413,6 +429,7 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
             pass
 
     monkeypatch.setattr(router_module, "get_settings", lambda: object())
+    monkeypatch.setattr(router_module, "resolve_local_human_ref", lambda _settings: "cli_user:local")
     monkeypatch.setattr(router_module, "get_task_flow_service", lambda _settings: FakeTaskFlowService())
 
     app = FastAPI()
@@ -470,6 +487,20 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
     assert observed["build_agent_inbox"]["owner_ref"] == "researcher"
     assert observed["build_agent_inbox"]["task_limit"] == 30
     assert observed["build_agent_inbox"]["event_limit"] == 20
+
+    comment_response = client.post(
+        "/v1/plugins/afkbotui/task-flow/tasks/task-1/comments",
+        json={
+            "actor_ref": "web-user",
+            "actor_type": "human",
+            "message": "Operator note",
+        },
+        params={"profile_id": "default"},
+    )
+    assert comment_response.status_code == 200
+    assert observed["add_task_comment"]["actor_type"] == "human"
+    assert observed["add_task_comment"]["actor_ref"] == "cli_user:local"
+    assert observed["add_task_comment"]["message"] == "Operator note"
 
 
 def test_task_flow_employee_routes_expose_employee_roster_and_org_chart(monkeypatch) -> None:

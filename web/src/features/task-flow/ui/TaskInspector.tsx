@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { ActorRefField } from "@/features/task-flow/ui/ActorRefField";
 import { TaskSessionSummaryCard } from "@/features/task-flow/ui/TaskSessionSummaryCard";
@@ -83,6 +83,12 @@ export function TaskInspector({
     owner_type: "",
     reason_text: "",
   });
+  const editSectionRef = useRef<HTMLFormElement | null>(null);
+  const sessionSectionRef = useRef<HTMLElement | null>(null);
+  const reviewSectionRef = useRef<HTMLElement | null>(null);
+  const docsSectionRef = useRef<HTMLDivElement | null>(null);
+  const commentsSectionRef = useRef<HTMLElement | null>(null);
+  const activitySectionRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     setComment("");
@@ -135,6 +141,13 @@ export function TaskInspector({
     onRequestChanges(reviewDraft);
   };
 
+  const scrollToSection = (sectionRef: { current: HTMLElement | null }) => {
+    if (typeof sectionRef.current?.scrollIntoView !== "function") {
+      return;
+    }
+    sectionRef.current.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+
   const handleReviewOwnerTypeChange = (ownerType: string) => {
     setReviewDraft((current) => ({
       ...current,
@@ -164,47 +177,56 @@ export function TaskInspector({
         </button>
       </div>
       <div className="task-inspector__body">
-        <form className="editor-form" onSubmit={handleSubmit}>
-          <TaskFormFields
-            config={config}
-            draft={draft}
-            onChange={onDraftChange}
-            profileId={profileId}
-            profiles={profiles}
-            showBlockedReason
-            showStatus
-            employees={employees}
-          />
-          {error ? <div className="inline-alert inline-alert--danger" role="alert">{error}</div> : null}
-          <div className="button-row">
-            <AsyncButton className="button button--primary" idleLabel="Save Task" loading={saving} pendingLabel="Saving…" type="submit" />
-            <button className="button button--danger" disabled={saving} onClick={onDelete} type="button">
-              Delete Task
-            </button>
-          </div>
-        </form>
-
-        {session?.session_id ? (
-          <section className="detail-section task-session-section">
-            <div className="panel-head panel-head--compact">
-              <div>
-                <p className="panel-head__eyebrow">Session</p>
-                <h4 className="panel-head__title">Employee Session</h4>
-              </div>
-            </div>
-            <TaskSessionSummaryCard
-              error={sessionError}
-              onOpen={onOpenSessionFeed}
-              onRefresh={onRefreshSession}
-              refreshing={sessionRefreshing}
-              sessionInsights={sessionInsights}
-              task={task}
+        <nav aria-label="Task sections" className="task-inspector__nav">
+          <TaskSectionNavButton label="Edit" shortLabel="E" onClick={() => scrollToSection(editSectionRef)} />
+          <TaskSectionNavButton disabled={!session?.session_id} label="Session" shortLabel="S" onClick={() => scrollToSection(sessionSectionRef)} />
+          <TaskSectionNavButton disabled={!reviewActionable} label="Review" shortLabel="R" onClick={() => scrollToSection(reviewSectionRef)} />
+          <TaskSectionNavButton disabled={!knowledgePanel} label="Docs" shortLabel="D" onClick={() => scrollToSection(docsSectionRef)} />
+          <TaskSectionNavButton label="Comments" shortLabel="C" onClick={() => scrollToSection(commentsSectionRef)} />
+          <TaskSectionNavButton label="Activity" shortLabel="A" onClick={() => scrollToSection(activitySectionRef)} />
+        </nav>
+        <div className="task-inspector__sections">
+          <form className="editor-form" onSubmit={handleSubmit} ref={editSectionRef}>
+            <TaskFormFields
+              config={config}
+              draft={draft}
+              onChange={onDraftChange}
+              profileId={profileId}
+              profiles={profiles}
+              showBlockedReason
+              showStatus
+              employees={employees}
             />
-          </section>
-        ) : null}
+            {error ? <div className="inline-alert inline-alert--danger" role="alert">{error}</div> : null}
+            <div className="button-row">
+              <AsyncButton className="button button--primary" idleLabel="Save Task" loading={saving} pendingLabel="Saving…" type="submit" />
+              <button className="button button--danger" disabled={saving} onClick={onDelete} type="button">
+                Delete Task
+              </button>
+            </div>
+          </form>
 
-        {reviewActionable ? (
-          <section className="detail-section">
+          {session?.session_id ? (
+            <section className="detail-section task-session-section" ref={sessionSectionRef}>
+              <div className="panel-head panel-head--compact">
+                <div>
+                  <p className="panel-head__eyebrow">Session</p>
+                  <h4 className="panel-head__title">Employee Session</h4>
+                </div>
+              </div>
+              <TaskSessionSummaryCard
+                error={sessionError}
+                onOpen={onOpenSessionFeed}
+                onRefresh={onRefreshSession}
+                refreshing={sessionRefreshing}
+                sessionInsights={sessionInsights}
+                task={task}
+              />
+            </section>
+          ) : null}
+
+          {reviewActionable ? (
+            <section className="detail-section" ref={reviewSectionRef}>
             <div className="panel-head panel-head--compact">
               <div>
                 <p className="panel-head__eyebrow">Review</p>
@@ -253,12 +275,14 @@ export function TaskInspector({
                 Request Changes
               </button>
             </div>
-          </section>
-        ) : null}
+            </section>
+          ) : null}
 
-        {knowledgePanel}
+          <div className="task-inspector__anchor" ref={docsSectionRef}>
+            {knowledgePanel}
+          </div>
 
-        <section className="detail-section">
+          <section className="detail-section" ref={commentsSectionRef}>
           <div className="panel-head panel-head--compact">
             <div>
               <p className="panel-head__eyebrow">Comments</p>
@@ -312,9 +336,9 @@ export function TaskInspector({
             </label>
             <AsyncButton className="button button--primary" idleLabel="Send Comment" loading={commenting} pendingLabel="Sending…" type="submit" />
           </form>
-        </section>
+          </section>
 
-        <section className="detail-section">
+          <section className="detail-section" ref={activitySectionRef}>
           <div className="panel-head panel-head--compact">
             <div>
               <p className="panel-head__eyebrow">Runs & Events</p>
@@ -345,8 +369,31 @@ export function TaskInspector({
               <p className="muted-copy">No runs yet.</p>
             )}
           </div>
-        </section>
+          </section>
+        </div>
       </div>
     </aside>
+  );
+}
+
+type TaskSectionNavButtonProps = {
+  disabled?: boolean;
+  label: string;
+  onClick: () => void;
+  shortLabel: string;
+};
+
+function TaskSectionNavButton({ disabled = false, label, onClick, shortLabel }: TaskSectionNavButtonProps) {
+  return (
+    <button
+      aria-label={`Jump to ${label}`}
+      className="task-inspector__nav-button"
+      disabled={disabled}
+      onClick={onClick}
+      title={label}
+      type="button"
+    >
+      {shortLabel}
+    </button>
   );
 }

@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.6 - 2026-06-02
+
+- normalize legacy `web-user` human actor placeholders to the validated local human principal before Task Flow comment writes
+- add compact in-task section navigation for edit, session, review, docs, comments, and activity
+- require AFKBOT `1.9.11+` for manager reassignment blocker feed escalation
+- sync release metadata to version `1.0.6`
+
 ## 1.0.5 - 2026-06-01
 
 - add full employee edit and delete flows from the Employees graph detail modal
