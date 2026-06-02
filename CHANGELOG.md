@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.8 - 2026-06-02
+
+- require AFKBOT `1.9.13+` so uv-tool GitHub installs stay on the GitHub/archive
+  source even when stale package install metadata exists from an older update
+- sync release metadata to version `1.0.8`
+
 ## 1.0.7 - 2026-06-02
 
 - allow Task Flow tasks to move out of `Blocked` by explicitly clearing blocker
