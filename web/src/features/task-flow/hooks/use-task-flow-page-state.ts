@@ -13,6 +13,7 @@ import type {
   TaskFlowProject,
   TaskFlowProjectDraft,
   TaskFlowReviewDraft,
+  TaskFlowSettingsDraft,
   TaskFlowTask,
   TaskFlowTaskDraft,
 } from "@/features/task-flow/model/task-flow.types";
@@ -30,7 +31,7 @@ type CreateTaskState = {
 };
 
 type SettingsState = {
-  draft: ReturnType<typeof settingsDraftFromConfig>;
+  draft: TaskFlowSettingsDraft;
   error: string;
 };
 
@@ -146,7 +147,7 @@ export function useTaskFlowPageState({
         setActiveModal("delete-selected");
         setDeleteState((current) => ({ ...current, error: "" }));
       },
-      openAgentFeedModal() {
+      openEmployeeFeedModal() {
         setActiveModal("agent-feed");
       },
       openDeleteTaskModal() {

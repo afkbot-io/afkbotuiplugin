@@ -8,15 +8,16 @@ type TaskFlowHeaderProps = {
   onClearSelection: () => void;
   onCreateTask: () => void;
   onDeleteSelected: () => void;
+  onOpenEmployees: () => void;
   onFilterChange: (flowId: string) => void;
-  onOpenAgentFeed: () => void;
+  onOpenEmployeeFeed: () => void;
   onManageFlows: () => void;
   onOpenReview: () => void;
   onOpenSettings: () => void;
   onRefresh: () => void;
-  agentFeedDisabled: boolean;
+  employeeFeedDisabled: boolean;
   refreshing: boolean;
-  agentFeedCount: number;
+  employeeFeedCount: number;
   reviewCount: number;
   selectedCount: number;
 };
@@ -27,15 +28,16 @@ export function TaskFlowHeader({
   onClearSelection,
   onCreateTask,
   onDeleteSelected,
+  onOpenEmployees,
   onFilterChange,
-  onOpenAgentFeed,
+  onOpenEmployeeFeed,
   onManageFlows,
   onOpenReview,
   onOpenSettings,
   onRefresh,
-  agentFeedDisabled,
+  employeeFeedDisabled,
   refreshing,
-  agentFeedCount,
+  employeeFeedCount,
   reviewCount,
   selectedCount,
 }: TaskFlowHeaderProps) {
@@ -70,12 +72,15 @@ export function TaskFlowHeader({
           </button>
           <button
             className="button button--ghost button--compact"
-            disabled={agentFeedDisabled}
-            onClick={onOpenAgentFeed}
-            title={agentFeedDisabled ? "Select an AI profile or subagent actor in Task Flow settings." : undefined}
+            disabled={employeeFeedDisabled}
+            onClick={onOpenEmployeeFeed}
+            title={employeeFeedDisabled ? "Select the root employee or an employee in Task Flow settings." : undefined}
             type="button"
           >
-            Agent Feed <span className="button__count">{agentFeedCount}</span>
+            Employee Feed <span className="button__count">{employeeFeedCount}</span>
+          </button>
+          <button className="button button--ghost button--compact" onClick={onOpenEmployees} type="button">
+            Employees
           </button>
           <button className="button button--ghost button--compact" onClick={onOpenSettings} type="button">
             Settings

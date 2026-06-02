@@ -13,8 +13,7 @@ import {
   truncate,
 } from "@/features/task-flow/model/task-flow.presentation";
 import {
-  TASK_FLOW_AI_PROFILE_TYPE,
-  TASK_FLOW_AI_SUBAGENT_TYPE,
+  TASK_FLOW_EMPLOYEE_TYPE,
   TASK_FLOW_HUMAN_TYPE,
   resolveActorRefForType,
 } from "@/features/task-flow/model/task-flow.api";
@@ -25,7 +24,7 @@ import type {
   TaskFlowProfile,
   TaskFlowProject,
   TaskFlowProjectDraft,
-  TaskFlowSubagent,
+  TaskFlowEmployeeOption,
 } from "@/features/task-flow/model/task-flow.types";
 import { AsyncButton } from "@/shared/ui/AsyncButton";
 import { ModalDialog } from "@/shared/ui/ModalDialog";
@@ -59,7 +58,7 @@ type ManageProjectsModalProps = {
   pendingDeleteId: string;
   profileId: string;
   profiles: TaskFlowProfile[];
-  subagents: TaskFlowSubagent[];
+  employees: TaskFlowEmployeeOption[];
 };
 
 export function ManageProjectsModal({
@@ -91,7 +90,7 @@ export function ManageProjectsModal({
   pendingDeleteId,
   profileId,
   profiles,
-  subagents,
+  employees,
 }: ManageProjectsModalProps) {
   const visibleFlows = getVisibleProjects(flows, activeFlowId, flowSearchQuery);
   const activeFlow = flows.find((item) => item.id === activeFlowId) || null;
@@ -105,7 +104,7 @@ export function ManageProjectsModal({
         previousType: draft.default_owner_type,
         profileId,
         profiles,
-        subagents,
+        employees,
         type: defaultOwnerType,
       }),
       default_owner_type: defaultOwnerType,
@@ -273,8 +272,7 @@ export function ManageProjectsModal({
                   value={draft.default_owner_type}
                 >
                   <option value="">None</option>
-                  <option value={TASK_FLOW_AI_PROFILE_TYPE}>AI Profile</option>
-                  <option value={TASK_FLOW_AI_SUBAGENT_TYPE}>Subagent</option>
+                  <option value={TASK_FLOW_EMPLOYEE_TYPE}>Employee</option>
                   <option value={TASK_FLOW_HUMAN_TYPE}>Human</option>
                 </select>
               </label>
@@ -285,7 +283,7 @@ export function ManageProjectsModal({
                 onChange={(value) => onDraftChange({ ...draft, default_owner_ref: value })}
                 profileId={profileId}
                 profiles={profiles}
-                subagents={subagents}
+                employees={employees}
                 typeValue={draft.default_owner_type}
                 value={draft.default_owner_ref}
               />
@@ -456,7 +454,7 @@ function FlowDocumentSection({
               <span className="field__label">Body</span>
               <textarea
                 onChange={(event) => setDraft((current) => ({ ...current, body: event.target.value }))}
-                placeholder="Persist the flow plan, spec, roadmap, or decisions for every agent in this project."
+                placeholder="Persist the flow plan, spec, roadmap, or decisions for every employee in this project."
                 rows={5}
                 value={draft.body}
               />

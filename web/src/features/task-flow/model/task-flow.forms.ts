@@ -4,21 +4,20 @@ import type {
   TaskFlowProjectDraft,
   TaskFlowReviewDraft,
   TaskFlowSettingsDraft,
-  TaskFlowSubagent,
+  TaskFlowEmployeeOption,
   TaskFlowTask,
   TaskFlowTaskDraft,
 } from "@/features/task-flow/model/task-flow.types";
 
-export const TASK_FLOW_AI_PROFILE_TYPE = "ai_profile";
-export const TASK_FLOW_AI_SUBAGENT_TYPE = "ai_subagent";
-export const TASK_FLOW_SUBAGENT_ALIAS_TYPE = "subagent";
+export const TASK_FLOW_EMPLOYEE_TYPE = "employee";
+export const TASK_FLOW_SUBAGENT_ALIAS_TYPE = "employee";
 export const TASK_FLOW_HUMAN_TYPE = "human";
-
 export const TASK_FLOW_STATUS_OPTIONS = ["plan", "todo", "blocked", "running", "review", "completed", "failed", "cancelled"] as const;
 
 type ActorRefValidationContext = {
   profileId: string;
-  subagents: TaskFlowSubagent[];
+  profiles?: TaskFlowProfile[];
+  employees: TaskFlowEmployeeOption[];
 };
 type ActorRefValidationLabel = "actor" | "default owner" | "owner" | "reviewer";
 
@@ -32,9 +31,10 @@ export function normalizeTaskFlowConfig(config: Record<string, unknown>): TaskFl
 }
 
 export function defaultProjectDraft(profiles: TaskFlowProfile[] = []): TaskFlowProjectDraft {
+  void profiles;
   return {
-    default_owner_ref: getProfileIdFallback(profiles),
-    default_owner_type: TASK_FLOW_AI_PROFILE_TYPE,
+    default_owner_ref: "",
+    default_owner_type: "",
     description: "",
     labels: "",
     title: "",
@@ -49,8 +49,8 @@ export function defaultTaskDraft(config: TaskFlowConfig, profiles: TaskFlowProfi
     due_at: "",
     flow_id: flowId,
     labels: "",
-    owner_ref: getProfileIdFallback(profiles),
-    owner_type: TASK_FLOW_AI_PROFILE_TYPE,
+    owner_ref: "",
+    owner_type: TASK_FLOW_EMPLOYEE_TYPE,
     priority: "50",
     description: "",
     requires_review: true,
@@ -109,9 +109,11 @@ export function validateProjectDraft(draft: TaskFlowProjectDraft, context?: Acto
   if (description.length > 2000) {
     return "Flow description must be 2000 characters or less.";
   }
-  const defaultOwnerError = validateSubagentActorRef(draft.default_owner_type, draft.default_owner_ref, "default owner", context);
-  if (defaultOwnerError) {
-    return defaultOwnerError;
+  if (draft.default_owner_type.trim() || draft.default_owner_ref.trim()) {
+    const defaultOwnerError = validateEmployeeScopedActorRef(draft.default_owner_type, draft.default_owner_ref, "default owner", context);
+    if (defaultOwnerError) {
+      return defaultOwnerError;
+    }
   }
   return "";
 }
@@ -140,11 +142,11 @@ export function validateTaskDraft(draft: TaskFlowTaskDraft, context?: ActorRefVa
       return "Due date must be a valid date and time.";
     }
   }
-  const ownerError = validateSubagentActorRef(draft.owner_type, draft.owner_ref, "owner", context);
+  const ownerError = validateEmployeeScopedActorRef(draft.owner_type, draft.owner_ref, "owner", context);
   if (ownerError) {
     return ownerError;
   }
-  const reviewerError = validateSubagentActorRef(draft.reviewer_type, draft.reviewer_ref, "reviewer", context);
+  const reviewerError = validateEmployeeScopedActorRef(draft.reviewer_type, draft.reviewer_ref, "reviewer", context);
   if (reviewerError) {
     return reviewerError;
   }
@@ -155,7 +157,7 @@ export function validateReviewDraft(draft: TaskFlowReviewDraft, context?: ActorR
   if (!draft.reason_text.trim()) {
     return "Change request reason is required.";
   }
-  return validateSubagentActorRef(draft.owner_type, draft.owner_ref, "owner", context);
+  return validateEmployeeScopedActorRef(draft.owner_type, draft.owner_ref, "owner", context);
 }
 
 export function validateSettingsDraft(draft: TaskFlowSettingsDraft, context?: ActorRefValidationContext) {
@@ -165,7 +167,7 @@ export function validateSettingsDraft(draft: TaskFlowSettingsDraft, context?: Ac
   if (normalizeNumberField(draft.task_flow_board_limit_per_column, { fallback: null, min: 1, max: 200 }) === null) {
     return "Board limit must be between 1 and 200 tasks per column.";
   }
-  const actorError = validateSubagentActorRef(draft.task_flow_actor_type, draft.task_flow_actor_ref, "actor", context);
+  const actorError = validateEmployeeScopedActorRef(draft.task_flow_actor_type, draft.task_flow_actor_ref, "actor", context);
   if (actorError) {
     return actorError;
   }
@@ -236,37 +238,37 @@ export function normalizeActorRef(type: unknown, value: unknown, config: TaskFlo
 
 export function normalizeActorType(value: unknown) {
   const normalized = String(value || "").trim();
-  if (normalized === TASK_FLOW_SUBAGENT_ALIAS_TYPE) {
-    return TASK_FLOW_AI_SUBAGENT_TYPE;
-  }
   return normalized;
 }
 
-export function isAiExecutorActorType(value: unknown) {
+export function isEmployeeActorType(value: unknown) {
   const normalized = normalizeActorType(value);
-  return normalized === TASK_FLOW_AI_PROFILE_TYPE || normalized === TASK_FLOW_AI_SUBAGENT_TYPE;
+  return normalized === TASK_FLOW_EMPLOYEE_TYPE;
 }
 
-export function getSubagentOwnerRefOptions(profileId: string, subagents: TaskFlowSubagent[]) {
+export function getEmployeeOwnerRefOptions(profileId: string, employees: TaskFlowEmployeeOption[]) {
   const normalizedProfileId = String(profileId || "").trim() || "default";
   const seen = new Set<string>();
-  return subagents.flatMap((subagent) => {
-    const name = String(subagent.name || "").trim();
+  return employees.flatMap((employee) => {
+    const name = String(employee.name || "").trim();
     if (!name) {
       return [];
     }
-    const value = `${normalizedProfileId}:${name}`;
+    const employeeProfileId = String(employee.profile_id || "").trim() || normalizedProfileId;
+    const value = String(employee.owner_ref || "").trim() || name;
     if (seen.has(value)) {
       return [];
     }
     seen.add(value);
-    return [
-      {
-        label: name,
-        summary: String(subagent.summary || "").trim(),
-        value,
-      },
-    ];
+    const status = String(employee.status || "active").trim() || "active";
+    const statusSuffix = status === "active" ? "" : ` (${status})`;
+    return [{
+      label: `${employeeProfileId === normalizedProfileId ? name : `${employeeProfileId}:${name}`}${statusSuffix}`,
+      profileId: employeeProfileId,
+      status,
+      summary: String(employee.summary || "").trim(),
+      value,
+    }];
   });
 }
 
@@ -277,7 +279,7 @@ export function resolveActorRefForType({
   profiles,
   profileId,
   previousType,
-  subagents,
+  employees,
   type,
 }: {
   allowBlank?: boolean;
@@ -286,7 +288,7 @@ export function resolveActorRefForType({
   previousType?: unknown;
   profiles: TaskFlowProfile[];
   profileId: string;
-  subagents: TaskFlowSubagent[];
+  employees: TaskFlowEmployeeOption[];
   type: unknown;
 }) {
   const normalizedType = normalizeActorType(type);
@@ -295,13 +297,10 @@ export function resolveActorRefForType({
   if (!normalizedType) {
     return "";
   }
-  if (normalizedType === TASK_FLOW_AI_PROFILE_TYPE) {
-    const profileIds = new Set(profiles.map((profile) => String(profile.id || "").trim()).filter(Boolean));
-    return profileIds.has(normalizedRef) ? normalizedRef : getProfileIdFallback(profiles);
-  }
-  if (normalizedType === TASK_FLOW_AI_SUBAGENT_TYPE) {
-    const options = getSubagentOwnerRefOptions(profileId, subagents);
-    if (normalizedPreviousType === normalizedType && isCanonicalSubagentOwnerRef(normalizedRef)) {
+  if (normalizedType === TASK_FLOW_EMPLOYEE_TYPE) {
+    const options = getEmployeeOwnerRefOptions(profileId, employees);
+    const currentRefIsValid = options.some((option) => option.value === normalizedRef);
+    if (normalizedPreviousType === normalizedType && normalizedRef && currentRefIsValid) {
       return normalizedRef;
     }
     return options[0]?.value || (allowBlank ? "" : "");
@@ -315,38 +314,36 @@ export function resolveActorRefForType({
   return normalizedRef;
 }
 
-export function isCanonicalSubagentOwnerRef(value: unknown) {
+export function isCanonicalEmployeeOwnerRef(value: unknown) {
   const normalized = String(value || "").trim();
   const parts = normalized.split(":");
   return parts.length === 2 && Boolean(parts[0]?.trim()) && Boolean(parts[1]?.trim());
 }
 
-function validateSubagentActorRef(
+function validateEmployeeScopedActorRef(
   type: unknown,
   ref: unknown,
   label: ActorRefValidationLabel,
   context?: ActorRefValidationContext,
 ) {
-  if (normalizeActorType(type) !== TASK_FLOW_AI_SUBAGENT_TYPE) {
-    return "";
+  const normalizedType = normalizeActorType(type);
+  if (normalizedType === TASK_FLOW_EMPLOYEE_TYPE) {
+    return validateEmployeeActorRef(ref, label, context);
   }
+  return "";
+}
+
+function validateEmployeeActorRef(ref: unknown, label: ActorRefValidationLabel, context?: ActorRefValidationContext) {
   const normalizedRef = String(ref || "").trim();
   if (!normalizedRef) {
-    return `Subagent ${label} is required.`;
-  }
-  if (!isCanonicalSubagentOwnerRef(normalizedRef)) {
-    return `Subagent ${label} must use <profile_id>:<subagent_name>.`;
+    return `Employee ${label} is required.`;
   }
   if (!context) {
     return "";
   }
-  const [ownerProfileId] = normalizedRef.split(":");
-  if (ownerProfileId !== context.profileId) {
-    return "";
-  }
-  const validRefs = new Set(getSubagentOwnerRefOptions(context.profileId, context.subagents).map((option) => option.value));
+  const validRefs = new Set(getEmployeeOwnerRefOptions(context.profileId, context.employees).map((option) => option.value));
   if (validRefs.size && !validRefs.has(normalizedRef)) {
-    return `Select a valid subagent ${label}.`;
+    return `Select a valid employee ${label}.`;
   }
   return "";
 }

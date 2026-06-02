@@ -120,20 +120,23 @@ def test_last_activity_ignores_future_cron_next_run() -> None:
     assert _last_activity_datetime(item) == now - timedelta(minutes=30)
 
 
-def test_infer_task_session_profile_id_reads_ai_subagent_owner_ref() -> None:
+def test_infer_task_session_profile_id_uses_task_profile_for_employee_owner() -> None:
     payload = {
-        "owner_type": "ai_subagent",
-        "owner_ref": "default:researcher",
+        "owner_type": "employee",
+        "owner_ref": "researcher",
         "profile_id": "backlog",
     }
 
-    assert _infer_task_session_profile_id(payload) == "default"
+    assert _infer_task_session_profile_id(payload) == "backlog"
 
 
-def test_config_accepts_subagent_task_flow_actor_type() -> None:
+def test_config_accepts_employee_task_flow_actor_type_and_normalizes_legacy_actor(monkeypatch) -> None:
     class FakeRegistry:
         def __init__(self) -> None:
-            self._config: dict[str, object] = {}
+            self._config: dict[str, object] = {
+                "task_flow_actor_ref": "default:reviewer",
+                "task_flow_actor_type": "ai_subagent",
+            }
 
         def read_config(self) -> dict[str, object]:
             return dict(self._config)
@@ -144,23 +147,30 @@ def test_config_accepts_subagent_task_flow_actor_type() -> None:
         def reset_config(self) -> None:
             self._config = {}
 
+    monkeypatch.setattr(router_module, "resolve_local_human_ref", lambda _settings: "cli_user:local")
+
     app = FastAPI()
     app.include_router(
         router_module.build_router(api_prefix="/v1/plugins/afkbotui", registry=FakeRegistry())
     )
     client = TestClient(app)
 
+    legacy_response = client.get("/v1/plugins/afkbotui/config")
+    assert legacy_response.status_code == 200
+    assert legacy_response.json()["config"]["task_flow_actor_type"] == "human"
+    assert legacy_response.json()["config"]["task_flow_actor_ref"] == "cli_user:local"
+
     response = client.patch(
         "/v1/plugins/afkbotui/config",
         json={
-            "task_flow_actor_type": "ai_subagent",
-            "task_flow_actor_ref": "default:reviewer",
+            "task_flow_actor_type": "employee",
+            "task_flow_actor_ref": "cto",
         },
     )
 
     assert response.status_code == 200
-    assert response.json()["config"]["task_flow_actor_type"] == "ai_subagent"
-    assert response.json()["config"]["task_flow_actor_ref"] == "default:reviewer"
+    assert response.json()["config"]["task_flow_actor_type"] == "employee"
+    assert response.json()["config"]["task_flow_actor_ref"] == "cto"
 
 
 def test_automation_webhook_endpoint_route_is_separate_from_masked_detail(monkeypatch) -> None:
@@ -331,6 +341,17 @@ def test_task_flow_task_routes_map_prompt_payload_to_description(monkeypatch) ->
     assert observed["update"]["description"] == "Update the route contract."
     assert "reviewer_type" not in observed["update"]
     assert "reviewer_ref" not in observed["update"]
+    assert "blocked_reason_code" not in observed["update"]
+    assert "blocked_reason_text" not in observed["update"]
+
+    clear_blocker_response = client.patch(
+        "/v1/plugins/afkbotui/task-flow/tasks/task-1",
+        json={"blocked_reason_code": None, "blocked_reason_text": None},
+        params={"profile_id": "default"},
+    )
+    assert clear_blocker_response.status_code == 200
+    assert observed["update"]["blocked_reason_code"] is None
+    assert observed["update"]["blocked_reason_text"] is None
 
     clear_reviewer_response = client.patch(
         "/v1/plugins/afkbotui/task-flow/tasks/task-1",
@@ -412,6 +433,12 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
         def __init__(self, payload: dict[str, object]) -> None:
             self.payload = payload
 
+        def __getattr__(self, name: str) -> object:
+            try:
+                return self.payload[name]
+            except KeyError as exc:
+                raise AttributeError(name) from exc
+
         def model_dump(self, *, mode: str) -> dict[str, object]:
             assert mode == "json"
             return self.payload
@@ -459,9 +486,23 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
             }
             return Dumpable({"owner_ref": owner_ref, "owner_type": owner_type, "tasks": []})
 
+        async def add_task_comment(self, **kwargs: object) -> Dumpable:
+            observed["add_task_comment"] = kwargs
+            return Dumpable(
+                {
+                    "id": 1,
+                    "task_id": kwargs["task_id"],
+                    "actor_type": kwargs["actor_type"],
+                    "actor_ref": kwargs["actor_ref"],
+                    "message": kwargs["message"],
+                    "comment_type": kwargs["comment_type"],
+                    "created_at": "2026-06-02T00:00:00Z",
+                }
+            )
+
     class FakeRegistry:
         def read_config(self) -> dict[str, object]:
-            return {"task_flow_actor_ref": "default", "task_flow_actor_type": "ai_profile"}
+            return {"task_flow_actor_ref": "cto", "task_flow_actor_type": "employee"}
 
         def write_config(self, payload: dict[str, object]) -> None:
             del payload
@@ -470,6 +511,7 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
             pass
 
     monkeypatch.setattr(router_module, "get_settings", lambda: object())
+    monkeypatch.setattr(router_module, "resolve_local_human_ref", lambda _settings: "cli_user:local")
     monkeypatch.setattr(router_module, "get_task_flow_service", lambda _settings: FakeTaskFlowService())
 
     app = FastAPI()
@@ -511,8 +553,8 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
     put_response = client.put(
         "/v1/plugins/afkbotui/task-flow/docs",
         json={
-            "actor_ref": "default",
-            "actor_type": "ai_profile",
+            "actor_ref": "cto",
+            "actor_type": "employee",
             "body": "Plan body",
             "document_key": "plan",
             "scope_id": "task-1",
@@ -527,7 +569,7 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
 
     confirm_response = client.post(
         "/v1/plugins/afkbotui/task-flow/docs/doc-task-plan/confirm",
-        json={"actor_ref": "default", "actor_type": "ai_profile", "expected_revision": 2},
+        json={"actor_ref": "cto", "actor_type": "employee", "expected_revision": 2},
         params={"profile_id": "default"},
     )
     assert confirm_response.status_code == 200
@@ -553,10 +595,244 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
 
     feed_response = client.get(
         "/v1/plugins/afkbotui/task-flow/feed",
-        params={"profile_id": "default", "owner_ref": "default:researcher", "owner_type": "ai_subagent"},
+        params={"profile_id": "default", "owner_ref": "researcher", "owner_type": "employee"},
     )
     assert feed_response.status_code == 200
-    assert observed["build_agent_inbox"]["owner_type"] == "ai_subagent"
-    assert observed["build_agent_inbox"]["owner_ref"] == "default:researcher"
+    assert observed["build_agent_inbox"]["owner_type"] == "employee"
+    assert observed["build_agent_inbox"]["owner_ref"] == "researcher"
     assert observed["build_agent_inbox"]["task_limit"] == 30
     assert observed["build_agent_inbox"]["event_limit"] == 20
+
+    comment_response = client.post(
+        "/v1/plugins/afkbotui/task-flow/tasks/task-1/comments",
+        json={
+            "actor_ref": "web-user",
+            "actor_type": "human",
+            "message": "Operator note",
+        },
+        params={"profile_id": "default"},
+    )
+    assert comment_response.status_code == 200
+    assert observed["add_task_comment"]["actor_type"] == "human"
+    assert observed["add_task_comment"]["actor_ref"] == "cli_user:local"
+    assert observed["add_task_comment"]["message"] == "Operator note"
+
+
+def test_task_flow_employee_routes_expose_employee_roster_and_org_chart(monkeypatch) -> None:
+    class Dumpable:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+
+        def __getattr__(self, name: str) -> object:
+            try:
+                return self.payload[name]
+            except KeyError as exc:
+                raise AttributeError(name) from exc
+
+        def model_dump(self, *, mode: str) -> dict[str, object]:
+            assert mode == "json"
+            return self.payload
+
+    class FakeEmployeeService:
+        def __init__(self, _settings) -> None:
+            pass
+
+        async def list_employees(self, *, profile_id: str):
+            assert profile_id == "default"
+            return [
+                Dumpable(
+                    {
+                        "allowed_tools": ["taskflow.read"],
+                        "body": "# CTO\nOwns project decomposition.",
+                        "can_delegate_to": ["planner"],
+                        "can_use_subagents": True,
+                        "derived_reports": ["planner"],
+                        "id": "cto",
+                        "manager_id": None,
+                        "max_active_tasks": 1,
+                        "name": "CTO",
+                        "profile_id": "default",
+                        "reports": ["planner"],
+                        "role": "orchestrator",
+                        "status": "active",
+                        "subagent_allowlist": ["architect"],
+                        "title": "Technical Director",
+                    }
+                ),
+                Dumpable(
+                    {
+                        "allowed_tools": [],
+                        "body": "Plans delivery.",
+                        "can_delegate_to": [],
+                        "can_use_subagents": False,
+                        "derived_reports": [],
+                        "id": "planner",
+                        "manager_id": "cto",
+                        "max_active_tasks": 1,
+                        "name": "Planner",
+                        "profile_id": "default",
+                        "reports": [],
+                        "role": "planner",
+                        "status": "active",
+                        "subagent_allowlist": [],
+                        "title": "Delivery Planner",
+                    }
+                ),
+            ]
+
+        async def build_org_chart(self, *, profile_id: str):
+            assert profile_id == "default"
+            return Dumpable(
+                {
+                    "edges": [["cto", "planner"]],
+                    "employees": {"cto": {"id": "cto"}, "planner": {"id": "planner"}},
+                    "profile_id": "default",
+                    "root_employee_ids": ["cto"],
+                    "validation": {"issues": [], "profile_id": "default", "valid": True},
+                }
+            )
+
+        async def upsert_employee(self, *, profile_id: str, employee_id: str, content: str):
+            assert profile_id == "default"
+            assert employee_id == "developer"
+            assert "manager_id: cto" in content
+            assert "allowed_tools:" in content
+            status = "disabled" if "status: disabled" in content else "active"
+            return Dumpable(
+                {
+                    "allowed_tools": ["task.*"],
+                    "body": "# Developer\nBuilds features.",
+                    "can_delegate_to": [],
+                    "can_use_subagents": False,
+                    "derived_reports": [],
+                    "id": "developer",
+                    "manager_id": "cto",
+                    "max_active_tasks": 1,
+                    "name": "Developer",
+                    "profile_id": "default",
+                    "reports": [],
+                    "role": "developer",
+                    "status": status,
+                    "subagent_allowlist": [],
+                    "title": "Developer",
+                }
+            )
+
+        async def delete_employee(self, *, profile_id: str, employee_id: str):
+            assert profile_id == "default"
+            assert employee_id == "developer"
+            return Dumpable(
+                {
+                    "allowed_tools": ["task.*"],
+                    "body": "# Developer\nBuilds features.",
+                    "can_delegate_to": [],
+                    "can_use_subagents": False,
+                    "derived_reports": [],
+                    "id": "developer",
+                    "manager_id": "cto",
+                    "max_active_tasks": 1,
+                    "name": "Developer",
+                    "profile_id": "default",
+                    "reports": [],
+                    "role": "developer",
+                    "status": "disabled",
+                    "subagent_allowlist": [],
+                    "title": "Developer",
+                }
+            )
+
+    class FakeRegistry:
+        def read_config(self) -> dict[str, object]:
+            return {}
+
+        def write_config(self, payload: dict[str, object]) -> None:
+            del payload
+
+        def reset_config(self) -> None:
+            pass
+
+    monkeypatch.setattr(router_module, "get_settings", lambda: object())
+    monkeypatch.setattr(router_module, "EmployeeService", FakeEmployeeService)
+
+    app = FastAPI()
+    app.include_router(
+        router_module.build_router(api_prefix="/v1/plugins/afkbotui", registry=FakeRegistry())
+    )
+    client = TestClient(app)
+
+    response = client.get("/v1/plugins/afkbotui/task-flow/employees", params={"profile_id": "default"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["filtered_count"] == 2
+    assert payload["employees"][0]["id"] == "cto"
+    assert payload["employees"][0]["owner_ref"] == "cto"
+    assert payload["employees"][0]["path"] == "profiles/default/employees/cto.md"
+    assert payload["employees"][0]["summary"] == "CTO"
+
+    filtered = client.get(
+        "/v1/plugins/afkbotui/task-flow/employees",
+        params={"profile_id": "default", "q": "delivery"},
+    )
+    assert filtered.status_code == 200
+    assert [item["id"] for item in filtered.json()["employees"]] == ["planner"]
+
+    org_chart = client.get("/v1/plugins/afkbotui/task-flow/org-chart", params={"profile_id": "default"})
+    assert org_chart.status_code == 200
+    assert org_chart.json()["org_chart"]["edges"] == [["cto", "planner"]]
+
+    created = client.post(
+        "/v1/plugins/afkbotui/task-flow/employees",
+        params={"profile_id": "default"},
+        json={
+            "id": "developer",
+            "name": "Developer",
+            "title": "Developer",
+            "role": "developer",
+            "manager_id": "cto",
+            "body": "Builds features.",
+            "allowed_tools": ["task.*"],
+            "can_use_subagents": False,
+        },
+    )
+    assert created.status_code == 200
+    assert created.json()["employee"]["id"] == "developer"
+    assert created.json()["employee"]["manager_id"] == "cto"
+
+    updated = client.put(
+        "/v1/plugins/afkbotui/task-flow/employees/developer",
+        params={"profile_id": "default"},
+        json={
+            "id": "developer",
+            "name": "Developer",
+            "title": "Senior Developer",
+            "role": "developer",
+            "status": "disabled",
+            "manager_id": "cto",
+            "body": "Builds features.",
+            "allowed_tools": ["task.*"],
+            "can_use_subagents": False,
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["employee"]["id"] == "developer"
+    assert updated.json()["employee"]["status"] == "disabled"
+
+    mismatched = client.put(
+        "/v1/plugins/afkbotui/task-flow/employees/developer",
+        params={"profile_id": "default"},
+        json={
+            "id": "other",
+            "name": "Developer",
+            "title": "Developer",
+            "role": "developer",
+        },
+    )
+    assert mismatched.status_code == 400
+    assert mismatched.json()["detail"]["error_code"] == "employee_id_mismatch"
+
+    deleted = client.delete(
+        "/v1/plugins/afkbotui/task-flow/employees/developer",
+        params={"profile_id": "default"},
+    )
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True

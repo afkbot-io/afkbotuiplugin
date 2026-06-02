@@ -6,13 +6,14 @@ import {
   normalizeNumberField,
   parseCsv,
   TASK_FLOW_STATUS_OPTIONS,
-  isAiExecutorActorType,
+  isEmployeeActorType,
 } from "@/features/task-flow/model/task-flow.forms";
 import type {
   TaskFlowBoard,
   TaskFlowComment,
   TaskFlowConfig,
-  TaskFlowAgentFeed,
+  TaskFlowEmployeeFeed,
+  TaskFlowEmployeeDraft,
   TaskFlowContextBundle,
   TaskFlowDependency,
   TaskFlowDocument,
@@ -23,7 +24,9 @@ import type {
   TaskFlowReviewDraft,
   TaskFlowReviewTask,
   TaskFlowRun,
-  TaskFlowSubagent,
+  TaskFlowEmployee,
+  TaskFlowEmployeeOption,
+  TaskFlowOrgChart,
   TaskFlowTask,
   TaskFlowTaskDetail,
   TaskFlowTaskDraft,
@@ -47,7 +50,7 @@ type TaskFlowApi = {
   getTask: (profileId: string, taskId: string) => Promise<{ task?: TaskFlowTask }>;
   getTaskBoard: (profileId: string, params?: Record<string, unknown>) => Promise<{ board?: TaskFlowBoard }>;
   getTaskContext: (profileId: string, taskId: string) => Promise<{ context?: TaskFlowContextBundle }>;
-  getTaskFeed: (profileId: string, params?: Record<string, unknown>) => Promise<{ feed?: TaskFlowAgentFeed }>;
+  getTaskFeed: (profileId: string, params?: Record<string, unknown>) => Promise<{ feed?: TaskFlowEmployeeFeed }>;
   getTaskSessionInsights: (
     profileId: string,
     taskId: string,
@@ -58,7 +61,21 @@ type TaskFlowApi = {
     turns?: TaskSessionInsights["turns"];
   }>;
   listReviewTasks: (profileId: string, params?: Record<string, unknown>) => Promise<{ review_tasks?: TaskFlowReviewTask[] }>;
-  listSubagents: (profileId: string, params?: Record<string, unknown>) => Promise<{ subagents?: Array<Record<string, unknown>> }>;
+  listTaskFlowEmployees: (
+    profileId: string,
+    params?: Record<string, unknown>,
+  ) => Promise<{ employees?: Array<Record<string, unknown>> }>;
+  createTaskFlowEmployee: (
+    profileId: string,
+    payload: TaskFlowEmployeeDraft,
+  ) => Promise<{ employee?: TaskFlowEmployee }>;
+  updateTaskFlowEmployee: (
+    profileId: string,
+    employeeId: string,
+    payload: TaskFlowEmployeeDraft,
+  ) => Promise<{ employee?: TaskFlowEmployee }>;
+  deleteTaskFlowEmployee: (profileId: string, employeeId: string) => Promise<unknown>;
+  getTaskFlowOrgChart: (profileId: string) => Promise<{ org_chart?: TaskFlowOrgChart }>;
   listTaskFlowDocuments: (
     profileId: string,
     scopeType: string,
@@ -89,9 +106,37 @@ export async function listTaskProjects(api: unknown, profileId: string) {
   return Array.isArray(payload.task_flows) ? payload.task_flows : [];
 }
 
-export async function listTaskFlowSubagents(api: unknown, profileId: string) {
-  const payload = await coerceTaskFlowApi(api).listSubagents(profileId, { q: "" });
-  return (Array.isArray(payload.subagents) ? payload.subagents : []).flatMap(mapTaskFlowSubagent);
+export async function listTaskFlowEmployees(api: unknown, profileId: string) {
+  const taskFlowApi = coerceTaskFlowApi(api);
+  const employeesPayload = await taskFlowApi.listTaskFlowEmployees(profileId, { q: "" });
+  const rows = (employeesPayload.employees || []).map((employee) => ({
+    name: String(employee.id || ""),
+    owner_ref: String(employee.id || ""),
+    path: String(employee.path || ""),
+    profile_id: String(employee.profile_id || profileId),
+    status: String(employee.status || ""),
+    summary: `${String(employee.name || employee.id || "")} - ${String(employee.title || employee.role || "")}`.trim(),
+  }));
+  return rows.flatMap(mapTaskFlowEmployeeOption);
+}
+
+export async function getTaskFlowOrgChart(api: unknown, profileId: string) {
+  const payload = await coerceTaskFlowApi(api).getTaskFlowOrgChart(profileId);
+  return normalizeTaskFlowOrgChart(payload.org_chart, profileId);
+}
+
+export async function createTaskFlowEmployee(api: unknown, profileId: string, draft: TaskFlowEmployeeDraft) {
+  const payload = await coerceTaskFlowApi(api).createTaskFlowEmployee(profileId, draft);
+  return payload.employee || null;
+}
+
+export async function updateTaskFlowEmployee(api: unknown, profileId: string, employeeId: string, draft: TaskFlowEmployeeDraft) {
+  const payload = await coerceTaskFlowApi(api).updateTaskFlowEmployee(profileId, employeeId, draft);
+  return payload.employee || null;
+}
+
+export async function deleteTaskFlowEmployee(api: unknown, profileId: string, employeeId: string) {
+  await coerceTaskFlowApi(api).deleteTaskFlowEmployee(profileId, employeeId);
 }
 
 export async function getTaskFlowBoard(api: unknown, profileId: string, flowId: string, config: TaskFlowConfig) {
@@ -134,10 +179,10 @@ export async function getTaskContext(api: unknown, profileId: string, taskId: st
   return normalizeTaskContext(payload.context);
 }
 
-export async function getAgentFeed(api: unknown, profileId: string, config: TaskFlowConfig) {
+export async function getEmployeeFeed(api: unknown, profileId: string, config: TaskFlowConfig) {
   const ownerType = normalizeActorType(config.task_flow_actor_type) || "human";
-  if (!isAiExecutorActorType(ownerType)) {
-    return normalizeAgentFeed(null, ownerType, config.task_flow_actor_ref);
+  if (!isEmployeeActorType(ownerType)) {
+    return normalizeEmployeeFeed(null, ownerType, config.task_flow_actor_ref);
   }
   const payload = await coerceTaskFlowApi(api).getTaskFeed(profileId, {
     event_limit: 20,
@@ -145,7 +190,7 @@ export async function getAgentFeed(api: unknown, profileId: string, config: Task
     owner_ref: config.task_flow_actor_ref,
     owner_type: ownerType,
   });
-  return normalizeAgentFeed(payload.feed, ownerType, config.task_flow_actor_ref);
+  return normalizeEmployeeFeed(payload.feed, ownerType, config.task_flow_actor_ref);
 }
 
 export async function listTaskDocuments(api: unknown, profileId: string, scopeType: string, scopeId: string) {
@@ -263,7 +308,7 @@ function normalizeTaskContext(context: TaskFlowContextBundle | null | undefined)
   };
 }
 
-function normalizeAgentFeed(feed: TaskFlowAgentFeed | null | undefined, ownerType: string, ownerRef: string): TaskFlowAgentFeed {
+function normalizeEmployeeFeed(feed: TaskFlowEmployeeFeed | null | undefined, ownerType: string, ownerRef: string): TaskFlowEmployeeFeed {
   return {
     blocked_count: Number(feed?.blocked_count || 0),
     mention_event_count: Number(feed?.mention_event_count || 0),
@@ -426,12 +471,17 @@ export async function bulkMoveTaskItems(
   status: string,
   config: TaskFlowConfig,
 ) {
-  await coerceTaskFlowApi(api).bulkUpdateTasks(profileId, {
+  const payload: Record<string, unknown> = {
     actor_ref: config.task_flow_actor_ref,
     actor_type: normalizeActorType(config.task_flow_actor_type),
     status,
     task_ids: taskIds,
-  });
+  };
+  if (status !== "blocked") {
+    payload.blocked_reason_code = null;
+    payload.blocked_reason_text = null;
+  }
+  await coerceTaskFlowApi(api).bulkUpdateTasks(profileId, payload);
 }
 
 export async function bulkDeleteTaskItems(api: unknown, profileId: string, taskIds: string[]) {
@@ -499,7 +549,7 @@ function mergeSessionProgressEvents(existingEvents: TaskSessionInsights["progres
   return merged.slice(-18);
 }
 
-function mapTaskFlowSubagent(item: Record<string, unknown>): TaskFlowSubagent[] {
+function mapTaskFlowEmployeeOption(item: Record<string, unknown>): TaskFlowEmployeeOption[] {
   const name = String(item.name || "").trim();
   if (!name) {
     return [];
@@ -507,8 +557,33 @@ function mapTaskFlowSubagent(item: Record<string, unknown>): TaskFlowSubagent[] 
   return [
     {
       name,
+      origin: String(item.origin || "").trim(),
+      owner_ref: String(item.owner_ref || "").trim(),
       path: String(item.path || "").trim(),
+      profile_id: String(item.profile_id || "").trim(),
       summary: String(item.summary || "").trim(),
+      status: String(item.status || "").trim(),
     },
   ];
+}
+
+function normalizeTaskFlowOrgChart(payload: TaskFlowOrgChart | null | undefined, profileId: string): TaskFlowOrgChart {
+  const employees = payload?.employees && typeof payload.employees === "object" ? payload.employees : {};
+  return {
+    edges: Array.isArray(payload?.edges)
+      ? payload.edges
+          .map((edge) => [String(edge?.[0] || "").trim(), String(edge?.[1] || "").trim()] as [string, string])
+          .filter(([source, target]) => source && target)
+      : [],
+    employees,
+    profile_id: String(payload?.profile_id || profileId),
+    root_employee_ids: Array.isArray(payload?.root_employee_ids)
+      ? payload.root_employee_ids.map((item) => String(item || "").trim()).filter(Boolean)
+      : [],
+    validation: {
+      issues: Array.isArray(payload?.validation?.issues) ? payload.validation.issues : [],
+      profile_id: String(payload?.validation?.profile_id || payload?.profile_id || profileId),
+      valid: Boolean(payload?.validation?.valid ?? true),
+    },
+  };
 }

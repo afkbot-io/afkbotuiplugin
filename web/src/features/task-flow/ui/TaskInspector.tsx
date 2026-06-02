@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { ActorRefField } from "@/features/task-flow/ui/ActorRefField";
 import { TaskSessionSummaryCard } from "@/features/task-flow/ui/TaskSessionSummaryCard";
@@ -9,15 +9,14 @@ import {
   truncate,
 } from "@/features/task-flow/model/task-flow.presentation";
 import {
-  TASK_FLOW_AI_PROFILE_TYPE,
-  TASK_FLOW_AI_SUBAGENT_TYPE,
+  TASK_FLOW_EMPLOYEE_TYPE,
   TASK_FLOW_HUMAN_TYPE,
   resolveActorRefForType,
 } from "@/features/task-flow/model/task-flow.api";
 import type {
   TaskFlowConfig,
   TaskFlowProfile,
-  TaskFlowSubagent,
+  TaskFlowEmployeeOption,
   TaskFlowTaskDetail,
   TaskFlowTaskDraft,
   TaskSessionInsights,
@@ -49,7 +48,7 @@ type TaskInspectorProps = {
   sessionError: string;
   sessionRefreshing?: boolean;
   sessionInsights: TaskSessionInsights | null;
-  subagents: TaskFlowSubagent[];
+  employees: TaskFlowEmployeeOption[];
 };
 
 export function TaskInspector({
@@ -75,7 +74,7 @@ export function TaskInspector({
   sessionError,
   sessionRefreshing = false,
   sessionInsights,
-  subagents,
+  employees,
 }: TaskInspectorProps) {
   const [comment, setComment] = useState("");
   const [expandedCommentIds, setExpandedCommentIds] = useState<Set<string>>(() => new Set());
@@ -84,6 +83,12 @@ export function TaskInspector({
     owner_type: "",
     reason_text: "",
   });
+  const editSectionRef = useRef<HTMLFormElement | null>(null);
+  const sessionSectionRef = useRef<HTMLElement | null>(null);
+  const reviewSectionRef = useRef<HTMLElement | null>(null);
+  const docsSectionRef = useRef<HTMLDivElement | null>(null);
+  const commentsSectionRef = useRef<HTMLElement | null>(null);
+  const activitySectionRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     setComment("");
@@ -136,6 +141,13 @@ export function TaskInspector({
     onRequestChanges(reviewDraft);
   };
 
+  const scrollToSection = (sectionRef: { current: HTMLElement | null }) => {
+    if (typeof sectionRef.current?.scrollIntoView !== "function") {
+      return;
+    }
+    sectionRef.current.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+
   const handleReviewOwnerTypeChange = (ownerType: string) => {
     setReviewDraft((current) => ({
       ...current,
@@ -146,7 +158,7 @@ export function TaskInspector({
         previousType: current.owner_type,
         profileId,
         profiles,
-        subagents,
+        employees,
         type: ownerType,
       }),
       owner_type: ownerType,
@@ -165,47 +177,56 @@ export function TaskInspector({
         </button>
       </div>
       <div className="task-inspector__body">
-        <form className="editor-form" onSubmit={handleSubmit}>
-          <TaskFormFields
-            config={config}
-            draft={draft}
-            onChange={onDraftChange}
-            profileId={profileId}
-            profiles={profiles}
-            showBlockedReason
-            showStatus
-            subagents={subagents}
-          />
-          {error ? <div className="inline-alert inline-alert--danger" role="alert">{error}</div> : null}
-          <div className="button-row">
-            <AsyncButton className="button button--primary" idleLabel="Save Task" loading={saving} pendingLabel="Saving…" type="submit" />
-            <button className="button button--danger" disabled={saving} onClick={onDelete} type="button">
-              Delete Task
-            </button>
-          </div>
-        </form>
-
-        {session?.session_id ? (
-          <section className="detail-section task-session-section">
-            <div className="panel-head panel-head--compact">
-              <div>
-                <p className="panel-head__eyebrow">Session</p>
-                <h4 className="panel-head__title">Agent Session</h4>
-              </div>
-            </div>
-            <TaskSessionSummaryCard
-              error={sessionError}
-              onOpen={onOpenSessionFeed}
-              onRefresh={onRefreshSession}
-              refreshing={sessionRefreshing}
-              sessionInsights={sessionInsights}
-              task={task}
+        <nav aria-label="Task sections" className="task-inspector__nav">
+          <TaskSectionNavButton label="Edit" shortLabel="E" onClick={() => scrollToSection(editSectionRef)} />
+          <TaskSectionNavButton disabled={!session?.session_id} label="Session" shortLabel="S" onClick={() => scrollToSection(sessionSectionRef)} />
+          <TaskSectionNavButton disabled={!reviewActionable} label="Review" shortLabel="R" onClick={() => scrollToSection(reviewSectionRef)} />
+          <TaskSectionNavButton disabled={!knowledgePanel} label="Docs" shortLabel="D" onClick={() => scrollToSection(docsSectionRef)} />
+          <TaskSectionNavButton label="Comments" shortLabel="C" onClick={() => scrollToSection(commentsSectionRef)} />
+          <TaskSectionNavButton label="Activity" shortLabel="A" onClick={() => scrollToSection(activitySectionRef)} />
+        </nav>
+        <div className="task-inspector__sections">
+          <form className="editor-form" onSubmit={handleSubmit} ref={editSectionRef}>
+            <TaskFormFields
+              config={config}
+              draft={draft}
+              onChange={onDraftChange}
+              profileId={profileId}
+              profiles={profiles}
+              showBlockedReason
+              showStatus
+              employees={employees}
             />
-          </section>
-        ) : null}
+            {error ? <div className="inline-alert inline-alert--danger" role="alert">{error}</div> : null}
+            <div className="button-row">
+              <AsyncButton className="button button--primary" idleLabel="Save Task" loading={saving} pendingLabel="Saving…" type="submit" />
+              <button className="button button--danger" disabled={saving} onClick={onDelete} type="button">
+                Delete Task
+              </button>
+            </div>
+          </form>
 
-        {reviewActionable ? (
-          <section className="detail-section">
+          {session?.session_id ? (
+            <section className="detail-section task-session-section" ref={sessionSectionRef}>
+              <div className="panel-head panel-head--compact">
+                <div>
+                  <p className="panel-head__eyebrow">Session</p>
+                  <h4 className="panel-head__title">Employee Session</h4>
+                </div>
+              </div>
+              <TaskSessionSummaryCard
+                error={sessionError}
+                onOpen={onOpenSessionFeed}
+                onRefresh={onRefreshSession}
+                refreshing={sessionRefreshing}
+                sessionInsights={sessionInsights}
+                task={task}
+              />
+            </section>
+          ) : null}
+
+          {reviewActionable ? (
+            <section className="detail-section" ref={reviewSectionRef}>
             <div className="panel-head panel-head--compact">
               <div>
                 <p className="panel-head__eyebrow">Review</p>
@@ -229,8 +250,7 @@ export function TaskInspector({
                   value={reviewDraft.owner_type}
                 >
                   <option value="">Keep current</option>
-                  <option value={TASK_FLOW_AI_PROFILE_TYPE}>AI Profile</option>
-                  <option value={TASK_FLOW_AI_SUBAGENT_TYPE}>Subagent</option>
+                  <option value={TASK_FLOW_EMPLOYEE_TYPE}>Employee</option>
                   <option value={TASK_FLOW_HUMAN_TYPE}>Human</option>
                 </select>
               </label>
@@ -242,7 +262,7 @@ export function TaskInspector({
                 onChange={(value) => setReviewDraft((current) => ({ ...current, owner_ref: value }))}
                 profileId={profileId}
                 profiles={profiles}
-                subagents={subagents}
+                employees={employees}
                 typeValue={reviewDraft.owner_type}
                 value={reviewDraft.owner_ref}
               />
@@ -255,12 +275,14 @@ export function TaskInspector({
                 Request Changes
               </button>
             </div>
-          </section>
-        ) : null}
+            </section>
+          ) : null}
 
-        {knowledgePanel}
+          <div className="task-inspector__anchor" ref={docsSectionRef}>
+            {knowledgePanel}
+          </div>
 
-        <section className="detail-section">
+          <section className="detail-section" ref={commentsSectionRef}>
           <div className="panel-head panel-head--compact">
             <div>
               <p className="panel-head__eyebrow">Comments</p>
@@ -268,8 +290,8 @@ export function TaskInspector({
             </div>
           </div>
           <div className="timeline-list">
-            {(detail.task_comments || []).length ? (
-              detail.task_comments.map((item) => {
+            {sortByNewest(detail.task_comments || [], "created_at").length ? (
+              sortByNewest(detail.task_comments || [], "created_at").map((item) => {
                 const key = String(item.id || `${item.created_at}-${item.message}`);
                 const rawMessage = String(item.message || "");
                 const collapsedMessage = truncate(rawMessage, 320);
@@ -314,9 +336,9 @@ export function TaskInspector({
             </label>
             <AsyncButton className="button button--primary" idleLabel="Send Comment" loading={commenting} pendingLabel="Sending…" type="submit" />
           </form>
-        </section>
+          </section>
 
-        <section className="detail-section">
+          <section className="detail-section" ref={activitySectionRef}>
           <div className="panel-head panel-head--compact">
             <div>
               <p className="panel-head__eyebrow">Runs & Events</p>
@@ -324,8 +346,8 @@ export function TaskInspector({
             </div>
           </div>
           <div className="timeline-list">
-            {(detail.task_events || []).slice(0, 6).length ? (
-              detail.task_events.slice(0, 6).map((item) => (
+            {sortByNewest(detail.task_events || [], "created_at").slice(0, 6).length ? (
+              sortByNewest(detail.task_events || [], "created_at").slice(0, 6).map((item) => (
                 <article className="timeline-item" key={String(item.id || `${item.created_at}-${item.event_type}`)}>
                   <p>{item.event_type || item.reason || "event"}</p>
                   <span>{formatDateTime(item.created_at)}</span>
@@ -336,8 +358,8 @@ export function TaskInspector({
             )}
           </div>
           <div className="timeline-list">
-            {(detail.task_runs || []).slice(0, 4).length ? (
-              detail.task_runs.slice(0, 4).map((item) => (
+            {sortByNewest(detail.task_runs || [], "created_at", "started_at").slice(0, 4).length ? (
+              sortByNewest(detail.task_runs || [], "created_at", "started_at").slice(0, 4).map((item) => (
                 <article className="timeline-item" key={String(item.id || `${item.created_at}-${item.status}`)}>
                   <p>{item.status || "run"}</p>
                   <span>{formatDateTime(item.created_at || item.started_at)}</span>
@@ -347,8 +369,48 @@ export function TaskInspector({
               <p className="muted-copy">No runs yet.</p>
             )}
           </div>
-        </section>
+          </section>
+        </div>
       </div>
     </aside>
   );
+}
+
+type TaskSectionNavButtonProps = {
+  disabled?: boolean;
+  label: string;
+  onClick: () => void;
+  shortLabel: string;
+};
+
+function TaskSectionNavButton({ disabled = false, label, onClick, shortLabel }: TaskSectionNavButtonProps) {
+  return (
+    <button
+      aria-label={`Jump to ${label}`}
+      className="task-inspector__nav-button"
+      disabled={disabled}
+      onClick={onClick}
+      title={label}
+      type="button"
+    >
+      {shortLabel}
+    </button>
+  );
+}
+
+function sortByNewest<T extends object>(items: T[], primaryKey: keyof T, fallbackKey?: keyof T) {
+  return [...items].sort((left, right) => {
+    const leftTime = parseSortTime(left[primaryKey]) || (fallbackKey ? parseSortTime(left[fallbackKey]) : 0);
+    const rightTime = parseSortTime(right[primaryKey]) || (fallbackKey ? parseSortTime(right[fallbackKey]) : 0);
+    return rightTime - leftTime;
+  });
+}
+
+function parseSortTime(value: unknown) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return 0;
+  }
+  const parsed = new Date(raw).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
 }

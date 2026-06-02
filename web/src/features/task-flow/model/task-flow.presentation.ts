@@ -8,8 +8,7 @@ import type {
   TaskSessionProgressEvent,
 } from "@/features/task-flow/model/task-flow.types";
 import {
-  TASK_FLOW_AI_PROFILE_TYPE,
-  TASK_FLOW_AI_SUBAGENT_TYPE,
+  TASK_FLOW_EMPLOYEE_TYPE,
   TASK_FLOW_HUMAN_TYPE,
   normalizeActorType,
 } from "@/features/task-flow/model/task-flow.forms";
@@ -69,11 +68,8 @@ export function formatTaskOwnerSummary(task: TaskFlowTask) {
   if (String(task.status || "").trim() === "review" && reviewerSummary) {
     return reviewerSummary;
   }
-  if (ownerType === TASK_FLOW_AI_PROFILE_TYPE) {
-    return ownerRef ? `Owner: AI ${ownerRef}` : "Owner: AI";
-  }
-  if (ownerType === TASK_FLOW_AI_SUBAGENT_TYPE) {
-    return ownerRef ? `Owner: Subagent ${formatSubagentOwnerRef(ownerRef)}` : "Owner: Subagent";
+  if (ownerType === TASK_FLOW_EMPLOYEE_TYPE) {
+    return ownerRef ? `Owner: Employee ${ownerRef}` : "Owner: Employee";
   }
   if (ownerType === TASK_FLOW_HUMAN_TYPE) {
     return ownerRef ? `Owner: ${ownerRef}` : "Owner: Human";
@@ -82,11 +78,8 @@ export function formatTaskOwnerSummary(task: TaskFlowTask) {
 }
 
 function formatReviewerSummary(reviewerType: string, reviewerRef: string) {
-  if (reviewerType === TASK_FLOW_AI_PROFILE_TYPE) {
-    return reviewerRef ? `Reviewer: AI ${reviewerRef}` : "Reviewer: AI";
-  }
-  if (reviewerType === TASK_FLOW_AI_SUBAGENT_TYPE) {
-    return reviewerRef ? `Reviewer: Subagent ${formatSubagentOwnerRef(reviewerRef)}` : "Reviewer: Subagent";
+  if (reviewerType === TASK_FLOW_EMPLOYEE_TYPE) {
+    return reviewerRef ? `Reviewer: Employee ${reviewerRef}` : "Reviewer: Employee";
   }
   if (reviewerType === TASK_FLOW_HUMAN_TYPE) {
     return reviewerRef ? `Reviewer: ${reviewerRef}` : "Reviewer: Human";
@@ -128,11 +121,8 @@ function normalizePriorityScore(priority: unknown) {
 export function formatFlowOwnerSummary(flow: TaskFlowProject) {
   const ownerType = normalizeActorType(flow.default_owner_type);
   const ownerRef = String(flow.default_owner_ref || "").trim();
-  if (ownerType === TASK_FLOW_AI_PROFILE_TYPE) {
-    return ownerRef ? `Default owner: AI ${ownerRef}` : "Default owner: AI";
-  }
-  if (ownerType === TASK_FLOW_AI_SUBAGENT_TYPE) {
-    return ownerRef ? `Default owner: Subagent ${formatSubagentOwnerRef(ownerRef)}` : "Default owner: Subagent";
+  if (ownerType === TASK_FLOW_EMPLOYEE_TYPE) {
+    return ownerRef ? `Default owner: Employee ${ownerRef}` : "Default owner: Employee";
   }
   if (ownerType === TASK_FLOW_HUMAN_TYPE) {
     return ownerRef ? `Default owner: ${ownerRef}` : "Default owner: Human";
@@ -143,11 +133,8 @@ export function formatFlowOwnerSummary(flow: TaskFlowProject) {
 export function formatFlowCreatorSummary(flow: TaskFlowProject) {
   const creatorType = normalizeActorType(flow.created_by_type);
   const creatorRef = String(flow.created_by_ref || "").trim();
-  if (creatorType === TASK_FLOW_AI_PROFILE_TYPE) {
-    return creatorRef ? `Created by: AI ${creatorRef}` : "Created by: AI";
-  }
-  if (creatorType === TASK_FLOW_AI_SUBAGENT_TYPE) {
-    return creatorRef ? `Created by: Subagent ${formatSubagentOwnerRef(creatorRef)}` : "Created by: Subagent";
+  if (creatorType === TASK_FLOW_EMPLOYEE_TYPE) {
+    return creatorRef ? `Created by: Employee ${creatorRef}` : "Created by: Employee";
   }
   if (creatorType === TASK_FLOW_HUMAN_TYPE) {
     return creatorRef ? `Created by: ${creatorRef}` : "Created by: Human";
@@ -155,15 +142,15 @@ export function formatFlowCreatorSummary(flow: TaskFlowProject) {
   return creatorRef ? `Created by: ${creatorRef}` : "Created by: Unknown";
 }
 
-export function formatSubagentOwnerRef(ownerRef: string) {
+export function formatEmployeeOwnerRef(ownerRef: string) {
   const normalized = String(ownerRef || "").trim();
   const separatorIndex = normalized.indexOf(":");
   if (separatorIndex <= 0 || separatorIndex !== normalized.lastIndexOf(":") || separatorIndex === normalized.length - 1) {
     return normalized;
   }
   const profileId = normalized.slice(0, separatorIndex);
-  const subagentName = normalized.slice(separatorIndex + 1);
-  return `${subagentName} (${profileId})`;
+  const employeeName = normalized.slice(separatorIndex + 1);
+  return `${employeeName} (${profileId})`;
 }
 
 export function formatFlowStatusSummary(flow: TaskFlowProject) {
@@ -298,17 +285,6 @@ export function inferTaskSessionProfileId(task: TaskFlowTask) {
   const boundProfileId = String(task.last_session_profile_id || "").trim();
   if (boundProfileId) {
     return boundProfileId;
-  }
-  const ownerType = normalizeActorType(task.owner_type);
-  const ownerRef = String(task.owner_ref || "").trim();
-  if (ownerType === TASK_FLOW_AI_PROFILE_TYPE && ownerRef) {
-    return ownerRef;
-  }
-  if (ownerType === TASK_FLOW_AI_SUBAGENT_TYPE && ownerRef) {
-    const separatorIndex = ownerRef.indexOf(":");
-    if (separatorIndex > 0) {
-      return ownerRef.slice(0, separatorIndex);
-    }
   }
   return String(task.profile_id || "").trim() || "default";
 }

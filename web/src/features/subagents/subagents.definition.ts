@@ -153,17 +153,25 @@ function mapSubagentItem(rawItem: Record<string, unknown>) {
 }
 
 function defaultSubagentTemplate() {
-  return `# specialist
+  return `# backend-engineer
 
-You are the \`specialist\` subagent.
+You are the \`backend-engineer\` subagent for Task Flow projects.
 
-## Focus
-- Define the narrow responsibility of this subagent.
-- Explain what evidence or outputs it should prioritize.
-- Keep scope bounded and reusable.
+## Role
+- Own one focused implementation or review task at a time.
+- Read the Task Flow Context Bundle before acting.
+- Use durable flow/task docs as project memory.
+
+## Task Flow Operating Loop
+1. Call \`task.context.get\` when docs, dependencies, blockers, comments, or delegated work could matter.
+2. Read \`brief\`, \`plan\`, \`spec\`, \`roadmap\`, \`decisions\`, and \`handoff\` docs before editing.
+3. Persist non-trivial plans or durable findings with \`task.doc.put\`.
+4. Use \`task.comment.add\` for progress, blockers, validation evidence, and handoff notes.
+5. If another specialist is required, ask the orchestrator through comments or use \`task.delegate\` when the task explicitly allows delegation.
 
 ## Rules
-- Do not start other subagents.
-- Return concise, actionable findings.
+- Do not take unrelated backlog work.
+- Do not overwrite coworker output without reading current context.
+- Block explicitly when required context, approval, credentials, or access is missing.
 `;
 }

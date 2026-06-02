@@ -16,14 +16,14 @@ describe("workspace helpers", () => {
         poll_interval_sec: "7",
         task_flow_poll_interval_sec: "9",
         task_flow_board_limit_per_column: "25",
-        task_flow_actor_type: "ai_profile",
+        task_flow_actor_type: "employee",
         task_flow_actor_ref: "runner",
       }),
     ).toMatchObject({
       poll_interval_sec: 7,
       task_flow_poll_interval_sec: 9,
       task_flow_board_limit_per_column: 25,
-      task_flow_actor_type: "ai_profile",
+      task_flow_actor_type: "employee",
       task_flow_actor_ref: "runner",
     });
   });

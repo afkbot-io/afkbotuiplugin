@@ -148,7 +148,12 @@ describe("ApiClient text-library resources", () => {
       .mockResolvedValueOnce(jsonResponse({ deleted: true, task_document: { id: "doc-1" } }))
       .mockResolvedValueOnce(jsonResponse({ task_flow: { id: "flow-1", title: "Renamed" } }))
       .mockResolvedValueOnce(jsonResponse({ context: { task: { id: "task-1" } } }))
-      .mockResolvedValueOnce(jsonResponse({ feed: { owner_ref: "default", owner_type: "ai_profile" } }));
+      .mockResolvedValueOnce(jsonResponse({ feed: { owner_ref: "cto", owner_type: "employee" } }))
+      .mockResolvedValueOnce(jsonResponse({ employees: [{ id: "backend-engineer" }] }))
+      .mockResolvedValueOnce(jsonResponse({ employee: { id: "backend-engineer" } }))
+      .mockResolvedValueOnce(jsonResponse({ employee: { id: "backend-engineer" } }))
+      .mockResolvedValueOnce(jsonResponse({ deleted: true }))
+      .mockResolvedValueOnce(jsonResponse({ org_chart: { root_employee_ids: ["cto"] } }));
     vi.stubGlobal("fetch", fetchMock);
 
     const client = new ApiClient("/v1/plugins/afkbotui");
@@ -160,7 +165,12 @@ describe("ApiClient text-library resources", () => {
     await client.deleteTaskFlowDocument("default", "doc-1", { expected_revision: 2 });
     await client.updateTaskFlow("default", "flow-1", { title: "Renamed" });
     await client.getTaskContext("default", "task-1");
-    await client.getTaskFeed("default", { owner_ref: "default", owner_type: "ai_profile" });
+    await client.getTaskFeed("default", { owner_ref: "cto", owner_type: "employee" });
+    await client.listTaskFlowEmployees("default", { q: "backend" });
+    await client.createTaskFlowEmployee("default", { id: "backend-engineer", manager_id: "cto", name: "Backend Engineer", role: "developer", title: "Backend Engineer" });
+    await client.updateTaskFlowEmployee("default", "backend-engineer", { id: "backend-engineer", manager_id: "cto", name: "Backend Engineer", role: "developer", status: "disabled", title: "Backend Engineer" });
+    await client.deleteTaskFlowEmployee("default", "backend-engineer");
+    await client.getTaskFlowOrgChart("default");
     const origin = window.location.origin;
 
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -200,7 +210,38 @@ describe("ApiClient text-library resources", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       8,
-      `${origin}/v1/plugins/afkbotui/task-flow/feed?profile_id=default&owner_ref=default&owner_type=ai_profile`,
+      `${origin}/v1/plugins/afkbotui/task-flow/feed?profile_id=default&owner_ref=cto&owner_type=employee`,
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      9,
+      `${origin}/v1/plugins/afkbotui/task-flow/employees?profile_id=default&q=backend`,
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      10,
+      `${origin}/v1/plugins/afkbotui/task-flow/employees?profile_id=default`,
+      expect.objectContaining({
+        body: JSON.stringify({ id: "backend-engineer", manager_id: "cto", name: "Backend Engineer", role: "developer", title: "Backend Engineer" }),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      11,
+      `${origin}/v1/plugins/afkbotui/task-flow/employees/backend-engineer?profile_id=default`,
+      expect.objectContaining({
+        body: JSON.stringify({ id: "backend-engineer", manager_id: "cto", name: "Backend Engineer", role: "developer", status: "disabled", title: "Backend Engineer" }),
+        method: "PUT",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      12,
+      `${origin}/v1/plugins/afkbotui/task-flow/employees/backend-engineer?profile_id=default`,
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      13,
+      `${origin}/v1/plugins/afkbotui/task-flow/org-chart?profile_id=default`,
       expect.objectContaining({ method: "GET" }),
     );
   });

@@ -1137,6 +1137,11 @@ a {
   border: 1px solid var(--stroke);
   font-size: 0.66rem;
   line-height: 1.2;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: "JetBrains Mono", monospace;
   color: var(--text-muted);
   background: rgba(255, 255, 255, 0.024);
@@ -1445,6 +1450,12 @@ select::-ms-expand {
 .button--ghost {
   color: var(--text-primary);
   background: rgba(255, 255, 255, 0.01);
+}
+
+.button.is-active {
+  color: #fff9f4;
+  border-color: rgba(255, 106, 26, 0.42);
+  background: rgba(255, 106, 26, 0.18);
 }
 
 .button--success {
@@ -1984,6 +1995,97 @@ select::-ms-expand {
   background: rgba(42, 124, 255, 0.08);
 }
 
+.employees-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 100%;
+}
+
+.employees-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
+}
+
+.employees-graph,
+.employees-validation {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  min-height: 0;
+  padding: 1rem;
+}
+
+.employees-graph {
+  min-height: min(82vh, 64rem);
+}
+
+.employees-graph__canvas {
+  min-height: clamp(42rem, 74vh, 62rem);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0)),
+    rgba(5, 8, 13, 0.72);
+}
+
+.employees-graph__canvas .react-flow__node {
+  width: 14.5rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid rgba(42, 124, 255, 0.28);
+  border-radius: var(--radius-md);
+  color: var(--text-strong);
+  cursor: pointer;
+  font-size: 0.78rem;
+  line-height: 1.25;
+  white-space: pre-line;
+  background:
+    radial-gradient(circle at top left, rgba(42, 124, 255, 0.1), transparent 46%),
+    rgba(11, 15, 22, 0.98);
+  box-shadow: var(--shadow-soft);
+}
+
+.employees-graph__canvas .react-flow__node:hover,
+.employees-graph__canvas .react-flow__node:focus-visible {
+  border-color: rgba(42, 124, 255, 0.72);
+  box-shadow:
+    0 0 0 1px rgba(42, 124, 255, 0.22),
+    var(--shadow-soft);
+}
+
+.employees-graph__canvas .react-flow__edge-path {
+  stroke: rgba(42, 124, 255, 0.62);
+  stroke-width: 2;
+}
+
+.employees-graph__canvas .react-flow__handle {
+  width: 0.55rem;
+  height: 0.55rem;
+  border: 1px solid rgba(172, 194, 255, 0.78);
+  background: rgb(42, 124, 255);
+}
+
+.employees-graph__canvas .react-flow__controls,
+.employees-graph__canvas .react-flow__minimap {
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: rgba(10, 13, 19, 0.92);
+}
+
+.employees-graph__canvas .react-flow__minimap {
+  width: 12rem;
+  height: 7rem;
+}
+
+.employees-validation {
+  grid-column: 1 / -1;
+}
+
 .board-shell {
   display: flex;
   flex-direction: column;
@@ -2476,10 +2578,12 @@ select::-ms-expand {
 }
 
 .task-inspector__body {
-  display: flex;
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  align-items: start;
   flex: 1 1 auto;
   min-height: 0;
-  gap: 1rem;
+  gap: 0.85rem;
   padding: 0 1rem 1rem;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -2490,12 +2594,73 @@ select::-ms-expand {
   width: 6px;
 }
 
+.task-inspector__nav {
+  position: sticky;
+  top: 0.5rem;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.7rem;
+  background:
+    linear-gradient(180deg, rgba(17, 24, 39, 0.82), rgba(8, 13, 23, 0.72));
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(14px);
+}
+
+.task-inspector__nav-button {
+  width: 1.65rem;
+  height: 1.65rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font: 700 0.68rem/1 "JetBrains Mono", monospace;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.task-inspector__nav-button:hover:not(:disabled),
+.task-inspector__nav-button:focus-visible {
+  border-color: rgba(71, 132, 255, 0.62);
+  background: rgba(71, 132, 255, 0.16);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+.task-inspector__nav-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.task-inspector__sections {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.task-inspector__anchor {
+  min-width: 0;
+  scroll-margin-top: 0.5rem;
+}
+
 .detail-section {
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
   padding-top: 0.6rem;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
+  scroll-margin-top: 0.5rem;
 }
 
 .task-knowledge,
@@ -2892,6 +3057,27 @@ select::-ms-expand {
 
 .modal-card .button-row {
   padding-top: 0.6rem;
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.form-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.form-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
 }
 
 .task-panel--open .task-pane__shell,
@@ -3707,6 +3893,12 @@ select::-ms-expand {
   border-color: rgba(42, 124, 255, 0.22);
 }
 
+.inline-alert--info {
+  border-color: rgba(42, 124, 255, 0.22);
+  background: rgba(42, 124, 255, 0.08);
+  color: var(--cyan);
+}
+
 .inline-alert--danger,
 .inline-message--error {
   border-color: rgba(255, 143, 143, 0.22);
@@ -4099,6 +4291,27 @@ select::-ms-expand {
   .taskflow-filters__action-group {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .task-inspector__body {
+    grid-template-columns: 1fr;
+  }
+
+  .task-inspector__nav {
+    top: 0.35rem;
+    flex-direction: row;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .task-inspector__nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .task-inspector__nav-button {
+    flex: 0 0 auto;
   }
 
   .flow-manager__summary,

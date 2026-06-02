@@ -12,6 +12,7 @@ export type AppRouteProps = {
   api: unknown;
   config: Record<string, unknown>;
   notify: (message: string, kind?: string) => void;
+  navigateToRoute?: (routeId: RouteId) => void;
   profileId: string;
   profiles: Array<{ id?: string | null; title?: string | null }>;
   updateConfig: (patch: Record<string, unknown>) => Promise<Record<string, unknown>>;
@@ -33,6 +34,10 @@ const LazyTaskFlowRoute = lazy(async () => ({
 
 const LazyTaskDocumentsRoute = lazy(async () => ({
   default: (await import("@/features/task-documents/TaskDocumentsPage")).TaskDocumentsPage,
+}));
+
+const LazyEmployeesPage = lazy(async () => ({
+  default: (await import("@/features/employees/EmployeesPage")).EmployeesPage,
 }));
 
 const LazySubagentsPage = lazy(async () => ({
@@ -62,6 +67,11 @@ export const routeConfigs: RouteConfig[] = [
     component: LazyTaskDocumentsRoute,
     id: "docs",
     label: routeLabel("docs"),
+  },
+  {
+    component: LazyEmployeesPage,
+    id: "employees",
+    label: routeLabel("employees"),
   },
   {
     component: LazySubagentsPage,

@@ -222,6 +222,41 @@ export class ApiClient {
     });
   }
 
+  async listTaskFlowEmployees(profileId: string, params: Record<string, unknown> = {}) {
+    return this.request<Record<string, unknown>>("/task-flow/employees", {
+      params: { profile_id: profileId, ...params },
+    });
+  }
+
+  async createTaskFlowEmployee(profileId: string, payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>("/task-flow/employees", {
+      body: payload,
+      method: "POST",
+      params: { profile_id: profileId },
+    });
+  }
+
+  async updateTaskFlowEmployee(profileId: string, employeeId: string, payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>(`/task-flow/employees/${encodeURIComponent(employeeId)}`, {
+      body: payload,
+      method: "PUT",
+      params: { profile_id: profileId },
+    });
+  }
+
+  async deleteTaskFlowEmployee(profileId: string, employeeId: string) {
+    return this.request<Record<string, unknown>>(`/task-flow/employees/${encodeURIComponent(employeeId)}`, {
+      method: "DELETE",
+      params: { profile_id: profileId },
+    });
+  }
+
+  async getTaskFlowOrgChart(profileId: string) {
+    return this.request<Record<string, unknown>>("/task-flow/org-chart", {
+      params: { profile_id: profileId },
+    });
+  }
+
   async getSubagent(profileId: string, itemId: string) {
     return this.request<Record<string, unknown>>(`/subagents/${encodeURIComponent(itemId)}`, {
       params: { profile_id: profileId },

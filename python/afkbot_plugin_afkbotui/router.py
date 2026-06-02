@@ -22,6 +22,7 @@ from afkbot.services.agent_loop.api_runtime_support import dispose_owned_engine,
 from afkbot.services.agent_loop.progress_stream import ProgressCursor
 from afkbot.services.automations import AutomationsServiceError, get_automations_service
 from afkbot.services.automations.contracts import AutomationMetadata
+from afkbot.services.employees import EmployeeService, EmployeeServiceError
 from afkbot.services.plugins.contracts import PluginServiceError
 from afkbot.services.plugins.runtime_registry import PluginRuntimeRegistry
 from afkbot.services.policy import ProfileFilesLockedError
@@ -29,11 +30,7 @@ from afkbot.services.profile_runtime import ProfileServiceError, get_profile_ser
 from afkbot.services.skills import get_profile_skill_service
 from afkbot.services.subagents.profile_service import get_profile_subagent_service
 from afkbot.services.task_flow import TaskFlowServiceError, get_task_flow_service
-from afkbot.services.task_flow.ai_executors import (
-    AI_PROFILE_OWNER_TYPE,
-    AI_SUBAGENT_OWNER_TYPE,
-    parse_ai_subagent_owner_ref,
-)
+from afkbot.services.task_flow.human_ref import resolve_local_human_ref
 from afkbot.settings import get_settings
 
 _TASK_COMMENT_PREVIEW_SCHEMA_READY = False
@@ -49,7 +46,7 @@ class UiPluginConfig(BaseModel):
     default_profile_id: str = Field(default="default", min_length=1, max_length=120)
     task_flow_poll_interval_sec: int = Field(default=5, ge=1, le=300)
     task_flow_board_limit_per_column: int = Field(default=20, ge=1, le=200)
-    task_flow_actor_type: Literal["human", "ai_profile", "ai_subagent"] = "human"
+    task_flow_actor_type: Literal["human", "employee"] = "human"
     task_flow_actor_ref: str = Field(default="web-user", min_length=1, max_length=120)
 
 
@@ -62,7 +59,7 @@ class UiPluginConfigPatchPayload(BaseModel):
     default_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
     task_flow_poll_interval_sec: int | None = Field(default=None, ge=1, le=300)
     task_flow_board_limit_per_column: int | None = Field(default=None, ge=1, le=200)
-    task_flow_actor_type: Literal["human", "ai_profile", "ai_subagent"] | None = None
+    task_flow_actor_type: Literal["human", "employee"] | None = None
     task_flow_actor_ref: str | None = Field(default=None, min_length=1, max_length=120)
 
 
@@ -72,6 +69,23 @@ class UiPluginConfigEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     config: UiPluginConfigPatchPayload
+
+
+class TaskFlowEmployeeCreatePayload(BaseModel):
+    """Request body for creating a profile-local Task Flow employee."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=160)
+    title: str = Field(min_length=1, max_length=160)
+    role: str = Field(min_length=1, max_length=120)
+    status: Literal["active", "disabled", "archived"] = "active"
+    manager_id: str | None = Field(default=None, max_length=120)
+    body: str = Field(default="", max_length=8000)
+    allowed_tools: list[str] = Field(default_factory=list, max_length=80)
+    can_use_subagents: bool = False
+    subagent_allowlist: list[str] = Field(default_factory=list, max_length=80)
 
 
 class AutomationCreatePayload(BaseModel):
@@ -890,6 +904,98 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             raise _task_http_error(exc) from exc
         return {"feed": payload.model_dump(mode="json")}
 
+    @router.get("/task-flow/employees")
+    async def task_flow_employees(profile_id: str = "default", q: str = "") -> dict[str, object]:
+        service = EmployeeService(get_settings())
+        query = q.strip().lower()
+        try:
+            employees = await service.list_employees(profile_id=profile_id)
+        except EmployeeServiceError as exc:
+            raise _employee_http_error(exc) from exc
+        records = [_serialize_task_flow_employee(employee) for employee in employees]
+        if query:
+            records = [
+                record
+                for record in records
+                if query
+                in " ".join(
+                    str(record.get(field) or "")
+                    for field in ("id", "name", "title", "role", "status", "summary", "path")
+                ).lower()
+            ]
+        return {"employees": records, "filtered_count": len(records)}
+
+    @router.post("/task-flow/employees")
+    async def create_task_flow_employee(
+        payload: TaskFlowEmployeeCreatePayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = EmployeeService(get_settings())
+        content = _render_task_flow_employee_markdown(payload)
+        try:
+            employee = await service.upsert_employee(
+                profile_id=profile_id,
+                employee_id=payload.id,
+                content=content,
+            )
+        except EmployeeServiceError as exc:
+            raise _employee_http_error(exc) from exc
+        return {"employee": _serialize_task_flow_employee(employee)}
+
+    @router.put("/task-flow/employees/{employee_id}")
+    async def update_task_flow_employee(
+        employee_id: str,
+        payload: TaskFlowEmployeeCreatePayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        if payload.id != employee_id:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error_code": "employee_id_mismatch",
+                    "reason": "Employee id in the payload must match the URL.",
+                },
+            )
+        service = EmployeeService(get_settings())
+        content = _render_task_flow_employee_markdown(payload)
+        try:
+            employee = await service.upsert_employee(
+                profile_id=profile_id,
+                employee_id=employee_id,
+                content=content,
+            )
+        except EmployeeServiceError as exc:
+            raise _employee_http_error(exc) from exc
+        return {"employee": _serialize_task_flow_employee(employee)}
+
+    @router.delete("/task-flow/employees/{employee_id}")
+    async def delete_task_flow_employee(employee_id: str, profile_id: str = "default") -> dict[str, object]:
+        service = EmployeeService(get_settings())
+        try:
+            chart = await service.build_org_chart(profile_id=profile_id)
+            employee = chart.employees.get(employee_id)
+            if employee is not None and employee.derived_reports:
+                raise EmployeeServiceError(
+                    error_code="employee_has_reports",
+                    reason=(
+                        f"Employee {employee_id} manages other employees. Reassign or delete those "
+                        "reports before deleting this employee."
+                    ),
+                )
+            employee = await service.delete_employee(profile_id=profile_id, employee_id=employee_id)
+        except EmployeeServiceError as exc:
+            raise _employee_http_error(exc) from exc
+        return {"deleted": True, "employee": _serialize_task_flow_employee(employee)}
+
+    @router.get("/task-flow/org-chart")
+    async def task_flow_org_chart(profile_id: str = "default") -> dict[str, object]:
+        service = EmployeeService(get_settings())
+        try:
+            payload = await service.build_org_chart(profile_id=profile_id)
+        except EmployeeServiceError as exc:
+            raise _employee_http_error(exc) from exc
+        return {"org_chart": payload.model_dump(mode="json")}
+
     @router.get("/task-flow/tasks/{task_id}/session")
     async def task_flow_task_session_insights(
         task_id: str,
@@ -985,11 +1091,13 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 "owner_ref": payload.owner_ref,
                 "requires_review": payload.requires_review,
                 "labels": payload.labels,
-                "blocked_reason_code": payload.blocked_reason_code,
-                "blocked_reason_text": payload.blocked_reason_text,
                 "actor_type": payload.actor_type,
                 "actor_ref": payload.actor_ref,
             }
+            if "blocked_reason_code" in payload.model_fields_set:
+                update_kwargs["blocked_reason_code"] = payload.blocked_reason_code
+            if "blocked_reason_text" in payload.model_fields_set:
+                update_kwargs["blocked_reason_text"] = payload.blocked_reason_text
             if "session_id" in payload.model_fields_set:
                 update_kwargs["session_id"] = payload.session_id
             if "session_profile_id" in payload.model_fields_set:
@@ -1045,11 +1153,13 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                     "owner_ref": payload.owner_ref,
                     "requires_review": payload.requires_review,
                     "labels": payload.labels,
-                    "blocked_reason_code": payload.blocked_reason_code,
-                    "blocked_reason_text": payload.blocked_reason_text,
                     "actor_type": payload.actor_type,
                     "actor_ref": payload.actor_ref,
                 }
+                if "blocked_reason_code" in payload.model_fields_set:
+                    update_kwargs["blocked_reason_code"] = payload.blocked_reason_code
+                if "blocked_reason_text" in payload.model_fields_set:
+                    update_kwargs["blocked_reason_text"] = payload.blocked_reason_text
                 if "reviewer_type" in payload.model_fields_set:
                     update_kwargs["reviewer_type"] = payload.reviewer_type
                 if "reviewer_ref" in payload.model_fields_set:
@@ -1131,12 +1241,18 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         profile_id: str = "default",
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.actor_type,
+            actor_ref=payload.actor_ref,
+            config=config,
+        )
         try:
             item = await service.add_task_comment(
                 profile_id=profile_id,
                 task_id=task_id,
-                actor_type=payload.actor_type,
-                actor_ref=payload.actor_ref,
+                actor_type=actor_type,
+                actor_ref=actor_ref,
                 message=payload.message,
                 comment_type=payload.comment_type,
                 task_run_id=payload.task_run_id,
@@ -1895,15 +2011,116 @@ def _infer_task_session_profile_id(task_payload: dict[str, object]) -> str:
     last_session_profile_id = str(task_payload.get("last_session_profile_id") or "").strip()
     if last_session_profile_id:
         return last_session_profile_id
-    owner_type = str(task_payload.get("owner_type") or "").strip().lower()
-    owner_ref = str(task_payload.get("owner_ref") or "").strip()
-    if owner_type == AI_PROFILE_OWNER_TYPE and owner_ref:
-        return owner_ref
-    if owner_type == AI_SUBAGENT_OWNER_TYPE and owner_ref:
-        parsed_owner_ref = parse_ai_subagent_owner_ref(owner_ref)
-        if parsed_owner_ref is not None:
-            return parsed_owner_ref[0]
     return str(task_payload.get("profile_id") or "").strip() or "default"
+
+
+def _extract_markdown_summary(content: str) -> str:
+    for raw in content.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("---"):
+            continue
+        if line.startswith("#"):
+            line = line.lstrip("#").strip()
+        if line:
+            return " ".join(line.split())[:160]
+    return ""
+
+
+def _serialize_task_flow_employee(employee: object) -> dict[str, object]:
+    payload = employee.model_dump(mode="json")
+    summary = _extract_markdown_summary(str(payload.get("body") or ""))
+    if not summary:
+        summary = str(payload.get("title") or payload.get("role") or payload.get("name") or payload.get("id") or "")
+    profile_id = str(payload.get("profile_id") or "")
+    employee_id = str(payload.get("id") or "")
+    return {
+        **payload,
+        "owner_ref": employee_id,
+        "path": f"profiles/{profile_id}/employees/{employee_id}.md",
+        "summary": summary,
+    }
+
+
+def _render_task_flow_employee_markdown(payload: TaskFlowEmployeeCreatePayload) -> str:
+    allowed_tools = payload.allowed_tools
+    body = payload.body.strip() or (
+        f"{payload.name} owns focused Task Flow work for this profile and reports durable "
+        "progress, blockers, and handoff notes."
+    )
+    lines = [
+        "---",
+        f"id: {_frontmatter_scalar(payload.id)}",
+        f"name: {_frontmatter_scalar(payload.name)}",
+        f"title: {_frontmatter_scalar(payload.title)}",
+        f"role: {_frontmatter_scalar(payload.role)}",
+        f"status: {_frontmatter_scalar(payload.status)}",
+    ]
+    if payload.manager_id:
+        lines.append(f"manager_id: {_frontmatter_scalar(payload.manager_id)}")
+    lines.extend(
+        [
+            "can_delegate_to: []",
+            f"allowed_tools: {_frontmatter_list(allowed_tools)}",
+            f"can_use_subagents: {str(payload.can_use_subagents).lower()}",
+            f"subagent_allowlist: {_frontmatter_list(payload.subagent_allowlist)}",
+            "max_active_tasks: 1",
+            "---",
+            "",
+            f"# {_markdown_line(payload.name)}",
+            "",
+            body,
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _frontmatter_scalar(value: str) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _frontmatter_list(values: list[str]) -> str:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        value = _frontmatter_scalar(item)
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+    return "[" + ", ".join(f'"{item}"' for item in normalized) + "]"
+
+
+def _markdown_line(value: str) -> str:
+    return " ".join(str(value or "").split()) or "Employee"
+
+
+def _normalize_task_flow_actor_type(value: object) -> str:
+    raw = str(value or "").strip().lower()
+    return raw if raw in {"human", "employee"} else "human"
+
+
+def _normalize_task_flow_actor_ref(*, actor_type: str, value: object) -> str:
+    raw = str(value or "").strip()
+    if actor_type == "human" and raw in {"", "default", "web-user"}:
+        return resolve_local_human_ref(get_settings())
+    return raw or (resolve_local_human_ref(get_settings()) if actor_type == "human" else "cto")
+
+
+def _resolve_task_flow_actor_identity(
+    *,
+    actor_type: object,
+    actor_ref: object,
+    config: UiPluginConfig,
+) -> tuple[str, str]:
+    """Resolve UI actor input into the public Task Flow principal identity."""
+
+    resolved_actor_type = _normalize_task_flow_actor_type(actor_type or config.task_flow_actor_type)
+    resolved_actor_ref = _normalize_task_flow_actor_ref(
+        actor_type=resolved_actor_type,
+        value=actor_ref or config.task_flow_actor_ref,
+    )
+    return resolved_actor_type, resolved_actor_ref
 
 
 def _automation_http_error(exc: AutomationsServiceError) -> HTTPException:
@@ -1926,6 +2143,21 @@ def _task_http_error(exc: TaskFlowServiceError) -> HTTPException:
     else:
         status_code = 400
     return HTTPException(status_code=status_code, detail={"error_code": exc.error_code, "reason": exc.reason})
+
+
+def _employee_http_error(exc: EmployeeServiceError) -> HTTPException:
+    """Map employee service errors to HTTP responses."""
+
+    if exc.error_code.endswith("_not_found"):
+        status_code = 404
+    elif exc.error_code in {"employee_in_use", "employee_has_reports"}:
+        status_code = 409
+    else:
+        status_code = 400
+    return HTTPException(
+        status_code=status_code,
+        detail={"error_code": exc.error_code, "reason": exc.reason},
+    )
 
 
 def _subagent_http_error(exc: FileNotFoundError | ProfileFilesLockedError | ValueError) -> HTTPException:
@@ -2015,6 +2247,19 @@ def _normalize_config_payload(payload: object) -> dict[str, object]:
 
     if not isinstance(payload, dict):
         return {}
+    raw_actor_type = payload.get(
+        "task_flow_actor_type",
+        payload.get("actor_type", "human"),
+    )
+    task_flow_actor_type = _normalize_task_flow_actor_type(raw_actor_type)
+    actor_ref = (
+        "web-user"
+        if str(raw_actor_type or "").strip().lower() not in {"human", "employee"}
+        else payload.get(
+            "task_flow_actor_ref",
+            payload.get("actor_ref", "web-user"),
+        )
+    )
 
     return {
         "poll_interval_sec": payload.get("poll_interval_sec", 5),
@@ -2027,12 +2272,9 @@ def _normalize_config_payload(payload: object) -> dict[str, object]:
             "task_flow_board_limit_per_column",
             payload.get("board_limit_per_column", 20),
         ),
-        "task_flow_actor_type": payload.get(
-            "task_flow_actor_type",
-            payload.get("actor_type", "human"),
-        ),
-        "task_flow_actor_ref": payload.get(
-            "task_flow_actor_ref",
-            payload.get("actor_ref", "web-user"),
+        "task_flow_actor_type": task_flow_actor_type,
+        "task_flow_actor_ref": _normalize_task_flow_actor_ref(
+            actor_type=task_flow_actor_type,
+            value=actor_ref,
         ),
     }

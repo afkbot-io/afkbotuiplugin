@@ -1,4 +1,6 @@
-export type TaskFlowActorType = "ai_profile" | "ai_subagent" | "human" | string;
+export type TaskFlowActorType = "employee" | "human" | string;
+
+export type TaskFlowSourceType = "manager_escalation" | string;
 
 export type TaskFlowStatus =
   | "plan"
@@ -25,10 +27,65 @@ export type TaskFlowProfile = {
   title?: string | null;
 };
 
-export type TaskFlowSubagent = {
+export type TaskFlowEmployeeOption = {
   name: string;
+  origin?: string | null;
+  owner_ref?: string | null;
   path?: string | null;
+  profile_id?: string | null;
   summary?: string | null;
+  status?: string | null;
+};
+
+export type TaskFlowOrgChartIssue = {
+  code?: string | null;
+  employee_id?: string | null;
+  message?: string | null;
+  severity?: string | null;
+  target_employee_id?: string | null;
+};
+
+export type TaskFlowEmployee = {
+  allowed_tools?: string[];
+  body?: string | null;
+  can_delegate_to?: string[];
+  can_use_subagents?: boolean | null;
+  derived_reports?: string[];
+  id: string;
+  manager_id?: string | null;
+  max_active_tasks?: number | null;
+  name: string;
+  profile_id?: string | null;
+  reports?: string[];
+  role: string;
+  status: "active" | "disabled" | "archived" | string;
+  subagent_allowlist?: string[];
+  title: string;
+};
+
+export type TaskFlowEmployeeDraft = {
+  allowed_tools?: string[];
+  body?: string;
+  can_use_subagents?: boolean;
+  id: string;
+  manager_id?: string | null;
+  name: string;
+  role: string;
+  status?: "active" | "disabled" | "archived";
+  subagent_allowlist?: string[];
+  title: string;
+};
+
+export type TaskFlowOrgChart = {
+  edges: Array<[string, string]>;
+  employees: Record<string, TaskFlowEmployee>;
+  profile_id: string;
+  root_employee_ids: string[];
+  validation: {
+    issues: TaskFlowOrgChartIssue[];
+    profile_id?: string | null;
+    valid: boolean;
+  };
 };
 
 export type TaskFlowSession = {
@@ -63,6 +120,8 @@ export type TaskFlowTask = {
   requires_review?: boolean | null;
   reviewer_ref?: string | null;
   reviewer_type?: TaskFlowActorType | null;
+  source_ref?: string | null;
+  source_type?: TaskFlowSourceType | null;
   status: TaskFlowStatus;
   title: string;
 };
@@ -176,7 +235,7 @@ export type TaskFlowContextBundle = {
   task_documents?: TaskFlowDocument[];
 };
 
-export type TaskFlowAgentFeed = {
+export type TaskFlowEmployeeFeed = {
   blocked_count?: number;
   mention_event_count?: number;
   owner_ref: string;
