@@ -48,7 +48,7 @@ export function TaskKnowledgePanel({
   }, [context?.task?.id]);
 
   const documents = useMemo(
-    () => [...(context?.flow_documents || []), ...(context?.task_documents || [])],
+    () => sortByNewest([...(context?.flow_documents || []), ...(context?.task_documents || [])], "updated_at"),
     [context?.flow_documents, context?.task_documents],
   );
   const selectedScopeId = draft.scope_type === "flow" ? context?.flow?.id || "" : context?.task?.id || "";
@@ -92,7 +92,7 @@ export function TaskKnowledgePanel({
 
           <DocumentList
             busyDocumentId={busyDocumentId}
-            documents={context.flow_documents || []}
+            documents={sortByNewest(context.flow_documents || [], "updated_at")}
             emptyLabel="No flow docs yet."
             onConfirmDocument={onConfirmDocument}
             onEdit={(document) => setDraft(documentToDraft(document))}
@@ -100,7 +100,7 @@ export function TaskKnowledgePanel({
           />
           <DocumentList
             busyDocumentId={busyDocumentId}
-            documents={context.task_documents || []}
+            documents={sortByNewest(context.task_documents || [], "updated_at")}
             emptyLabel="No task docs yet."
             onConfirmDocument={onConfirmDocument}
             onEdit={(document) => setDraft(documentToDraft(document))}
@@ -250,6 +250,7 @@ function DocumentList({
 
 function ContextTimeline({ context }: { context: TaskFlowContextBundle }) {
   const tasks = [...(context.dependency_tasks || []), ...(context.dependent_tasks || []), ...(context.delegated_tasks || [])];
+  const recentEvents = sortByNewest(context.recent_events || [], "created_at");
   return (
     <div className="knowledge-context">
       {tasks.length ? (
@@ -265,7 +266,7 @@ function ContextTimeline({ context }: { context: TaskFlowContextBundle }) {
       {(context.recent_events || []).length ? (
         <div className="knowledge-context__group">
           <h5>Recent context events</h5>
-          {(context.recent_events || []).slice(0, 5).map((event) => (
+          {recentEvents.slice(0, 5).map((event) => (
             <p key={String(event.id || `${event.task_id}-${event.event_type}`)}>
               <span className="badge badge--muted">{event.event_type || "event"}</span> {formatDateTime(event.created_at)}
             </p>
@@ -283,4 +284,21 @@ function documentToDraft(document: TaskFlowDocument): TaskFlowDocumentDraft {
     scope_type: document.scope_type === "flow" ? "flow" : "task",
     title: document.title || document.document_key,
   };
+}
+
+function sortByNewest<T extends object>(items: T[], primaryKey: keyof T, fallbackKey?: keyof T) {
+  return [...items].sort((left, right) => {
+    const leftTime = parseSortTime(left[primaryKey]) || (fallbackKey ? parseSortTime(left[fallbackKey]) : 0);
+    const rightTime = parseSortTime(right[primaryKey]) || (fallbackKey ? parseSortTime(right[fallbackKey]) : 0);
+    return rightTime - leftTime;
+  });
+}
+
+function parseSortTime(value: unknown) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return 0;
+  }
+  const parsed = new Date(raw).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
 }

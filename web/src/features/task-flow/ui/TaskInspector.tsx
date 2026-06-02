@@ -290,8 +290,8 @@ export function TaskInspector({
             </div>
           </div>
           <div className="timeline-list">
-            {(detail.task_comments || []).length ? (
-              detail.task_comments.map((item) => {
+            {sortByNewest(detail.task_comments || [], "created_at").length ? (
+              sortByNewest(detail.task_comments || [], "created_at").map((item) => {
                 const key = String(item.id || `${item.created_at}-${item.message}`);
                 const rawMessage = String(item.message || "");
                 const collapsedMessage = truncate(rawMessage, 320);
@@ -346,8 +346,8 @@ export function TaskInspector({
             </div>
           </div>
           <div className="timeline-list">
-            {(detail.task_events || []).slice(0, 6).length ? (
-              detail.task_events.slice(0, 6).map((item) => (
+            {sortByNewest(detail.task_events || [], "created_at").slice(0, 6).length ? (
+              sortByNewest(detail.task_events || [], "created_at").slice(0, 6).map((item) => (
                 <article className="timeline-item" key={String(item.id || `${item.created_at}-${item.event_type}`)}>
                   <p>{item.event_type || item.reason || "event"}</p>
                   <span>{formatDateTime(item.created_at)}</span>
@@ -358,8 +358,8 @@ export function TaskInspector({
             )}
           </div>
           <div className="timeline-list">
-            {(detail.task_runs || []).slice(0, 4).length ? (
-              detail.task_runs.slice(0, 4).map((item) => (
+            {sortByNewest(detail.task_runs || [], "created_at", "started_at").slice(0, 4).length ? (
+              sortByNewest(detail.task_runs || [], "created_at", "started_at").slice(0, 4).map((item) => (
                 <article className="timeline-item" key={String(item.id || `${item.created_at}-${item.status}`)}>
                   <p>{item.status || "run"}</p>
                   <span>{formatDateTime(item.created_at || item.started_at)}</span>
@@ -396,4 +396,21 @@ function TaskSectionNavButton({ disabled = false, label, onClick, shortLabel }: 
       {shortLabel}
     </button>
   );
+}
+
+function sortByNewest<T extends object>(items: T[], primaryKey: keyof T, fallbackKey?: keyof T) {
+  return [...items].sort((left, right) => {
+    const leftTime = parseSortTime(left[primaryKey]) || (fallbackKey ? parseSortTime(left[fallbackKey]) : 0);
+    const rightTime = parseSortTime(right[primaryKey]) || (fallbackKey ? parseSortTime(right[fallbackKey]) : 0);
+    return rightTime - leftTime;
+  });
+}
+
+function parseSortTime(value: unknown) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return 0;
+  }
+  const parsed = new Date(raw).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
 }

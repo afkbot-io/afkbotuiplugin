@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildSettingsPatch,
+  bulkMoveTaskItems,
   createTaskItem,
   createTaskProject,
   defaultProjectDraft,
@@ -576,6 +577,30 @@ describe("task-flow api helpers", () => {
       owner_ref: "reviewer",
       owner_type: "employee",
     });
+  });
+
+  it("clears blocked metadata when bulk moving tasks out of blocked", async () => {
+    const api = {
+      bulkUpdateTasks: vi.fn(async () => ({ ok: true })),
+    };
+    const config = {
+      task_flow_actor_ref: "web-user",
+      task_flow_actor_type: "human",
+      task_flow_board_limit_per_column: 20,
+      task_flow_poll_interval_sec: 5,
+    };
+
+    await bulkMoveTaskItems(api, "default", ["task-1"], "todo", config);
+
+    expect(api.bulkUpdateTasks).toHaveBeenCalledWith(
+      "default",
+      expect.objectContaining({
+        blocked_reason_code: null,
+        blocked_reason_text: null,
+        status: "todo",
+        task_ids: ["task-1"],
+      }),
+    );
   });
 });
 

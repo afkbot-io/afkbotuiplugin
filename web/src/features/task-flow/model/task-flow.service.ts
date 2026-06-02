@@ -452,12 +452,17 @@ export async function bulkMoveTaskItems(
   status: string,
   config: TaskFlowConfig,
 ) {
-  await coerceTaskFlowApi(api).bulkUpdateTasks(profileId, {
+  const payload: Record<string, unknown> = {
     actor_ref: config.task_flow_actor_ref,
     actor_type: normalizeActorType(config.task_flow_actor_type),
     status,
     task_ids: taskIds,
-  });
+  };
+  if (status !== "blocked") {
+    payload.blocked_reason_code = null;
+    payload.blocked_reason_text = null;
+  }
+  await coerceTaskFlowApi(api).bulkUpdateTasks(profileId, payload);
 }
 
 export async function bulkDeleteTaskItems(api: unknown, profileId: string, taskIds: string[]) {

@@ -2,6 +2,18 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.7 - 2026-06-02
+
+- allow Task Flow tasks to move out of `Blocked` by explicitly clearing blocker
+  reason metadata only when the operator sends that state change
+- preserve existing Task Flow blocker fields on ordinary task patch and bulk
+  update calls when the payload does not include blocker fields
+- show Task Flow comments, task runs, activity, flow documents, and task
+  documents newest-first in the inspector and knowledge panel
+- require AFKBOT `1.9.12+` for uv-tool update source recovery and downgrade
+  protection
+- sync release metadata to version `1.0.7`
+
 ## 1.0.6 - 2026-06-02
 
 - normalize legacy `web-user` human actor placeholders to the validated local human principal before Task Flow comment writes

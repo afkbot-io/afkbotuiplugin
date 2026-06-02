@@ -341,6 +341,17 @@ def test_task_flow_task_routes_map_prompt_payload_to_description(monkeypatch) ->
     assert observed["update"]["description"] == "Update the route contract."
     assert "reviewer_type" not in observed["update"]
     assert "reviewer_ref" not in observed["update"]
+    assert "blocked_reason_code" not in observed["update"]
+    assert "blocked_reason_text" not in observed["update"]
+
+    clear_blocker_response = client.patch(
+        "/v1/plugins/afkbotui/task-flow/tasks/task-1",
+        json={"blocked_reason_code": None, "blocked_reason_text": None},
+        params={"profile_id": "default"},
+    )
+    assert clear_blocker_response.status_code == 200
+    assert observed["update"]["blocked_reason_code"] is None
+    assert observed["update"]["blocked_reason_text"] is None
 
     clear_reviewer_response = client.patch(
         "/v1/plugins/afkbotui/task-flow/tasks/task-1",

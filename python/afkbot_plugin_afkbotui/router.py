@@ -995,11 +995,13 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 "owner_ref": payload.owner_ref,
                 "requires_review": payload.requires_review,
                 "labels": payload.labels,
-                "blocked_reason_code": payload.blocked_reason_code,
-                "blocked_reason_text": payload.blocked_reason_text,
                 "actor_type": payload.actor_type,
                 "actor_ref": payload.actor_ref,
             }
+            if "blocked_reason_code" in payload.model_fields_set:
+                update_kwargs["blocked_reason_code"] = payload.blocked_reason_code
+            if "blocked_reason_text" in payload.model_fields_set:
+                update_kwargs["blocked_reason_text"] = payload.blocked_reason_text
             if "session_id" in payload.model_fields_set:
                 update_kwargs["session_id"] = payload.session_id
             if "session_profile_id" in payload.model_fields_set:
@@ -1055,11 +1057,13 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                     "owner_ref": payload.owner_ref,
                     "requires_review": payload.requires_review,
                     "labels": payload.labels,
-                    "blocked_reason_code": payload.blocked_reason_code,
-                    "blocked_reason_text": payload.blocked_reason_text,
                     "actor_type": payload.actor_type,
                     "actor_ref": payload.actor_ref,
                 }
+                if "blocked_reason_code" in payload.model_fields_set:
+                    update_kwargs["blocked_reason_code"] = payload.blocked_reason_code
+                if "blocked_reason_text" in payload.model_fields_set:
+                    update_kwargs["blocked_reason_text"] = payload.blocked_reason_text
                 if "reviewer_type" in payload.model_fields_set:
                     update_kwargs["reviewer_type"] = payload.reviewer_type
                 if "reviewer_ref" in payload.model_fields_set:

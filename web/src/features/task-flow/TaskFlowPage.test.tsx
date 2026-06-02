@@ -148,6 +148,11 @@ function createApi({
           created_at: "2026-04-21T09:00:00.000Z",
           message: "Initial note.",
         },
+        {
+          id: 2,
+          created_at: "2026-04-21T10:00:00.000Z",
+          message: "Latest note.",
+        },
       ],
     ],
     ["task-review", []],
@@ -166,6 +171,17 @@ function createApi({
           scope_type: "flow",
           title: "Flow plan",
           updated_at: "2026-04-21T10:00:00.000Z",
+        },
+        {
+          body: "Newer release context.",
+          confirmation_status: "draft",
+          document_key: "handoff",
+          id: "doc-flow-handoff",
+          revision: 1,
+          scope_id: "flow-alpha",
+          scope_type: "flow",
+          title: "Latest flow handoff",
+          updated_at: "2026-04-21T12:00:00.000Z",
         },
       ],
     ],
@@ -535,6 +551,11 @@ describe("TaskFlowPage", () => {
     expect(await screen.findByText("Inspector")).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Task sections" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Jump to Comments" }));
+    const commentsSection = screen.getByText("Discussion").closest("section") as HTMLElement;
+    expect(within(commentsSection).getAllByText(/note\./i).map((node) => node.textContent)).toEqual([
+      "Latest note.",
+      "Initial note.",
+    ]);
 
     const titleInput = screen.getByDisplayValue("Fix planner output");
     await user.clear(titleInput);
@@ -566,6 +587,8 @@ describe("TaskFlowPage", () => {
     const knowledgeSection = (await screen.findByText("Context & Docs")).closest("section") as HTMLElement;
     expect(knowledgeSection).not.toBeNull();
     expect(within(knowledgeSection).getByText("Flow plan")).toBeInTheDocument();
+    const docsCopy = within(knowledgeSection).getByText("Latest flow handoff").compareDocumentPosition(within(knowledgeSection).getByText("Flow plan"));
+    expect(docsCopy & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(knowledgeSection).getByText("wake_requested")).toBeInTheDocument();
 
     await user.selectOptions(within(knowledgeSection).getByLabelText("Document"), "handoff");
@@ -591,7 +614,7 @@ describe("TaskFlowPage", () => {
     await waitFor(() => {
       expect(api.confirmTaskFlowDocument).toHaveBeenCalledWith(
         "default",
-        "doc-flow-plan",
+        "doc-flow-handoff",
         expect.objectContaining({
           expected_revision: 1,
         }),
