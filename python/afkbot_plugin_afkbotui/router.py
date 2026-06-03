@@ -634,7 +634,10 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 created_by_type=actor_type,
                 created_by_ref=actor_ref,
                 default_owner_type=payload.default_owner_type,
-                default_owner_ref=payload.default_owner_ref,
+                default_owner_ref=_normalize_task_flow_human_principal_ref(
+                    principal_type=payload.default_owner_type,
+                    principal_ref=payload.default_owner_ref,
+                ),
                 labels=payload.labels,
             )
         except TaskFlowServiceError as exc:
@@ -669,6 +672,11 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         ):
             if field_name in payload.model_fields_set:
                 kwargs[field_name] = getattr(payload, field_name)
+        if "default_owner_ref" in payload.model_fields_set or "default_owner_type" in payload.model_fields_set:
+            kwargs["default_owner_ref"] = _normalize_task_flow_human_principal_ref(
+                principal_type=kwargs.get("default_owner_type"),
+                principal_ref=kwargs.get("default_owner_ref"),
+            )
         try:
             item = await service.update_flow(**kwargs)
         except TaskFlowServiceError as exc:
@@ -887,9 +895,15 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 priority=payload.priority,
                 due_at=payload.due_at,
                 owner_type=payload.owner_type,
-                owner_ref=payload.owner_ref,
+                owner_ref=_normalize_task_flow_human_principal_ref(
+                    principal_type=payload.owner_type,
+                    principal_ref=payload.owner_ref,
+                ),
                 reviewer_type=payload.reviewer_type,
-                reviewer_ref=payload.reviewer_ref,
+                reviewer_ref=_normalize_task_flow_human_principal_ref(
+                    principal_type=payload.reviewer_type,
+                    principal_ref=payload.reviewer_ref,
+                ),
                 source_type=payload.source_type,
                 source_ref=payload.source_ref,
                 labels=payload.labels,
@@ -1130,7 +1144,10 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 "priority": payload.priority,
                 "due_at": payload.due_at,
                 "owner_type": payload.owner_type,
-                "owner_ref": payload.owner_ref,
+                "owner_ref": _normalize_task_flow_human_principal_ref(
+                    principal_type=payload.owner_type,
+                    principal_ref=payload.owner_ref,
+                ),
                 "requires_review": payload.requires_review,
                 "labels": payload.labels,
                 "actor_type": actor_type,
@@ -1148,6 +1165,11 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 update_kwargs["reviewer_type"] = payload.reviewer_type
             if "reviewer_ref" in payload.model_fields_set:
                 update_kwargs["reviewer_ref"] = payload.reviewer_ref
+            if "reviewer_ref" in payload.model_fields_set or "reviewer_type" in payload.model_fields_set:
+                update_kwargs["reviewer_ref"] = _normalize_task_flow_human_principal_ref(
+                    principal_type=update_kwargs.get("reviewer_type"),
+                    principal_ref=update_kwargs.get("reviewer_ref"),
+                )
             item = await service.update_task(**update_kwargs)
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
@@ -1198,7 +1220,10 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                     "priority": payload.priority,
                     "due_at": payload.due_at,
                     "owner_type": payload.owner_type,
-                    "owner_ref": payload.owner_ref,
+                    "owner_ref": _normalize_task_flow_human_principal_ref(
+                        principal_type=payload.owner_type,
+                        principal_ref=payload.owner_ref,
+                    ),
                     "requires_review": payload.requires_review,
                     "labels": payload.labels,
                     "actor_type": actor_type,
@@ -1212,6 +1237,11 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                     update_kwargs["reviewer_type"] = payload.reviewer_type
                 if "reviewer_ref" in payload.model_fields_set:
                     update_kwargs["reviewer_ref"] = payload.reviewer_ref
+                if "reviewer_ref" in payload.model_fields_set or "reviewer_type" in payload.model_fields_set:
+                    update_kwargs["reviewer_ref"] = _normalize_task_flow_human_principal_ref(
+                        principal_type=update_kwargs.get("reviewer_type"),
+                        principal_ref=update_kwargs.get("reviewer_ref"),
+                    )
                 updated = await service.update_task(**update_kwargs)
                 if payload.comment_message:
                     await service.add_task_comment(
@@ -1421,7 +1451,10 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 actor_type=actor_type,
                 actor_ref=actor_ref,
                 owner_type=payload.owner_type,
-                owner_ref=payload.owner_ref,
+                owner_ref=_normalize_task_flow_human_principal_ref(
+                    principal_type=payload.owner_type,
+                    principal_ref=payload.owner_ref,
+                ),
                 reason_code=payload.reason_code,
             )
         except TaskFlowServiceError as exc:
@@ -2167,9 +2200,19 @@ def _normalize_task_flow_actor_type(value: object) -> str:
 
 def _normalize_task_flow_actor_ref(*, actor_type: str, value: object) -> str:
     raw = str(value or "").strip()
-    if actor_type == "human" and raw in {"", "default", "web-user"}:
+    if actor_type == "human" and raw.lower() in {"", "default", "web-user", "web-user/default"}:
         return resolve_local_human_ref(get_settings())
     return raw or (resolve_local_human_ref(get_settings()) if actor_type == "human" else "cto")
+
+
+def _normalize_task_flow_human_principal_ref(
+    *,
+    principal_type: object,
+    principal_ref: object,
+) -> object:
+    if str(principal_type or "").strip().lower() != "human":
+        return principal_ref
+    return _normalize_task_flow_actor_ref(actor_type="human", value=principal_ref)
 
 
 def _resolve_task_flow_actor_identity(

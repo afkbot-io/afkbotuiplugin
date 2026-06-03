@@ -2,6 +2,16 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.13 - 2026-06-03
+
+- normalize the legacy `web-user/default` human placeholder, including
+  persisted Task Flow actor config and manual operator payloads
+- keep Task Flow flow edits attributed to the configured operator actor instead
+  of silently falling back to the local human placeholder
+- normalize human default-owner, owner, and reviewer placeholders before core
+  service calls so manual flow/task edits do not persist `web-user`
+- sync release metadata to version `1.0.13`
+
 ## 1.0.12 - 2026-06-03
 
 - resolve Cloud UI Task Flow flow/task create and update actions, bulk task

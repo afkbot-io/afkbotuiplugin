@@ -20,6 +20,7 @@ import {
   taskDraftFromTask,
   toDateTimeLocal,
   updateTaskItem,
+  updateTaskProject,
   validateProjectDraft,
   validateSettingsDraft,
   validateTaskDraft,
@@ -514,6 +515,15 @@ describe("task-flow api helpers", () => {
           },
         };
       },
+      updateTaskFlow: async (_profileId: string, _flowId: string, payload: Record<string, unknown>) => {
+        payloads.push(payload);
+        return {
+          task_flow: {
+            id: "flow-1",
+            title: "Flow",
+          },
+        };
+      },
     };
 
     await createTaskItem(api, "default", draft, config);
@@ -552,6 +562,18 @@ describe("task-flow api helpers", () => {
       },
       config,
     );
+    await updateTaskProject(
+      api,
+      "default",
+      "flow-1",
+      {
+        ...defaultProjectDraft(),
+        default_owner_ref: "researcher",
+        default_owner_type: "employee",
+        title: "Flow",
+      },
+      { ...config, task_flow_actor_ref: "cto", task_flow_actor_type: "employee" },
+    );
 
     expect(payloads[0]).toMatchObject({
       description: "Write the task contract.",
@@ -576,6 +598,12 @@ describe("task-flow api helpers", () => {
     expect(payloads[4]).toMatchObject({
       owner_ref: "reviewer",
       owner_type: "employee",
+    });
+    expect(payloads[5]).toMatchObject({
+      actor_ref: "cto",
+      actor_type: "employee",
+      default_owner_ref: "researcher",
+      default_owner_type: "employee",
     });
   });
 

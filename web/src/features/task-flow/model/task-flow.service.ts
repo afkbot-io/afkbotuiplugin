@@ -390,6 +390,8 @@ export async function updateTaskProject(
 ) {
   const defaultOwnerType = normalizeActorType(draft.default_owner_type);
   const payload = await coerceTaskFlowApi(api).updateTaskFlow(profileId, flowId, {
+    actor_ref: config.task_flow_actor_ref,
+    actor_type: normalizeActorType(config.task_flow_actor_type),
     default_owner_ref: normalizeActorRef(draft.default_owner_type, draft.default_owner_ref, config),
     default_owner_type: defaultOwnerType || null,
     description: draft.description.trim() || null,

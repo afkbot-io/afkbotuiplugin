@@ -173,6 +173,34 @@ def test_config_accepts_employee_task_flow_actor_type_and_normalizes_legacy_acto
     assert response.json()["config"]["task_flow_actor_ref"] == "cto"
 
 
+def test_config_normalizes_web_user_default_human_actor_placeholder(monkeypatch) -> None:
+    class FakeRegistry:
+        def read_config(self) -> dict[str, object]:
+            return {
+                "task_flow_actor_ref": "web-user/default",
+                "task_flow_actor_type": "human",
+            }
+
+        def write_config(self, payload: dict[str, object]) -> None:
+            del payload
+
+        def reset_config(self) -> None:
+            pass
+
+    monkeypatch.setattr(router_module, "resolve_local_human_ref", lambda _settings: "cli_user:local")
+
+    app = FastAPI()
+    app.include_router(
+        router_module.build_router(api_prefix="/v1/plugins/afkbotui", registry=FakeRegistry())
+    )
+    client = TestClient(app)
+
+    response = client.get("/v1/plugins/afkbotui/config")
+    assert response.status_code == 200
+    assert response.json()["config"]["task_flow_actor_type"] == "human"
+    assert response.json()["config"]["task_flow_actor_ref"] == "cli_user:local"
+
+
 def test_automation_webhook_endpoint_route_is_separate_from_masked_detail(monkeypatch) -> None:
     now = datetime.now(timezone.utc)
     masked = AutomationMetadata(
@@ -306,7 +334,10 @@ def test_task_flow_task_routes_map_prompt_payload_to_description(monkeypatch) ->
 
     class FakeRegistry:
         def read_config(self) -> dict[str, object]:
-            return {}
+            return {
+                "task_flow_actor_ref": "web-user/default",
+                "task_flow_actor_type": "human",
+            }
 
         def write_config(self, payload: dict[str, object]) -> None:
             del payload
@@ -326,13 +357,22 @@ def test_task_flow_task_routes_map_prompt_payload_to_description(monkeypatch) ->
 
     create_response = client.post(
         "/v1/plugins/afkbotui/task-flow/tasks",
-        json={"prompt": "Write the route contract.", "title": "Route task"},
+        json={
+            "owner_ref": "web-user/default",
+            "owner_type": "human",
+            "prompt": "Write the route contract.",
+            "reviewer_ref": "default",
+            "reviewer_type": "human",
+            "title": "Route task",
+        },
         params={"profile_id": "default"},
     )
     assert create_response.status_code == 200
     assert observed["create"]["profile_id"] == "default"
     assert observed["create"]["created_by_type"] == "human"
     assert observed["create"]["created_by_ref"] == "cli_user:local"
+    assert observed["create"]["owner_ref"] == "cli_user:local"
+    assert observed["create"]["reviewer_ref"] == "cli_user:local"
 
     update_response = client.patch(
         "/v1/plugins/afkbotui/task-flow/tasks/task-1",
@@ -348,6 +388,20 @@ def test_task_flow_task_routes_map_prompt_payload_to_description(monkeypatch) ->
     assert "reviewer_ref" not in observed["update"]
     assert "blocked_reason_code" not in observed["update"]
     assert "blocked_reason_text" not in observed["update"]
+
+    human_owner_response = client.patch(
+        "/v1/plugins/afkbotui/task-flow/tasks/task-1",
+        json={
+            "owner_ref": "web-user/default",
+            "owner_type": "human",
+            "reviewer_ref": "web-user",
+            "reviewer_type": "human",
+        },
+        params={"profile_id": "default"},
+    )
+    assert human_owner_response.status_code == 200
+    assert observed["update"]["owner_ref"] == "cli_user:local"
+    assert observed["update"]["reviewer_ref"] == "cli_user:local"
 
     clear_blocker_response = client.patch(
         "/v1/plugins/afkbotui/task-flow/tasks/task-1",
@@ -424,7 +478,7 @@ def test_task_flow_flow_update_route_forwards_metadata_patch(monkeypatch) -> Non
         "/v1/plugins/afkbotui/task-flow/flows/flow-1",
         json={
             "default_owner_ref": "default",
-            "default_owner_type": "ai_profile",
+            "default_owner_type": "human",
             "description": "Updated scope",
             "labels": ["delivery"],
             "title": "Renamed Flow",
@@ -437,8 +491,8 @@ def test_task_flow_flow_update_route_forwards_metadata_patch(monkeypatch) -> Non
     assert observed == {
         "actor_ref": "cli_user:local",
         "actor_type": "human",
-        "default_owner_ref": "default",
-        "default_owner_type": "ai_profile",
+        "default_owner_ref": "cli_user:local",
+        "default_owner_type": "human",
         "description": "Updated scope",
         "flow_id": "flow-1",
         "labels": ("delivery",),
@@ -512,9 +566,13 @@ def test_task_flow_bulk_and_review_routes_resolve_human_actor_placeholders(monke
     bulk_response = client.post(
         "/v1/plugins/afkbotui/task-flow/tasks/bulk-update",
         json={
-            "actor_ref": "web-user",
+            "actor_ref": "web-user/default",
             "actor_type": "human",
             "comment_message": "Moving by hand",
+            "owner_ref": "web-user/default",
+            "owner_type": "human",
+            "reviewer_ref": "default",
+            "reviewer_type": "human",
             "status": "review",
             "task_ids": ["task-1"],
         },
@@ -523,6 +581,8 @@ def test_task_flow_bulk_and_review_routes_resolve_human_actor_placeholders(monke
     assert bulk_response.status_code == 200
     assert observed["bulk_update"]["actor_type"] == "human"
     assert observed["bulk_update"]["actor_ref"] == "cli_user:local"
+    assert observed["bulk_update"]["owner_ref"] == "cli_user:local"
+    assert observed["bulk_update"]["reviewer_ref"] == "cli_user:local"
     assert observed["bulk_comment"]["actor_type"] == "human"
     assert observed["bulk_comment"]["actor_ref"] == "cli_user:local"
 
@@ -542,12 +602,19 @@ def test_task_flow_bulk_and_review_routes_resolve_human_actor_placeholders(monke
 
     changes_response = client.post(
         "/v1/plugins/afkbotui/task-flow/tasks/task-1/review/request-changes",
-        json={"actor_ref": "web-user", "actor_type": "human", "reason_text": "Needs edits"},
+        json={
+            "actor_ref": "web-user",
+            "actor_type": "human",
+            "owner_ref": "web-user/default",
+            "owner_type": "human",
+            "reason_text": "Needs edits",
+        },
         params={"profile_id": "default"},
     )
     assert changes_response.status_code == 200
     assert observed["request_review_changes"]["actor_type"] == "human"
     assert observed["request_review_changes"]["actor_ref"] == "cli_user:local"
+    assert observed["request_review_changes"]["owner_ref"] == "cli_user:local"
 
 
 def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) -> None:
