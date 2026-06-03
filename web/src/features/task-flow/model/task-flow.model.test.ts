@@ -26,7 +26,6 @@ import {
   validateTaskDraft,
 } from "@/features/task-flow/model/task-flow.api";
 import {
-  buildFallbackSessionFromTask,
   compareFlowProjects,
   formatFlowCreatorSummary,
   formatFlowOwnerSummary,
@@ -729,25 +728,31 @@ describe("task-flow presentation helpers", () => {
 
   it("handles task sessions and session feed formatting", () => {
     const task = {
+      active_session: {
+        dialog_active: true,
+        latest_activity_at: "2026-04-21T11:00:00.000Z",
+        queued_turn_count: 2,
+        running_turn_count: 1,
+        session_id: "session-1",
+        session_profile_id: "default",
+      },
       id: "task-1",
-      title: "Task",
-      status: "running",
       last_session_id: "session-1",
-      owner_type: "employee",
       owner_ref: "cto",
+      owner_type: "employee",
       profile_id: "default",
+      status: "running",
+      title: "Task",
     };
-    const fallbackSession = buildFallbackSessionFromTask(task);
-    expect(fallbackSession?.session_profile_id).toBe("default");
-    expect(
-      buildFallbackSessionFromTask({
-        ...task,
-        owner_type: "employee",
-        owner_ref: "developer",
-      })?.session_profile_id,
-    ).toBe("default");
     const sessionKey = getTaskSessionKey(task);
     expect(sessionKey?.sessionId).toBe("session-1");
+    expect(
+      getTaskSessionKey({
+        ...task,
+        active_session: null,
+        last_session_id: "stale-session",
+      }),
+    ).toBeNull();
     const insights = {
       taskId: "task-1",
       session: {
@@ -792,7 +797,17 @@ describe("task-flow presentation helpers", () => {
         Date.parse("2026-04-21T11:00:00.000Z"),
       ),
     ).toBe("5m");
-    expect(formatTaskRunningElapsed(task, Date.parse("2026-04-21T11:00:00.000Z"))).toBe("");
+    expect(
+      formatTaskRunningElapsed(
+        {
+          ...task,
+          active_session: {
+            dialog_active: true,
+          },
+        },
+        Date.parse("2026-04-21T11:00:00.000Z"),
+      ),
+    ).toBe("");
     expect(formatSessionEventTitle({ event_type: "tool.call", tool_name: "planner" })).toBe("Calling planner");
     expect(
       formatSessionEventCopy({

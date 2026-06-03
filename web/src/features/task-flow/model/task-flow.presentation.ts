@@ -282,33 +282,14 @@ export function getTaskActiveSession(task: TaskFlowTask) {
 }
 
 export function inferTaskSessionProfileId(task: TaskFlowTask) {
-  const boundProfileId = String(task.last_session_profile_id || "").trim();
-  if (boundProfileId) {
-    return boundProfileId;
-  }
   return String(task.profile_id || "").trim() || "default";
-}
-
-export function buildFallbackSessionFromTask(task: TaskFlowTask) {
-  const sessionId = String(task.last_session_id || "").trim();
-  if (!sessionId) {
-    return null;
-  }
-  return {
-    dialog_active: false,
-    latest_activity_at: null,
-    queued_turn_count: 0,
-    running_turn_count: 0,
-    session_id: sessionId,
-    session_profile_id: inferTaskSessionProfileId(task),
-  } satisfies TaskFlowSession;
 }
 
 export function getTaskSessionKey(task: TaskFlowTask | null | undefined) {
   if (!task) {
     return null;
   }
-  const session = getTaskActiveSession(task) || buildFallbackSessionFromTask(task);
+  const session = getTaskActiveSession(task);
   if (!session?.session_id) {
     return null;
   }
@@ -337,7 +318,7 @@ export function getRenderedTaskSession(task: TaskFlowTask | null, sessionInsight
   if (sessionKey && isSameSessionKey(sessionInsights, sessionKey.taskId, sessionKey) && sessionInsights?.session?.session_id) {
     return sessionInsights.session;
   }
-  return getTaskActiveSession(task) || buildFallbackSessionFromTask(task);
+  return getTaskActiveSession(task);
 }
 
 export function getRenderedTaskSessionInsights(task: TaskFlowTask | null, sessionInsights: TaskSessionInsights | null) {

@@ -2,6 +2,19 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.14 - 2026-06-03
+
+- send validated operator actor payloads for Task Flow flow/task delete and
+  bulk-delete actions so public core delete guards can authorize manual
+  mutations
+- normalize public UI operator mutations to the validated local human principal
+  instead of allowing browser-side employee actor spoofing
+- remove manual task patch session binding from the public plugin route and
+  stop opening live-session inspector views from stale `last_session_*`
+  metadata
+- require AFKBOT `1.9.16+` for Task Flow public actor/session hardening
+- sync release metadata to version `1.0.14`
+
 ## 1.0.13 - 2026-06-03
 
 - normalize the legacy `web-user/default` human placeholder, including

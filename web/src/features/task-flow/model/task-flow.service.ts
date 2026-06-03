@@ -45,8 +45,8 @@ type TaskFlowApi = {
   bulkUpdateTasks: (profileId: string, payload: Record<string, unknown>) => Promise<unknown>;
   createTask: (profileId: string, payload: Record<string, unknown>) => Promise<{ task?: TaskFlowTask }>;
   createTaskFlow: (profileId: string, payload: Record<string, unknown>) => Promise<{ task_flow?: TaskFlowProject }>;
-  deleteTask: (profileId: string, taskId: string) => Promise<unknown>;
-  deleteTaskFlow: (profileId: string, flowId: string) => Promise<unknown>;
+  deleteTask: (profileId: string, taskId: string, payload?: Record<string, unknown>) => Promise<unknown>;
+  deleteTaskFlow: (profileId: string, flowId: string, payload?: Record<string, unknown>) => Promise<unknown>;
   getTask: (profileId: string, taskId: string) => Promise<{ task?: TaskFlowTask }>;
   getTaskBoard: (profileId: string, params?: Record<string, unknown>) => Promise<{ board?: TaskFlowBoard }>;
   getTaskContext: (profileId: string, taskId: string) => Promise<{ context?: TaskFlowContextBundle }>;
@@ -458,12 +458,19 @@ export async function updateTaskItem(
   return payload.task || null;
 }
 
-export async function deleteTaskItem(api: unknown, profileId: string, taskId: string) {
-  await coerceTaskFlowApi(api).deleteTask(profileId, taskId);
+function operatorActorPayload(config: TaskFlowConfig): Record<string, unknown> {
+  return {
+    actor_ref: config.task_flow_actor_ref,
+    actor_type: normalizeActorType(config.task_flow_actor_type),
+  };
 }
 
-export async function deleteTaskProject(api: unknown, profileId: string, flowId: string) {
-  await coerceTaskFlowApi(api).deleteTaskFlow(profileId, flowId);
+export async function deleteTaskItem(api: unknown, profileId: string, taskId: string, config: TaskFlowConfig) {
+  await coerceTaskFlowApi(api).deleteTask(profileId, taskId, operatorActorPayload(config));
+}
+
+export async function deleteTaskProject(api: unknown, profileId: string, flowId: string, config: TaskFlowConfig) {
+  await coerceTaskFlowApi(api).deleteTaskFlow(profileId, flowId, operatorActorPayload(config));
 }
 
 export async function bulkMoveTaskItems(
@@ -486,8 +493,11 @@ export async function bulkMoveTaskItems(
   await coerceTaskFlowApi(api).bulkUpdateTasks(profileId, payload);
 }
 
-export async function bulkDeleteTaskItems(api: unknown, profileId: string, taskIds: string[]) {
-  return coerceTaskFlowApi(api).bulkDeleteTasks(profileId, { task_ids: taskIds });
+export async function bulkDeleteTaskItems(api: unknown, profileId: string, taskIds: string[], config: TaskFlowConfig) {
+  return coerceTaskFlowApi(api).bulkDeleteTasks(profileId, {
+    ...operatorActorPayload(config),
+    task_ids: taskIds,
+  });
 }
 
 export async function createTaskComment(

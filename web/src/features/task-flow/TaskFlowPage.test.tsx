@@ -1010,7 +1010,14 @@ describe("TaskFlowPage", () => {
     await user.click(within(dialog).getByRole("button", { name: "Confirm Delete" }));
 
     await waitFor(() => {
-      expect(api.deleteTaskFlow).toHaveBeenCalledWith("default", "flow-alpha");
+      expect(api.deleteTaskFlow).toHaveBeenCalledWith(
+        "default",
+        "flow-alpha",
+        expect.objectContaining({
+          actor_ref: "web-user",
+          actor_type: "human",
+        }),
+      );
       expect(notify).toHaveBeenCalledWith("Flow deleted.", "success");
     });
   });
@@ -1145,7 +1152,14 @@ describe("TaskFlowPage", () => {
     await user.click(screen.getByRole("button", { name: "Delete Selected" }));
 
     await waitFor(() => {
-      expect(api.bulkDeleteTasks).toHaveBeenCalled();
+      expect(api.bulkDeleteTasks).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          actor_ref: "web-user",
+          actor_type: "human",
+          task_ids: ["task-1"],
+        }),
+      );
       expect(notify).toHaveBeenCalledWith("Deleted 1 tasks.", "success");
     });
   });

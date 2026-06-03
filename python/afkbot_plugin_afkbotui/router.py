@@ -182,8 +182,6 @@ class TaskPatchPayload(BaseModel):
     reviewer_ref: str | None = None
     requires_review: bool | None = None
     labels: tuple[str, ...] | None = None
-    session_id: str | None = Field(default=None, min_length=1, max_length=128)
-    session_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
     blocked_reason_code: str | None = None
     blocked_reason_text: str | None = None
     actor_type: str | None = None
@@ -234,6 +232,8 @@ class TaskBulkDeletePayload(BaseModel):
     """Request body for bulk task deletion from the Task Flow board."""
 
     task_ids: tuple[str, ...] = Field(min_length=1)
+    actor_type: str = Field(default="human", min_length=1)
+    actor_ref: str = Field(default="web-user", min_length=1)
 
 
 class TaskDocumentPutPayload(BaseModel):
@@ -686,11 +686,23 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
     @router.delete("/task-flow/flows/{flow_id}")
     async def task_flow_delete(
         flow_id: str,
+        payload: ReviewApprovePayload | None = None,
         profile_id: str = "default",
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.actor_type if payload is not None else None,
+            actor_ref=payload.actor_ref if payload is not None else None,
+            config=config,
+        )
         try:
-            await service.delete_flow(profile_id=profile_id, flow_id=flow_id)
+            await service.delete_flow(
+                profile_id=profile_id,
+                flow_id=flow_id,
+                actor_type=actor_type,
+                actor_ref=actor_ref,
+            )
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
         return {"deleted": True, "flow_id": flow_id}
@@ -1157,10 +1169,6 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 update_kwargs["blocked_reason_code"] = payload.blocked_reason_code
             if "blocked_reason_text" in payload.model_fields_set:
                 update_kwargs["blocked_reason_text"] = payload.blocked_reason_text
-            if "session_id" in payload.model_fields_set:
-                update_kwargs["session_id"] = payload.session_id
-            if "session_profile_id" in payload.model_fields_set:
-                update_kwargs["session_profile_id"] = payload.session_profile_id
             if "reviewer_type" in payload.model_fields_set:
                 update_kwargs["reviewer_type"] = payload.reviewer_type
             if "reviewer_ref" in payload.model_fields_set:
@@ -1178,11 +1186,23 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
     @router.delete("/task-flow/tasks/{task_id}")
     async def task_flow_task_delete(
         task_id: str,
+        payload: ReviewApprovePayload | None = None,
         profile_id: str = "default",
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.actor_type if payload is not None else None,
+            actor_ref=payload.actor_ref if payload is not None else None,
+            config=config,
+        )
         try:
-            await service.delete_task(profile_id=profile_id, task_id=task_id)
+            await service.delete_task(
+                profile_id=profile_id,
+                task_id=task_id,
+                actor_type=actor_type,
+                actor_ref=actor_ref,
+            )
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
         return {"deleted": True, "task_id": task_id}
@@ -1274,6 +1294,12 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         profile_id: str = "default",
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.actor_type,
+            actor_ref=payload.actor_ref,
+            config=config,
+        )
         deleted_task_ids: list[str] = []
         errors: list[dict[str, object]] = []
         seen: set[str] = set()
@@ -1283,7 +1309,12 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 continue
             seen.add(normalized_task_id)
             try:
-                await service.delete_task(profile_id=profile_id, task_id=normalized_task_id)
+                await service.delete_task(
+                    profile_id=profile_id,
+                    task_id=normalized_task_id,
+                    actor_type=actor_type,
+                    actor_ref=actor_ref,
+                )
                 deleted_task_ids.append(normalized_task_id)
             except TaskFlowServiceError as exc:
                 errors.append(
@@ -2090,26 +2121,7 @@ def _build_task_session_payload(task_payload: dict[str, object]) -> dict[str, ob
             "latest_activity_at": active_session.get("latest_activity_at"),
         }
 
-    session_id = str(task_payload.get("last_session_id") or "").strip()
-    if not session_id:
-        return None
-    return {
-        "session_id": session_id,
-        "session_profile_id": _infer_task_session_profile_id(task_payload),
-        "dialog_active": False,
-        "queued_turn_count": 0,
-        "running_turn_count": 0,
-        "latest_activity_at": None,
-    }
-
-
-def _infer_task_session_profile_id(task_payload: dict[str, object]) -> str:
-    """Infer one task session profile id when live session metadata is absent."""
-
-    last_session_profile_id = str(task_payload.get("last_session_profile_id") or "").strip()
-    if last_session_profile_id:
-        return last_session_profile_id
-    return str(task_payload.get("profile_id") or "").strip() or "default"
+    return None
 
 
 def _extract_markdown_summary(content: str) -> str:
@@ -2224,9 +2236,13 @@ def _resolve_task_flow_actor_identity(
     """Resolve UI actor input into the public Task Flow principal identity."""
 
     resolved_actor_type = _normalize_task_flow_actor_type(actor_type or config.task_flow_actor_type)
+    actor_ref_value = actor_ref or config.task_flow_actor_ref
+    if resolved_actor_type == "employee":
+        resolved_actor_type = "human"
+        actor_ref_value = "web-user"
     resolved_actor_ref = _normalize_task_flow_actor_ref(
         actor_type=resolved_actor_type,
-        value=actor_ref or config.task_flow_actor_ref,
+        value=actor_ref_value,
     )
     return resolved_actor_type, resolved_actor_ref
 

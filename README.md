@@ -2,7 +2,7 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, and profile-local text libraries.
 
-Current release: `1.0.13`
+Current release: `1.0.14`
 
 ## Overview
 
@@ -18,7 +18,7 @@ Current frontend/runtime contract:
 
 The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*` or `web/dist/assets/features/*` payloads.
 
-## What Is In 1.0.13
+## What Is In 1.0.14
 
 - single-shell workspace with `Automations`, `Task Flow`, `Docs`, `Subagents`, `Skills`, and `Bootstrap`
 - React-native route surfaces for every section, with shared loaders, dialogs, async buttons, and responsive layout primitives
@@ -37,6 +37,9 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 - named Task Flow priority chips replace raw `pNN` scores with low-to-critical labels and direction markers
 - inspector discussion and live activity panels keep long content inside their panes, collapse oversized comments, keep the comment composer at the bottom, and let operators jump directly to comments or activity from the task section menu
 - Task Flow operator actions normalize legacy `web-user`, `default`, and `web-user/default` human placeholders to the validated local human principal required by AFKBOT core, including comments, document mutations, flow/task edits, bulk moves, review actions, and human owner/reviewer fields
+- Task Flow flow/task delete and bulk-delete actions send explicit operator actor payloads, and browser-side employee actor selections are treated as local human operator actions rather than spoofed employee runtime mutations
+- Task Flow live activity opens only from verified active runtime session metadata; stale `last_session_*` task fields no longer create inspector session links
+- Task Flow task patch routes do not accept manual `session_id` or `session_profile_id` binding from the public plugin API
 - Task Flow flow edits preserve the configured operator actor for audit attribution instead of falling back to the legacy human placeholder
 - moving a Task Flow task out of `Blocked` clears blocker metadata explicitly, while ordinary task edits preserve existing blocker reasons unless the payload changes them
 - autonomous manager escalation tasks show source-task badges and Task Flow labels on the board so recovery work is visible without opening every task
@@ -81,8 +84,8 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 
 ## Requirements
 
-- AFKBOT UI `1.0.13`
-- AFKBOT `>=1.9.15,<2.0.0`
+- AFKBOT UI `1.0.14`
+- AFKBOT `>=1.9.16,<2.0.0`
 - current AFKBOT `1.x` auth/chat runtime surface, including:
   - `/v1/auth/session`
   - `/v1/auth/logout`

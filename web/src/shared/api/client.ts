@@ -378,8 +378,9 @@ export class ApiClient {
     });
   }
 
-  async deleteTaskFlow(profileId: string, flowId: string) {
+  async deleteTaskFlow(profileId: string, flowId: string, payload: Record<string, unknown> = {}) {
     return this.request<Record<string, unknown>>(`/task-flow/flows/${encodeURIComponent(flowId)}`, {
+      body: payload,
       method: "DELETE",
       params: { profile_id: profileId },
     });
@@ -480,8 +481,9 @@ export class ApiClient {
     });
   }
 
-  async deleteTask(profileId: string, taskId: string) {
+  async deleteTask(profileId: string, taskId: string, payload: Record<string, unknown> = {}) {
     return this.request<Record<string, unknown>>(`/task-flow/tasks/${encodeURIComponent(taskId)}`, {
+      body: payload,
       method: "DELETE",
       params: { profile_id: profileId },
     });

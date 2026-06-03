@@ -649,7 +649,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
       state.setDeleteError("");
       state.setModalBusy(true);
       try {
-        await deleteTaskProject(api, profileId, flowId);
+        await deleteTaskProject(api, profileId, flowId, taskFlowConfig);
         if (profileIdRef.current !== profileId) {
           return;
         }
@@ -672,7 +672,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         state.setModalBusy(false);
       }
     },
-    [api, detail?.task?.flow_id, notify, profileId, refreshAll, state],
+    [api, detail?.task?.flow_id, notify, profileId, refreshAll, state, taskFlowConfig],
   );
 
   const handleCreateTask = useCallback(async () => {
@@ -743,7 +743,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     state.setDeleteError("");
     state.setModalBusy(true);
     try {
-      await deleteTaskItem(api, profileId, state.selectedTaskId);
+      await deleteTaskItem(api, profileId, state.selectedTaskId, taskFlowConfig);
       if (profileIdRef.current !== profileId) {
         return;
       }
@@ -761,7 +761,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
       state.setDeleteError(resolveTaskFlowError(error));
       state.setModalBusy(false);
     }
-  }, [api, notify, profileId, refreshAll, state]);
+  }, [api, notify, profileId, refreshAll, state, taskFlowConfig]);
 
   const handleDeleteSelected = useCallback(async () => {
     const taskIds = [...state.selectedTaskIds];
@@ -771,7 +771,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     state.setDeleteError("");
     state.setModalBusy(true);
     try {
-      const response = await bulkDeleteTaskItems(api, profileId, taskIds);
+      const response = await bulkDeleteTaskItems(api, profileId, taskIds, taskFlowConfig);
       if (profileIdRef.current !== profileId) {
         return;
       }
@@ -796,7 +796,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     } finally {
       state.setModalBusy(false);
     }
-  }, [api, notify, profileId, refreshAll, state]);
+  }, [api, notify, profileId, refreshAll, state, taskFlowConfig]);
 
   const handleSubmitComment = useCallback(
     async (message: string) => {
