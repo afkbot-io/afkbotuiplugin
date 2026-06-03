@@ -569,10 +569,12 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
 
     confirm_response = client.post(
         "/v1/plugins/afkbotui/task-flow/docs/doc-task-plan/confirm",
-        json={"actor_ref": "cto", "actor_type": "employee", "expected_revision": 2},
+        json={"actor_ref": "web-user", "actor_type": "human", "expected_revision": 2},
         params={"profile_id": "default"},
     )
     assert confirm_response.status_code == 200
+    assert observed["confirm_document"]["actor_type"] == "human"
+    assert observed["confirm_document"]["actor_ref"] == "cli_user:local"
     assert observed["confirm_document"]["expected_revision"] == 2
 
     delete_response = client.request(
@@ -583,6 +585,8 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
     )
     assert delete_response.status_code == 200
     assert delete_response.json()["deleted"] is True
+    assert observed["delete_document"]["actor_type"] == "human"
+    assert observed["delete_document"]["actor_ref"] == "cli_user:local"
     assert observed["delete_document"]["document_id"] == "doc-task-plan"
     assert observed["delete_document"]["expected_revision"] == 2
 

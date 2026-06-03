@@ -720,6 +720,12 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         profile_id: str = "default",
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.actor_type,
+            actor_ref=payload.actor_ref,
+            config=config,
+        )
         try:
             if payload.scope_type == "flow":
                 item = await service.put_flow_document(
@@ -728,8 +734,8 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                     document_key=payload.document_key,
                     title=payload.title,
                     body=payload.body,
-                    actor_type=payload.actor_type,
-                    actor_ref=payload.actor_ref,
+                    actor_type=actor_type,
+                    actor_ref=actor_ref,
                     base_revision=payload.base_revision,
                 )
             else:
@@ -739,8 +745,8 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                     document_key=payload.document_key,
                     title=payload.title,
                     body=payload.body,
-                    actor_type=payload.actor_type,
-                    actor_ref=payload.actor_ref,
+                    actor_type=actor_type,
+                    actor_ref=actor_ref,
                     base_revision=payload.base_revision,
                 )
         except TaskFlowServiceError as exc:
@@ -754,12 +760,18 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         profile_id: str = "default",
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.actor_type,
+            actor_ref=payload.actor_ref,
+            config=config,
+        )
         try:
             item = await service.confirm_document(
                 profile_id=profile_id,
                 document_id=document_id,
-                actor_type=payload.actor_type,
-                actor_ref=payload.actor_ref,
+                actor_type=actor_type,
+                actor_ref=actor_ref,
                 expected_revision=payload.expected_revision,
             )
         except TaskFlowServiceError as exc:
@@ -773,12 +785,18 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         profile_id: str = "default",
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.actor_type,
+            actor_ref=payload.actor_ref,
+            config=config,
+        )
         try:
             item = await service.delete_document(
                 profile_id=profile_id,
                 document_id=document_id,
-                actor_type=payload.actor_type,
-                actor_ref=payload.actor_ref,
+                actor_type=actor_type,
+                actor_ref=actor_ref,
                 expected_revision=payload.expected_revision,
             )
         except TaskFlowServiceError as exc:

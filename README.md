@@ -2,7 +2,7 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, and profile-local text libraries.
 
-Current release: `1.0.10`
+Current release: `1.0.11`
 
 ## Overview
 
@@ -18,7 +18,7 @@ Current frontend/runtime contract:
 
 The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*` or `web/dist/assets/features/*` payloads.
 
-## What Is In 1.0.10
+## What Is In 1.0.11
 
 - single-shell workspace with `Automations`, `Task Flow`, `Docs`, `Subagents`, `Skills`, and `Bootstrap`
 - React-native route surfaces for every section, with shared loaders, dialogs, async buttons, and responsive layout primitives
@@ -36,7 +36,7 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 - Task cards show human-readable flow title badges instead of raw flow ids
 - named Task Flow priority chips replace raw `pNN` scores with low-to-critical labels and direction markers
 - inspector discussion and live activity panels keep long content inside their panes, collapse oversized comments, keep the comment composer at the bottom, and let operators jump directly to comments or activity from the task section menu
-- Task Flow comments normalize legacy `web-user` human placeholders to the validated local human principal required by AFKBOT core
+- Task Flow comments and document mutations normalize legacy `web-user` human placeholders to the validated local human principal required by AFKBOT core
 - moving a Task Flow task out of `Blocked` clears blocker metadata explicitly, while ordinary task edits preserve existing blocker reasons unless the payload changes them
 - autonomous manager escalation tasks show source-task badges and Task Flow labels on the board so recovery work is visible without opening every task
 - Task Flow comments, task runs, activity, flow documents, and task documents are shown newest-first in the inspector and knowledge panel
@@ -80,7 +80,7 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 
 ## Requirements
 
-- AFKBOT UI `1.0.10`
+- AFKBOT UI `1.0.11`
 - AFKBOT `>=1.9.15,<2.0.0`
 - current AFKBOT `1.x` auth/chat runtime surface, including:
   - `/v1/auth/session`

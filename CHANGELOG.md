@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.11 - 2026-06-03
+
+- resolve Cloud UI Task Flow document put/confirm/delete actions through the
+  validated local human principal when the UI still sends the legacy `web-user`
+  placeholder
+- sync release metadata to version `1.0.11`
+
 ## 1.0.10 - 2026-06-02
 
 - require AFKBOT `1.9.15+` so manager escalation task badges are only shown
