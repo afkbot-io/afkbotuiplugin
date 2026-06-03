@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.12 - 2026-06-03
+
+- resolve Cloud UI Task Flow flow/task create and update actions, bulk task
+  moves/comments, and review inbox/actions through the validated local human
+  principal when the UI still sends the legacy `web-user` placeholder
+- sync release metadata to version `1.0.12`
+
 ## 1.0.11 - 2026-06-03
 
 - resolve Cloud UI Task Flow document put/confirm/delete actions through the

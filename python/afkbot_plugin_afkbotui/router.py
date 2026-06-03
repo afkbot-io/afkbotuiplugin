@@ -620,13 +620,19 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         profile_id: str = "default",
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.created_by_type,
+            actor_ref=payload.created_by_ref,
+            config=config,
+        )
         try:
             item = await service.create_flow(
                 profile_id=profile_id,
                 title=payload.title,
                 description=payload.description,
-                created_by_type=payload.created_by_type,
-                created_by_ref=payload.created_by_ref,
+                created_by_type=actor_type,
+                created_by_ref=actor_ref,
                 default_owner_type=payload.default_owner_type,
                 default_owner_ref=payload.default_owner_ref,
                 labels=payload.labels,
@@ -642,9 +648,15 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         profile_id: str = "default",
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.actor_type,
+            actor_ref=payload.actor_ref,
+            config=config,
+        )
         kwargs: dict[str, object] = {
-            "actor_ref": payload.actor_ref,
-            "actor_type": payload.actor_type,
+            "actor_ref": actor_ref,
+            "actor_type": actor_type,
             "flow_id": flow_id,
             "profile_id": profile_id,
         }
@@ -858,13 +870,19 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         profile_id: str = "default",
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.created_by_type,
+            actor_ref=payload.created_by_ref,
+            config=config,
+        )
         try:
             item = await service.create_task(
                 profile_id=profile_id,
                 title=payload.title,
                 description=_task_payload_description(payload),
-                created_by_type=payload.created_by_type,
-                created_by_ref=payload.created_by_ref,
+                created_by_type=actor_type,
+                created_by_ref=actor_ref,
                 flow_id=payload.flow_id,
                 priority=payload.priority,
                 due_at=payload.due_at,
@@ -1096,6 +1114,12 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         profile_id: str = "default",
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.actor_type,
+            actor_ref=payload.actor_ref,
+            config=config,
+        )
         try:
             update_kwargs: dict[str, object] = {
                 "profile_id": profile_id,
@@ -1109,8 +1133,8 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 "owner_ref": payload.owner_ref,
                 "requires_review": payload.requires_review,
                 "labels": payload.labels,
-                "actor_type": payload.actor_type,
-                "actor_ref": payload.actor_ref,
+                "actor_type": actor_type,
+                "actor_ref": actor_ref,
             }
             if "blocked_reason_code" in payload.model_fields_set:
                 update_kwargs["blocked_reason_code"] = payload.blocked_reason_code
@@ -1147,6 +1171,12 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         profile_id: str = "default",
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.actor_type,
+            actor_ref=payload.actor_ref,
+            config=config,
+        )
         updated_tasks: list[dict[str, object]] = []
         errors: list[dict[str, object]] = []
         for task_id in payload.task_ids:
@@ -1171,8 +1201,8 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                     "owner_ref": payload.owner_ref,
                     "requires_review": payload.requires_review,
                     "labels": payload.labels,
-                    "actor_type": payload.actor_type,
-                    "actor_ref": payload.actor_ref,
+                    "actor_type": actor_type,
+                    "actor_ref": actor_ref,
                 }
                 if "blocked_reason_code" in payload.model_fields_set:
                     update_kwargs["blocked_reason_code"] = payload.blocked_reason_code
@@ -1187,8 +1217,8 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                     await service.add_task_comment(
                         profile_id=profile_id,
                         task_id=task_id,
-                        actor_type=payload.actor_type,
-                        actor_ref=payload.actor_ref,
+                        actor_type=actor_type,
+                        actor_ref=actor_ref,
                         message=payload.comment_message,
                         comment_type=payload.comment_type,
                     )
@@ -1328,11 +1358,16 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
         config = read_config()
+        resolved_actor_type, resolved_actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=actor_type,
+            actor_ref=actor_ref,
+            config=config,
+        )
         try:
             payload = await service.list_review_tasks(
                 profile_id=profile_id,
-                actor_type=actor_type or config.task_flow_actor_type,
-                actor_ref=actor_ref or config.task_flow_actor_ref,
+                actor_type=resolved_actor_type,
+                actor_ref=resolved_actor_ref,
                 flow_id=flow_id,
                 labels=tuple(item.strip() for item in labels.split(",") if item.strip()),
                 limit=limit,
@@ -1348,12 +1383,18 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         profile_id: str = "default",
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.actor_type,
+            actor_ref=payload.actor_ref,
+            config=config,
+        )
         try:
             item = await service.approve_review_task(
                 profile_id=profile_id,
                 task_id=task_id,
-                actor_type=payload.actor_type,
-                actor_ref=payload.actor_ref,
+                actor_type=actor_type,
+                actor_ref=actor_ref,
             )
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
@@ -1366,13 +1407,19 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         profile_id: str = "default",
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.actor_type,
+            actor_ref=payload.actor_ref,
+            config=config,
+        )
         try:
             item = await service.request_review_changes(
                 profile_id=profile_id,
                 task_id=task_id,
                 reason_text=payload.reason_text,
-                actor_type=payload.actor_type,
-                actor_ref=payload.actor_ref,
+                actor_type=actor_type,
+                actor_ref=actor_ref,
                 owner_type=payload.owner_type,
                 owner_ref=payload.owner_ref,
                 reason_code=payload.reason_code,

@@ -315,6 +315,7 @@ def test_task_flow_task_routes_map_prompt_payload_to_description(monkeypatch) ->
             pass
 
     monkeypatch.setattr(router_module, "get_settings", lambda: object())
+    monkeypatch.setattr(router_module, "resolve_local_human_ref", lambda _settings: "cli_user:local")
     monkeypatch.setattr(router_module, "get_task_flow_service", lambda _settings: FakeTaskFlowService())
 
     app = FastAPI()
@@ -330,6 +331,8 @@ def test_task_flow_task_routes_map_prompt_payload_to_description(monkeypatch) ->
     )
     assert create_response.status_code == 200
     assert observed["create"]["profile_id"] == "default"
+    assert observed["create"]["created_by_type"] == "human"
+    assert observed["create"]["created_by_ref"] == "cli_user:local"
 
     update_response = client.patch(
         "/v1/plugins/afkbotui/task-flow/tasks/task-1",
@@ -338,6 +341,8 @@ def test_task_flow_task_routes_map_prompt_payload_to_description(monkeypatch) ->
     )
     assert update_response.status_code == 200
     assert observed["update"]["task_id"] == "task-1"
+    assert observed["update"]["actor_type"] == "human"
+    assert observed["update"]["actor_ref"] == "cli_user:local"
     assert observed["update"]["description"] == "Update the route contract."
     assert "reviewer_type" not in observed["update"]
     assert "reviewer_ref" not in observed["update"]
@@ -376,7 +381,13 @@ def test_task_flow_flow_update_route_forwards_metadata_patch(monkeypatch) -> Non
             }
 
     class FakeTaskFlowService:
+        async def create_flow(self, **kwargs: object) -> DumpableFlow:
+            observed.clear()
+            observed.update(kwargs)
+            return DumpableFlow()
+
         async def update_flow(self, **kwargs: object) -> DumpableFlow:
+            observed.clear()
             observed.update(kwargs)
             return DumpableFlow()
 
@@ -391,6 +402,7 @@ def test_task_flow_flow_update_route_forwards_metadata_patch(monkeypatch) -> Non
             pass
 
     monkeypatch.setattr(router_module, "get_settings", lambda: object())
+    monkeypatch.setattr(router_module, "resolve_local_human_ref", lambda _settings: "cli_user:local")
     monkeypatch.setattr(router_module, "get_task_flow_service", lambda _settings: FakeTaskFlowService())
 
     app = FastAPI()
@@ -398,6 +410,15 @@ def test_task_flow_flow_update_route_forwards_metadata_patch(monkeypatch) -> Non
         router_module.build_router(api_prefix="/v1/plugins/afkbotui", registry=FakeRegistry())
     )
     client = TestClient(app)
+
+    create_response = client.post(
+        "/v1/plugins/afkbotui/task-flow/flows",
+        json={"description": "Scope", "title": "New Flow"},
+        params={"profile_id": "default"},
+    )
+    assert create_response.status_code == 200
+    assert observed["created_by_type"] == "human"
+    assert observed["created_by_ref"] == "cli_user:local"
 
     response = client.patch(
         "/v1/plugins/afkbotui/task-flow/flows/flow-1",
@@ -414,7 +435,7 @@ def test_task_flow_flow_update_route_forwards_metadata_patch(monkeypatch) -> Non
     assert response.status_code == 200
     assert response.json()["task_flow"]["title"] == "Renamed Flow"
     assert observed == {
-        "actor_ref": "web-user",
+        "actor_ref": "cli_user:local",
         "actor_type": "human",
         "default_owner_ref": "default",
         "default_owner_type": "ai_profile",
@@ -424,6 +445,109 @@ def test_task_flow_flow_update_route_forwards_metadata_patch(monkeypatch) -> Non
         "profile_id": "default",
         "title": "Renamed Flow",
     }
+
+
+def test_task_flow_bulk_and_review_routes_resolve_human_actor_placeholders(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    class Dumpable:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+
+        def __getattr__(self, name: str) -> object:
+            try:
+                return self.payload[name]
+            except KeyError as exc:
+                raise AttributeError(name) from exc
+
+        def model_dump(self, *, mode: str) -> dict[str, object]:
+            assert mode == "json"
+            return self.payload
+
+    class FakeTaskFlowService:
+        async def get_task(self, **kwargs: object) -> Dumpable:
+            observed["get_task"] = kwargs
+            return Dumpable({"id": kwargs["task_id"], "status": "todo"})
+
+        async def update_task(self, **kwargs: object) -> Dumpable:
+            observed["bulk_update"] = kwargs
+            return Dumpable({"id": kwargs["task_id"], "status": kwargs.get("status") or "todo"})
+
+        async def add_task_comment(self, **kwargs: object) -> Dumpable:
+            observed["bulk_comment"] = kwargs
+            return Dumpable({"id": 1, "task_id": kwargs["task_id"]})
+
+        async def list_review_tasks(self, **kwargs: object) -> list[Dumpable]:
+            observed["list_review_tasks"] = kwargs
+            return []
+
+        async def approve_review_task(self, **kwargs: object) -> Dumpable:
+            observed["approve_review_task"] = kwargs
+            return Dumpable({"id": kwargs["task_id"], "status": "completed"})
+
+        async def request_review_changes(self, **kwargs: object) -> Dumpable:
+            observed["request_review_changes"] = kwargs
+            return Dumpable({"id": kwargs["task_id"], "status": "blocked"})
+
+    class FakeRegistry:
+        def read_config(self) -> dict[str, object]:
+            return {}
+
+        def write_config(self, payload: dict[str, object]) -> None:
+            del payload
+
+        def reset_config(self) -> None:
+            pass
+
+    monkeypatch.setattr(router_module, "get_settings", lambda: object())
+    monkeypatch.setattr(router_module, "resolve_local_human_ref", lambda _settings: "cli_user:local")
+    monkeypatch.setattr(router_module, "get_task_flow_service", lambda _settings: FakeTaskFlowService())
+
+    app = FastAPI()
+    app.include_router(
+        router_module.build_router(api_prefix="/v1/plugins/afkbotui", registry=FakeRegistry())
+    )
+    client = TestClient(app)
+
+    bulk_response = client.post(
+        "/v1/plugins/afkbotui/task-flow/tasks/bulk-update",
+        json={
+            "actor_ref": "web-user",
+            "actor_type": "human",
+            "comment_message": "Moving by hand",
+            "status": "review",
+            "task_ids": ["task-1"],
+        },
+        params={"profile_id": "default"},
+    )
+    assert bulk_response.status_code == 200
+    assert observed["bulk_update"]["actor_type"] == "human"
+    assert observed["bulk_update"]["actor_ref"] == "cli_user:local"
+    assert observed["bulk_comment"]["actor_type"] == "human"
+    assert observed["bulk_comment"]["actor_ref"] == "cli_user:local"
+
+    review_response = client.get("/v1/plugins/afkbotui/task-flow/review", params={"profile_id": "default"})
+    assert review_response.status_code == 200
+    assert observed["list_review_tasks"]["actor_type"] == "human"
+    assert observed["list_review_tasks"]["actor_ref"] == "cli_user:local"
+
+    approve_response = client.post(
+        "/v1/plugins/afkbotui/task-flow/tasks/task-1/review/approve",
+        json={"actor_ref": "web-user", "actor_type": "human"},
+        params={"profile_id": "default"},
+    )
+    assert approve_response.status_code == 200
+    assert observed["approve_review_task"]["actor_type"] == "human"
+    assert observed["approve_review_task"]["actor_ref"] == "cli_user:local"
+
+    changes_response = client.post(
+        "/v1/plugins/afkbotui/task-flow/tasks/task-1/review/request-changes",
+        json={"actor_ref": "web-user", "actor_type": "human", "reason_text": "Needs edits"},
+        params={"profile_id": "default"},
+    )
+    assert changes_response.status_code == 200
+    assert observed["request_review_changes"]["actor_type"] == "human"
+    assert observed["request_review_changes"]["actor_ref"] == "cli_user:local"
 
 
 def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) -> None:

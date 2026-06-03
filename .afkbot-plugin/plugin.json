@@ -1,7 +1,7 @@
 {
   "plugin_id": "afkbotui",
   "name": "AFKBOT UI",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "afkbot_version": ">=1.9.15,<2.0.0",
   "kind": "embedded",
   "entrypoint": "afkbot_plugin_afkbotui.plugin:register",
@@ -56,7 +56,7 @@
       "task_flow_actor_ref": {
         "type": "string",
         "title": "Task Flow actor ref",
-        "description": "Actor reference attached to Task Flow comments and review actions.",
+        "description": "Actor reference attached to Task Flow operator actions.",
         "min_length": 1,
         "max_length": 120
       }
