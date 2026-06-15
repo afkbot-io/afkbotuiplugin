@@ -23,16 +23,16 @@ import {
   deleteTaskItem,
   deleteTaskProject,
   confirmTaskDocument,
-  getEmployeeFeed,
   getTaskDetail,
   getTaskContext,
   getTaskFlowBoard,
   getTaskSessionInsights,
+  getRootEmployeeOwnerError,
+  getRootEmployeeOwnerOption,
   listTaskFlowReview,
   listTaskFlowEmployees,
   listTaskDocuments,
   listTaskProjects,
-  isEmployeeActorType,
   normalizeTaskFlowConfig,
   resolveTaskFlowError,
   taskDraftFromTask,
@@ -46,6 +46,7 @@ import {
   putTaskDocument,
   requestTaskReviewChanges,
   updateTaskProject,
+  withRootEmployeeOwner,
 } from "@/features/task-flow/model/task-flow.api";
 import {
   getTaskSessionKey,
@@ -54,7 +55,6 @@ import {
 } from "@/features/task-flow/model/task-flow.presentation";
 import { taskFlowQueryKeys } from "@/features/task-flow/model/task-flow.query-keys";
 import type { TaskFlowDocument, TaskFlowDocumentDraft, TaskFlowTask, TaskSessionInsights } from "@/features/task-flow/model/task-flow.types";
-import { EmployeeFeedModal } from "@/features/task-flow/ui/EmployeeFeedModal";
 import { TaskBoard } from "@/features/task-flow/ui/TaskBoard";
 import { CreateTaskModal } from "@/features/task-flow/ui/CreateTaskModal";
 import { DeleteSelectedTasksModal } from "@/features/task-flow/ui/DeleteSelectedTasksModal";
@@ -81,7 +81,6 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   ref,
 ) {
   const taskFlowConfig = useMemo(() => normalizeTaskFlowConfig(config), [config]);
-  const employeeFeedEnabled = isEmployeeActorType(taskFlowConfig.task_flow_actor_type);
   const state = useTaskFlowPageState({
     config: taskFlowConfig,
     profileId,
@@ -140,13 +139,6 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     refetchOnWindowFocus: false,
   });
 
-  const employeeFeedQuery = useQuery({
-    enabled: active && Boolean(profileId) && employeeFeedEnabled,
-    queryKey: taskFlowQueryKeys.feed(profileId, taskFlowConfig.task_flow_actor_type, taskFlowConfig.task_flow_actor_ref),
-    queryFn: () => getEmployeeFeed(api, profileId, taskFlowConfig),
-    refetchOnWindowFocus: false,
-  });
-
   const employeesQuery = useQuery({
     enabled: active && Boolean(profileId),
     queryKey: taskFlowQueryKeys.employees(profileId),
@@ -178,8 +170,19 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   const board = boardQuery.data || null;
   const flows = projectsQuery.data || [];
   const reviewTasks = reviewQuery.data || [];
-  const employeeFeed = employeeFeedEnabled ? employeeFeedQuery.data || null : null;
   const employees = employeesQuery.data || [];
+  const rootEmployee = useMemo(
+    () => getRootEmployeeOwnerOption(profileId, employees),
+    [employees, profileId],
+  );
+  const rootEmployeeError = useMemo(
+    () => getRootEmployeeOwnerError(profileId, employees),
+    [employees, profileId],
+  );
+  const createTaskDraft = useMemo(
+    () => withRootEmployeeOwner(state.createTask.draft, rootEmployee),
+    [rootEmployee, state.createTask.draft],
+  );
   const flowTitleById = useMemo(
     () => new Map(flows.map((flow) => [flow.id, flow.title || flow.id])),
     [flows],
@@ -346,11 +349,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         return;
       }
 
-      await Promise.all([
-        boardQuery.refetch(),
-        reviewQuery.refetch(),
-        ...(employeeFeedEnabled ? [employeeFeedQuery.refetch()] : []),
-      ]);
+      await Promise.all([boardQuery.refetch(), reviewQuery.refetch()]);
       if (state.selectedTaskId) {
         await Promise.all([detailQuery.refetch(), contextQuery.refetch()]);
         if (sessionAutoRefreshEnabled) {
@@ -360,8 +359,6 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     },
     [
       active,
-      employeeFeedEnabled,
-      employeeFeedQuery,
       boardQuery,
       contextQuery,
       detailQuery,
@@ -676,7 +673,11 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   );
 
   const handleCreateTask = useCallback(async () => {
-    const error = validateTaskDraft(state.createTask.draft, validationContext);
+    if (rootEmployeeError) {
+      state.setCreateTaskError(rootEmployeeError);
+      return;
+    }
+    const error = validateTaskDraft(createTaskDraft, validationContext);
     if (error) {
       state.setCreateTaskError(error);
       return;
@@ -684,7 +685,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     state.setCreateTaskError("");
     state.setModalBusy(true);
     try {
-      const task = await createTaskItem(api, profileId, state.createTask.draft, taskFlowConfig);
+      const task = await createTaskItem(api, profileId, createTaskDraft, taskFlowConfig);
       if (profileIdRef.current !== profileId) {
         return;
       }
@@ -702,14 +703,14 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     } finally {
       state.setModalBusy(false);
     }
-  }, [api, notify, profileId, refreshAll, state, taskFlowConfig, validationContext]);
+  }, [api, createTaskDraft, notify, profileId, refreshAll, rootEmployeeError, state, taskFlowConfig, validationContext]);
 
   const handleSaveTask = useCallback(async () => {
     if (!state.selectedTaskId) {
       return;
     }
     const taskId = state.selectedTaskId;
-    const error = validateTaskDraft(editorDraft, validationContext);
+    const error = validateTaskDraft(editorDraft, validationContext, { requireFlow: false });
     if (error) {
       setEditorError(error);
       return;
@@ -734,7 +735,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     } finally {
       setSavingTask(false);
     }
-  }, [api, editorDraft, notify, profileId, refreshAll, state.selectedTaskId, employees, taskFlowConfig]);
+  }, [api, editorDraft, notify, profileId, refreshAll, state.selectedTaskId, taskFlowConfig, validationContext]);
 
   const handleDeleteTask = useCallback(async () => {
     if (!state.selectedTaskId) {
@@ -941,30 +942,49 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   }, [notify, profileId, profiles, refreshAll, state, employees, employeesQuery, updateConfig]);
 
   const pageError = [projectsQuery.error, boardQuery.error, reviewQuery.error, employeesQuery.error].find(Boolean);
+  const employeesLoading = Boolean(employeesQuery.isFetching && !employeesQuery.data);
+  const projectsLoading = Boolean(projectsQuery.isFetching && !projectsQuery.data);
+  const noProjectFlows = !projectsLoading && flows.length === 0;
+  const createTaskDisabledReason = employeesLoading
+    ? "Loading employees before routing work through the root intake employee."
+    : rootEmployeeError || (noProjectFlows ? "Create one project flow before adding Task Flow work." : "");
+  const createTaskRecovery = rootEmployeeError
+    ? { label: "Open Employees", onClick: () => navigateToRoute("employees") }
+    : noProjectFlows
+      ? { label: "Open Flows", onClick: state.openManageProjectsModal }
+      : null;
+  const createTaskDisabled = employeesLoading || Boolean(rootEmployeeError) || noProjectFlows;
 
   return (
     <section className="route-page route-page--taskflow taskflow-page" ref={sectionRef}>
       <TaskFlowHeader
         flowFilter={state.flowFilter}
         flows={flows}
+        createTaskDisabled={createTaskDisabled}
+        createTaskDisabledReason={createTaskDisabledReason}
         onClearSelection={state.clearSelection}
-        onCreateTask={() => state.openTaskModal(state.flowFilter)}
+        onCreateTask={() => state.openTaskModal(state.flowFilter || flows[0]?.id || "")}
         onDeleteSelected={state.openDeleteSelectedModal}
         onOpenEmployees={() => navigateToRoute("employees")}
         onFilterChange={handleFlowFilterChange}
-        onOpenEmployeeFeed={state.openEmployeeFeedModal}
         onManageFlows={state.openManageProjectsModal}
         onOpenReview={state.openReviewModal}
         onOpenSettings={state.openSettingsModal}
         onRefresh={() => void refreshBoardManually()}
-        employeeFeedDisabled={!employeeFeedEnabled}
         refreshing={manualRefreshingBoard}
-        employeeFeedCount={employeeFeed?.total_count || 0}
         reviewCount={reviewTasks.length}
         selectedCount={state.selectedTaskIds.size}
       />
 
       {pageError ? <div className="inline-alert inline-alert--danger">{resolveTaskFlowError(pageError)}</div> : null}
+      {createTaskDisabledReason && createTaskRecovery ? (
+        <div className="inline-alert inline-alert--warning taskflow-gate-alert" role="status">
+          <span>{createTaskDisabledReason}</span>
+          <button className="button button--ghost button--compact" onClick={createTaskRecovery.onClick} type="button">
+            {createTaskRecovery.label}
+          </button>
+        </div>
+      ) : null}
 
       <div className={`taskflow-layout ${selectedTask ? "taskflow-layout--open" : ""}`}>
         <section className="board-shell glass-panel">
@@ -1035,25 +1055,6 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         ) : null}
       </div>
 
-      <EmployeeFeedModal
-        actorRef={taskFlowConfig.task_flow_actor_ref}
-        actorType={taskFlowConfig.task_flow_actor_type}
-        error={employeeFeedQuery.error ? resolveTaskFlowError(employeeFeedQuery.error) : ""}
-        feed={employeeFeed}
-        loading={Boolean(employeeFeedQuery.isFetching && !employeeFeed)}
-        onClose={state.closeModal}
-        onRefresh={() => void employeeFeedQuery.refetch()}
-        onSelectTask={(taskId) => {
-          state.closeModal();
-          state.selectTask(taskId);
-          closeSessionFeed();
-          setSessionInsights(null);
-        }}
-        open={state.activeModal === "agent-feed"}
-        profileId={profileId}
-        employees={employees}
-      />
-
       <TaskSessionModal
         error={sessionError}
         onClose={closeSessionFeed}
@@ -1102,7 +1103,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
       <CreateTaskModal
         busy={state.modalBusy}
         config={taskFlowConfig}
-        draft={state.createTask.draft}
+        draft={createTaskDraft}
         error={state.createTask.error}
         flows={flows}
         onCancel={state.closeModal}
@@ -1112,6 +1113,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         profileId={profileId}
         profiles={profiles}
         employees={employees}
+        rootEmployee={rootEmployee}
       />
 
       <TaskFlowSettingsModal

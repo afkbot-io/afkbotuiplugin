@@ -29,7 +29,7 @@ export function ReviewQueueModal({ onCancel, onSelectTask, open, tasks }: Review
                 type="button"
               >
                 <h4>{task.title}</h4>
-                <p>{truncate(task.last_comment_message || task.description || task.prompt || "", 120)}</p>
+                <p>{truncate(task.last_comment_message || task.description || "", 120)}</p>
                 <span className="badge badge--warning">{task.id}</span>
               </button>
             ))

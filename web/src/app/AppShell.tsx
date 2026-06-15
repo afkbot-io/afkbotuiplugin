@@ -213,13 +213,23 @@ export function AppShell({
           id="workspace-mobile-nav"
         >
           <button
-            aria-label="Close mobile navigation"
+            aria-hidden="true"
             className="topbar__mobile-backdrop"
             onClick={() => setMobileMenuOpen(false)}
-            tabIndex={mobileMenuOpen ? 0 : -1}
+            tabIndex={-1}
             type="button"
           />
           <div aria-label="Workspace navigation" className="topbar__mobile-panel" role="dialog">
+            <div className="topbar__mobile-panel-head">
+              <button
+                aria-label="Close mobile navigation"
+                className="icon-button topbar__mobile-close"
+                onClick={() => setMobileMenuOpen(false)}
+                type="button"
+              >
+                ×
+              </button>
+            </div>
             <nav className="topbar__mobile-nav">
               {routeConfigs.map((item) => {
                 const active = item.id === route;

@@ -2,6 +2,18 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.15 - 2026-06-15
+
+- require AFKBOT `1.9.17+` for the employee-only Task Flow contract and
+  Project Knowledge Spine document contract
+- remove the public UI `employee` actor config choice; public operator actions
+  now resolve only through the validated local human principal
+- remove the `web-user/default` operator fallback from browser helpers and
+  route tests, keeping employee identity reserved for trusted Task Flow runtime
+  sessions
+- keep Task Flow create/edit routes on canonical `description` payloads only
+- sync release metadata to version `1.0.15`
+
 ## 1.0.14 - 2026-06-03
 
 - send validated operator actor payloads for Task Flow flow/task delete and

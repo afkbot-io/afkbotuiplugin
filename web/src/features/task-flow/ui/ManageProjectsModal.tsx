@@ -14,7 +14,6 @@ import {
 } from "@/features/task-flow/model/task-flow.presentation";
 import {
   TASK_FLOW_EMPLOYEE_TYPE,
-  TASK_FLOW_HUMAN_TYPE,
   resolveActorRefForType,
 } from "@/features/task-flow/model/task-flow.api";
 import type {
@@ -273,7 +272,6 @@ export function ManageProjectsModal({
                 >
                   <option value="">None</option>
                   <option value={TASK_FLOW_EMPLOYEE_TYPE}>Employee</option>
-                  <option value={TASK_FLOW_HUMAN_TYPE}>Human</option>
                 </select>
               </label>
               <ActorRefField
@@ -329,7 +327,7 @@ export function ManageProjectsModal({
   );
 }
 
-const FLOW_DOCUMENT_KEYS = ["brief", "plan", "roadmap", "spec", "decisions", "handoff", "qa", "notes"] as const;
+const FLOW_DOCUMENT_KEYS = ["brief", "plan", "spec", "decisions", "status"] as const;
 
 function FlowDocumentSection({
   activeFlow,
@@ -387,7 +385,7 @@ function FlowDocumentSection({
         </div>
       </div>
       {!activeFlow ? (
-        <p className="muted-copy">Select a flow on the board to manage its plan, spec, roadmap, and decisions.</p>
+        <p className="muted-copy">Select a flow on the board to manage its brief, plan, spec, decisions, and status.</p>
       ) : (
         <>
           <p className="muted">{activeFlow.title || activeFlow.id}</p>
@@ -454,7 +452,7 @@ function FlowDocumentSection({
               <span className="field__label">Body</span>
               <textarea
                 onChange={(event) => setDraft((current) => ({ ...current, body: event.target.value }))}
-                placeholder="Persist the flow plan, spec, roadmap, or decisions for every employee in this project."
+                placeholder="Persist the compact project brief, plan, spec, decision log, or current status."
                 rows={5}
                 value={draft.body}
               />

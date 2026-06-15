@@ -10,25 +10,25 @@ import {
 } from "./workspace";
 
 describe("workspace helpers", () => {
-  it("normalizes config from runtime keys only", () => {
+  it("normalizes config from runtime keys while forcing public Task Flow actor to human", () => {
     expect(
       normalizeConfig({
         poll_interval_sec: "7",
         task_flow_poll_interval_sec: "9",
         task_flow_board_limit_per_column: "25",
-        task_flow_actor_type: "employee",
-        task_flow_actor_ref: "runner",
+        task_flow_actor_type: "human",
+        task_flow_actor_ref: "cli_user:local",
       }),
     ).toMatchObject({
       poll_interval_sec: 7,
       task_flow_poll_interval_sec: 9,
       task_flow_board_limit_per_column: 25,
-      task_flow_actor_type: "employee",
-      task_flow_actor_ref: "runner",
+      task_flow_actor_type: "human",
+      task_flow_actor_ref: "cli_user:local",
     });
   });
 
-  it("ignores removed compatibility aliases from the pre-react runtime", () => {
+  it("ignores unknown runtime config aliases", () => {
     expect(
       normalizeConfig({
         poll_interval_sec: "7",

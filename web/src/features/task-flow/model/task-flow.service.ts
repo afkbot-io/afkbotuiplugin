@@ -6,13 +6,11 @@ import {
   normalizeNumberField,
   parseCsv,
   TASK_FLOW_STATUS_OPTIONS,
-  isEmployeeActorType,
 } from "@/features/task-flow/model/task-flow.forms";
 import type {
   TaskFlowBoard,
   TaskFlowComment,
   TaskFlowConfig,
-  TaskFlowEmployeeFeed,
   TaskFlowEmployeeDraft,
   TaskFlowContextBundle,
   TaskFlowDependency,
@@ -50,7 +48,6 @@ type TaskFlowApi = {
   getTask: (profileId: string, taskId: string) => Promise<{ task?: TaskFlowTask }>;
   getTaskBoard: (profileId: string, params?: Record<string, unknown>) => Promise<{ board?: TaskFlowBoard }>;
   getTaskContext: (profileId: string, taskId: string) => Promise<{ context?: TaskFlowContextBundle }>;
-  getTaskFeed: (profileId: string, params?: Record<string, unknown>) => Promise<{ feed?: TaskFlowEmployeeFeed }>;
   getTaskSessionInsights: (
     profileId: string,
     taskId: string,
@@ -110,12 +107,16 @@ export async function listTaskFlowEmployees(api: unknown, profileId: string) {
   const taskFlowApi = coerceTaskFlowApi(api);
   const employeesPayload = await taskFlowApi.listTaskFlowEmployees(profileId, { q: "" });
   const rows = (employeesPayload.employees || []).map((employee) => ({
+    is_root: typeof employee.is_root === "boolean" ? employee.is_root : !String(employee.manager_id || "").trim(),
+    manager_id: String(employee.manager_id || "").trim(),
     name: String(employee.id || ""),
     owner_ref: String(employee.id || ""),
     path: String(employee.path || ""),
     profile_id: String(employee.profile_id || profileId),
+    role: String(employee.role || "").trim(),
     status: String(employee.status || ""),
     summary: `${String(employee.name || employee.id || "")} - ${String(employee.title || employee.role || "")}`.trim(),
+    title: String(employee.title || "").trim(),
   }));
   return rows.flatMap(mapTaskFlowEmployeeOption);
 }
@@ -148,9 +149,10 @@ export async function getTaskFlowBoard(api: unknown, profileId: string, flowId: 
 }
 
 export async function listTaskFlowReview(api: unknown, profileId: string, flowId: string, config: TaskFlowConfig) {
+  const actor = operatorActorPayload(config);
   const payload = await coerceTaskFlowApi(api).listReviewTasks(profileId, {
-    actor_ref: config.task_flow_actor_ref,
-    actor_type: config.task_flow_actor_type,
+    actor_ref: actor.actor_ref,
+    actor_type: actor.actor_type,
     flow_id: flowId || undefined,
   });
   return Array.isArray(payload.review_tasks) ? payload.review_tasks : [];
@@ -179,20 +181,6 @@ export async function getTaskContext(api: unknown, profileId: string, taskId: st
   return normalizeTaskContext(payload.context);
 }
 
-export async function getEmployeeFeed(api: unknown, profileId: string, config: TaskFlowConfig) {
-  const ownerType = normalizeActorType(config.task_flow_actor_type) || "human";
-  if (!isEmployeeActorType(ownerType)) {
-    return normalizeEmployeeFeed(null, ownerType, config.task_flow_actor_ref);
-  }
-  const payload = await coerceTaskFlowApi(api).getTaskFeed(profileId, {
-    event_limit: 20,
-    limit: 30,
-    owner_ref: config.task_flow_actor_ref,
-    owner_type: ownerType,
-  });
-  return normalizeEmployeeFeed(payload.feed, ownerType, config.task_flow_actor_ref);
-}
-
 export async function listTaskDocuments(api: unknown, profileId: string, scopeType: string, scopeId: string) {
   if (!scopeType || !scopeId) {
     return [];
@@ -209,9 +197,10 @@ export async function putTaskDocument(
   config: TaskFlowConfig,
   baseRevision?: number | null,
 ) {
+  const actor = operatorActorPayload(config);
   const payload = await coerceTaskFlowApi(api).putTaskFlowDocument(profileId, {
-    actor_ref: config.task_flow_actor_ref,
-    actor_type: normalizeActorType(config.task_flow_actor_type),
+    actor_ref: actor.actor_ref,
+    actor_type: actor.actor_type,
     base_revision: baseRevision || undefined,
     body: draft.body.trim(),
     document_key: draft.document_key.trim(),
@@ -228,9 +217,10 @@ export async function confirmTaskDocument(
   document: TaskFlowDocument,
   config: TaskFlowConfig,
 ) {
+  const actor = operatorActorPayload(config);
   const payload = await coerceTaskFlowApi(api).confirmTaskFlowDocument(profileId, document.id, {
-    actor_ref: config.task_flow_actor_ref,
-    actor_type: normalizeActorType(config.task_flow_actor_type),
+    actor_ref: actor.actor_ref,
+    actor_type: actor.actor_type,
     expected_revision: document.revision,
   });
   return payload.task_document || null;
@@ -308,21 +298,6 @@ function normalizeTaskContext(context: TaskFlowContextBundle | null | undefined)
   };
 }
 
-function normalizeEmployeeFeed(feed: TaskFlowEmployeeFeed | null | undefined, ownerType: string, ownerRef: string): TaskFlowEmployeeFeed {
-  return {
-    blocked_count: Number(feed?.blocked_count || 0),
-    mention_event_count: Number(feed?.mention_event_count || 0),
-    owner_ref: String(feed?.owner_ref || ownerRef || ""),
-    owner_type: String(feed?.owner_type || ownerType || ""),
-    recent_events: Array.isArray(feed?.recent_events) ? feed.recent_events : [],
-    review_count: Number(feed?.review_count || 0),
-    running_count: Number(feed?.running_count || 0),
-    tasks: Array.isArray(feed?.tasks) ? feed.tasks : [],
-    todo_count: Number(feed?.todo_count || 0),
-    total_count: Number(feed?.total_count || 0),
-  };
-}
-
 function formatBoardColumnTitle(status: string) {
   const normalized = String(status || "").trim();
   if (!normalized) {
@@ -369,9 +344,10 @@ export async function createTaskProject(
   config: TaskFlowConfig,
 ) {
   const defaultOwnerType = normalizeActorType(draft.default_owner_type);
+  const actor = operatorActorPayload(config);
   const payload = await coerceTaskFlowApi(api).createTaskFlow(profileId, {
-    created_by_ref: config.task_flow_actor_ref,
-    created_by_type: normalizeActorType(config.task_flow_actor_type),
+    created_by_ref: actor.actor_ref,
+    created_by_type: actor.actor_type,
     default_owner_ref: normalizeActorRef(draft.default_owner_type, draft.default_owner_ref, config),
     default_owner_type: defaultOwnerType || null,
     description: draft.description.trim() || null,
@@ -389,9 +365,10 @@ export async function updateTaskProject(
   config: TaskFlowConfig,
 ) {
   const defaultOwnerType = normalizeActorType(draft.default_owner_type);
+  const actor = operatorActorPayload(config);
   const payload = await coerceTaskFlowApi(api).updateTaskFlow(profileId, flowId, {
-    actor_ref: config.task_flow_actor_ref,
-    actor_type: normalizeActorType(config.task_flow_actor_type),
+    actor_ref: actor.actor_ref,
+    actor_type: actor.actor_type,
     default_owner_ref: normalizeActorRef(draft.default_owner_type, draft.default_owner_ref, config),
     default_owner_type: defaultOwnerType || null,
     description: draft.description.trim() || null,
@@ -410,12 +387,13 @@ export async function createTaskItem(
   const dueAt = draft.due_at.trim() ? new Date(draft.due_at) : null;
   const ownerType = normalizeActorType(draft.owner_type);
   const reviewerType = normalizeActorType(draft.reviewer_type);
+  const actor = operatorActorPayload(config);
   const payload = await coerceTaskFlowApi(api).createTask(profileId, {
-    created_by_ref: config.task_flow_actor_ref,
-    created_by_type: normalizeActorType(config.task_flow_actor_type),
+    created_by_ref: actor.actor_ref,
+    created_by_type: actor.actor_type,
     depends_on_task_ids: parseCsv(draft.depends_on_task_ids),
     due_at: dueAt ? dueAt.toISOString() : null,
-    flow_id: draft.flow_id.trim() || null,
+    flow_id: draft.flow_id.trim(),
     labels: parseCsv(draft.labels),
     owner_ref: normalizeActorRef(draft.owner_type, draft.owner_ref, config),
     owner_type: ownerType || null,
@@ -439,9 +417,10 @@ export async function updateTaskItem(
   const dueAt = draft.due_at.trim() ? new Date(draft.due_at) : null;
   const ownerType = normalizeActorType(draft.owner_type);
   const reviewerType = normalizeActorType(draft.reviewer_type);
+  const actor = operatorActorPayload(config);
   const payload = await coerceTaskFlowApi(api).updateTask(profileId, taskId, {
-    actor_ref: config.task_flow_actor_ref,
-    actor_type: normalizeActorType(config.task_flow_actor_type),
+    actor_ref: actor.actor_ref,
+    actor_type: actor.actor_type,
     blocked_reason_text: draft.blocked_reason_text.trim() || null,
     due_at: dueAt ? dueAt.toISOString() : null,
     labels: parseCsv(draft.labels),
@@ -459,9 +438,16 @@ export async function updateTaskItem(
 }
 
 function operatorActorPayload(config: TaskFlowConfig): Record<string, unknown> {
+  const actorType = normalizeActorType(config.task_flow_actor_type);
+  if (actorType === "human") {
+    return {
+      actor_ref: config.task_flow_actor_ref,
+      actor_type: "human",
+    };
+  }
   return {
-    actor_ref: config.task_flow_actor_ref,
-    actor_type: normalizeActorType(config.task_flow_actor_type),
+    actor_ref: "web-user",
+    actor_type: "human",
   };
 }
 
@@ -480,9 +466,10 @@ export async function bulkMoveTaskItems(
   status: string,
   config: TaskFlowConfig,
 ) {
+  const actor = operatorActorPayload(config);
   const payload: Record<string, unknown> = {
-    actor_ref: config.task_flow_actor_ref,
-    actor_type: normalizeActorType(config.task_flow_actor_type),
+    actor_ref: actor.actor_ref,
+    actor_type: actor.actor_type,
     status,
     task_ids: taskIds,
   };
@@ -507,18 +494,20 @@ export async function createTaskComment(
   message: string,
   config: TaskFlowConfig,
 ) {
+  const actor = operatorActorPayload(config);
   await coerceTaskFlowApi(api).addTaskComment(profileId, taskId, {
-    actor_ref: config.task_flow_actor_ref,
-    actor_type: normalizeActorType(config.task_flow_actor_type),
+    actor_ref: actor.actor_ref,
+    actor_type: actor.actor_type,
     comment_type: "note",
     message: message.trim(),
   });
 }
 
 export async function approveTaskReview(api: unknown, profileId: string, taskId: string, config: TaskFlowConfig) {
+  const actor = operatorActorPayload(config);
   await coerceTaskFlowApi(api).approveReviewTask(profileId, taskId, {
-    actor_ref: config.task_flow_actor_ref,
-    actor_type: normalizeActorType(config.task_flow_actor_type),
+    actor_ref: actor.actor_ref,
+    actor_type: actor.actor_type,
   });
 }
 
@@ -530,9 +519,10 @@ export async function requestTaskReviewChanges(
   config: TaskFlowConfig,
 ) {
   const ownerType = normalizeActorType(draft.owner_type);
+  const actor = operatorActorPayload(config);
   await coerceTaskFlowApi(api).requestReviewChanges(profileId, taskId, {
-    actor_ref: config.task_flow_actor_ref,
-    actor_type: normalizeActorType(config.task_flow_actor_type),
+    actor_ref: actor.actor_ref,
+    actor_type: actor.actor_type,
     owner_ref: normalizeActorRef(draft.owner_type, draft.owner_ref, config),
     owner_type: ownerType || null,
     reason_text: draft.reason_text.trim(),
@@ -568,13 +558,17 @@ function mapTaskFlowEmployeeOption(item: Record<string, unknown>): TaskFlowEmplo
   }
   return [
     {
+      is_root: Boolean(item.is_root),
+      manager_id: String(item.manager_id || "").trim(),
       name,
       origin: String(item.origin || "").trim(),
       owner_ref: String(item.owner_ref || "").trim(),
       path: String(item.path || "").trim(),
       profile_id: String(item.profile_id || "").trim(),
+      role: String(item.role || "").trim(),
       summary: String(item.summary || "").trim(),
       status: String(item.status || "").trim(),
+      title: String(item.title || "").trim(),
     },
   ];
 }

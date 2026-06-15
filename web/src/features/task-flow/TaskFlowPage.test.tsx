@@ -104,6 +104,8 @@ function createApi({
   sessionInsights?: ReturnType<typeof buildSessionInsights>;
   employeeItems?: Array<{
     id?: string;
+    is_root?: boolean;
+    manager_id?: string | null;
     name: string;
     owner_ref?: string;
     path?: string;
@@ -175,12 +177,12 @@ function createApi({
         {
           body: "Newer release context.",
           confirmation_status: "draft",
-          document_key: "handoff",
-          id: "doc-flow-handoff",
+          document_key: "status",
+          id: "doc-flow-status",
           revision: 1,
           scope_id: "flow-alpha",
           scope_type: "flow",
-          title: "Latest flow handoff",
+          title: "Latest flow status",
           updated_at: "2026-04-21T12:00:00.000Z",
         },
       ],
@@ -221,6 +223,8 @@ function createApi({
         title: String(payload.title || "New task"),
         description: String(payload.description || "New prompt"),
         flow_id: String(payload.flow_id || ""),
+        owner_ref: String(payload.owner_ref || "cto"),
+        owner_type: String(payload.owner_type || "employee"),
       });
       tasks.set(nextTask.id, nextTask);
       commentsByTask.set(nextTask.id, []);
@@ -304,28 +308,6 @@ function createApi({
         },
       };
     }),
-    getTaskFeed: vi.fn(async (_profileId: string, params: Record<string, unknown> = {}) => ({
-      feed: {
-        blocked_count: 0,
-        mention_event_count: 1,
-        owner_ref: String(params.owner_ref || "cto"),
-        owner_type: String(params.owner_type || "employee"),
-        recent_events: [
-          {
-            created_at: "2026-04-21T12:00:00.000Z",
-            event_type: "mention_created",
-            id: 10,
-            task_id: "task-1",
-            task_title: "Fix planner output",
-          },
-        ],
-        review_count: 0,
-        running_count: 0,
-        tasks: Array.from(tasks.values()).filter((taskItem) => taskItem.owner_ref === "cto" || taskItem.owner_ref === "web-user"),
-        todo_count: 1,
-        total_count: 1,
-      },
-    })),
     getTaskBoard: vi.fn(async (_profileId: string, params: Record<string, unknown> = {}) => ({
       board: (() => {
         const flowId = String(params.flow_id || "");
@@ -365,6 +347,7 @@ function createApi({
       employees: employeeItems || [
         {
           id: "cto",
+          is_root: true,
           name: "CTO",
           title: "Technical Director",
           role: "cto",
@@ -376,6 +359,7 @@ function createApi({
         },
         {
           id: "researcher",
+          manager_id: "cto",
           name: "Researcher",
           title: "Researcher",
           role: "researcher",
@@ -387,6 +371,7 @@ function createApi({
         },
         {
           id: "reviewer",
+          manager_id: "cto",
           name: "Reviewer",
           title: "Reviewer",
           role: "reviewer",
@@ -472,11 +457,13 @@ function renderTaskFlowPage({
   active = true,
   api = createApi(),
   config = {},
+  navigateToRoute = vi.fn(),
   profiles = [{ id: "default", title: "Default" }],
 }: {
   active?: boolean;
   api?: ReturnType<typeof createApi>;
   config?: Record<string, unknown>;
+  navigateToRoute?: (routeId: "automations" | "bootstrap" | "docs" | "employees" | "skills" | "subagents" | "task-flow") => void;
   profiles?: Array<{ id?: string | null; is_default?: boolean | null; title?: string | null }>;
 } = {}) {
   const notify = vi.fn();
@@ -493,6 +480,7 @@ function renderTaskFlowPage({
         task_flow_poll_interval_sec: 5,
         ...config,
       }}
+      navigateToRoute={navigateToRoute}
       notify={notify}
       profileId="default"
       profiles={profiles}
@@ -634,7 +622,7 @@ describe("TaskFlowPage", () => {
     const knowledgeSection = (await screen.findByText("Context & Docs")).closest("section") as HTMLElement;
     expect(knowledgeSection).not.toBeNull();
     expect(within(knowledgeSection).getByText("Flow plan")).toBeInTheDocument();
-    const docsCopy = within(knowledgeSection).getByText("Latest flow handoff").compareDocumentPosition(within(knowledgeSection).getByText("Flow plan"));
+    const docsCopy = within(knowledgeSection).getByText("Latest flow status").compareDocumentPosition(within(knowledgeSection).getByText("Flow plan"));
     expect(docsCopy & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(knowledgeSection).getByText("wake_requested")).toBeInTheDocument();
 
@@ -661,7 +649,7 @@ describe("TaskFlowPage", () => {
     await waitFor(() => {
       expect(api.confirmTaskFlowDocument).toHaveBeenCalledWith(
         "default",
-        "doc-flow-handoff",
+        "doc-flow-status",
         expect.objectContaining({
           expected_revision: 1,
         }),
@@ -715,72 +703,16 @@ describe("TaskFlowPage", () => {
     });
   });
 
-  it("opens the employee feed and selects work from assignment and wake signals", async () => {
-    const user = userEvent.setup();
-    const { api } = renderTaskFlowPage({
-      config: {
-        task_flow_actor_ref: "cto",
-        task_flow_actor_type: "employee",
-      },
-    });
-
-    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Employee Feed/i }));
-
-    const dialog = await screen.findByRole("dialog", { name: "Employee Feed" });
-    expect(within(dialog).getByText(/Employee: cto/i)).toBeInTheDocument();
-    expect(within(dialog).getByText("Orchestrator & Employees")).toBeInTheDocument();
-    expect(within(dialog).getByText("researcher")).toBeInTheDocument();
-    expect(within(dialog).getByText("reviewer")).toBeInTheDocument();
-    expect(within(dialog).getByText("Work Queue")).toBeInTheDocument();
-    expect(within(dialog).getByText("Mentions & wake events")).toBeInTheDocument();
-    expect(within(dialog).getByText("mention_created")).toBeInTheDocument();
-    expect(api.getTaskFeed).toHaveBeenCalledWith(
-      "default",
-      expect.objectContaining({
-        owner_ref: "cto",
-        owner_type: "employee",
-      }),
-    );
-
-    await user.click(within(dialog).getByRole("button", { name: /Fix planner output/i }));
-    expect(await screen.findByText("Inspector")).toBeInTheDocument();
-  });
-
-  it("shows when the employee feed roster is truncated", async () => {
-    const user = userEvent.setup();
-    const employeeItems = Array.from({ length: 10 }, (_, index) => ({
-      id: `worker-${index + 1}`,
-      name: `Worker ${index + 1}`,
-      owner_ref: `worker-${index + 1}`,
-      path: `default/employees/worker-${index + 1}.md`,
-      status: "active",
-      title: `Worker ${index + 1}`,
-      role: "worker",
-      summary: `Worker ${index + 1}`,
-    }));
+  it("does not expose the employee runtime feed in the public browser UI", async () => {
     renderTaskFlowPage({
-      api: createApi({ employeeItems }),
       config: {
-        task_flow_actor_ref: "cto",
-        task_flow_actor_type: "employee",
+        task_flow_actor_ref: "web-user",
+        task_flow_actor_type: "human",
       },
     });
 
     expect(await screen.findByText("Task Flow")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Employee Feed/i }));
-
-    const dialog = await screen.findByRole("dialog", { name: "Employee Feed" });
-    expect(within(dialog).getByText("+2 more employees available in owner and reviewer selects.")).toBeInTheDocument();
-  });
-
-  it("does not request the AI employee feed for a human task-flow actor", async () => {
-    const { api } = renderTaskFlowPage();
-
-    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
-    const feedButton = screen.getByRole("button", { name: /Employee Feed/i });
-    expect(feedButton).toBeDisabled();
-    expect(api.getTaskFeed).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: /Employee Feed/i })).not.toBeInTheDocument();
   });
 
   it("allows clearing an existing due date from the inspector", async () => {
@@ -827,8 +759,8 @@ describe("TaskFlowPage", () => {
             id: "flow-beta",
             title: "Beta Project",
             description: "Secondary delivery track.",
-            default_owner_type: "human",
-            default_owner_ref: "web-user",
+            default_owner_type: "employee",
+            default_owner_ref: "cto",
             created_by_type: "human",
             created_by_ref: "web-user",
             labels: ["ops"],
@@ -876,6 +808,57 @@ describe("TaskFlowPage", () => {
     });
   });
 
+  it("blocks new task creation until a project flow exists", async () => {
+    const user = userEvent.setup();
+    renderTaskFlowPage({
+      api: createApi({
+        flowItems: [],
+        taskItems: [],
+      }),
+    });
+
+    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
+    expect(await screen.findByText("Create one project flow before adding Task Flow work.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New Task" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Open Flows" }));
+
+    expect(await screen.findByRole("dialog", { name: "Flow Library" })).toBeInTheDocument();
+  });
+
+  it("blocks new task creation until the organization chart has one root employee", async () => {
+    const user = userEvent.setup();
+    const navigateToRoute = vi.fn();
+
+    renderTaskFlowPage({
+      api: createApi({
+        employeeItems: [
+          {
+            id: "researcher",
+            manager_id: "cto",
+            name: "Researcher",
+            title: "Researcher",
+            role: "researcher",
+            status: "active",
+            owner_ref: "researcher",
+            path: "default/employees/researcher.md",
+            profile_id: "default",
+            summary: "Research tasks",
+          },
+        ],
+      }),
+      navigateToRoute,
+    });
+
+    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
+    expect(await screen.findByText("Create one active root employee before adding Task Flow work.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New Task" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Open Employees" }));
+
+    expect(navigateToRoute).toHaveBeenCalledWith("employees");
+  });
+
   it("edits an existing flow from the flow manager without changing the flow id", async () => {
     const user = userEvent.setup();
     const { api, notify } = renderTaskFlowPage();
@@ -905,7 +888,7 @@ describe("TaskFlowPage", () => {
     });
   });
 
-  it("uses an employee select when creating employee-owned tasks", async () => {
+  it("routes new tasks through the root intake employee", async () => {
     const user = userEvent.setup();
     const { api, notify } = renderTaskFlowPage();
 
@@ -913,21 +896,24 @@ describe("TaskFlowPage", () => {
     await waitFor(() => {
       expect(api.listTaskFlowEmployees).toHaveBeenCalledWith("default", { q: "" });
     });
+    const newTaskButton = screen.getByRole("button", { name: "New Task" });
+    await waitFor(() => expect(newTaskButton).toBeEnabled());
 
-    await user.click(screen.getByRole("button", { name: "New Task" }));
+    await user.click(newTaskButton);
     const dialog = await screen.findByRole("dialog", { name: "New Backlog Item" });
+    expect(within(dialog).getByLabelText("Owner Type")).toHaveValue("Employee");
+    expect(within(dialog).getByLabelText("Intake Owner")).toHaveValue("CTO - Technical Director");
 
     await user.type(within(dialog).getByLabelText("Title"), "Assign employee task");
     await user.type(within(dialog).getByLabelText("Description"), "Route this task to a specialist.");
-    await user.selectOptions(within(dialog).getByLabelText("Owner Type"), "employee");
-    await user.selectOptions(within(dialog).getByLabelText("Owner Ref"), "reviewer");
     await user.click(within(dialog).getByRole("button", { name: "Create Task" }));
 
     await waitFor(() => {
       expect(api.createTask).toHaveBeenCalledWith(
         "default",
         expect.objectContaining({
-          owner_ref: "reviewer",
+          flow_id: "flow-alpha",
+          owner_ref: "cto",
           owner_type: "employee",
         }),
       );
@@ -935,13 +921,14 @@ describe("TaskFlowPage", () => {
     });
   });
 
-  it("can assign tasks directly to employees", async () => {
+  it("uses the custom roster root as the intake employee", async () => {
     const user = userEvent.setup();
     const { api } = renderTaskFlowPage({
       api: createApi({
         employeeItems: [
           {
             id: "backend-engineer",
+            is_root: true,
             name: "Backend Engineer",
             title: "Backend Engineer",
             role: "developer",
@@ -953,6 +940,7 @@ describe("TaskFlowPage", () => {
           },
           {
             id: "reviewer",
+            manager_id: "backend-engineer",
             name: "Reviewer",
             title: "Reviewer",
             role: "reviewer",
@@ -971,20 +959,22 @@ describe("TaskFlowPage", () => {
     });
 
     expect(await screen.findByText("Task Flow")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "New Task" }));
+    const newTaskButton = screen.getByRole("button", { name: "New Task" });
+    await waitFor(() => expect(newTaskButton).toBeEnabled());
+    await user.click(newTaskButton);
     const dialog = await screen.findByRole("dialog", { name: "New Backlog Item" });
+    expect(within(dialog).getByLabelText("Intake Owner")).toHaveValue("Backend Engineer - Backend Engineer");
 
     await user.type(within(dialog).getByLabelText("Title"), "Assign employee");
     await user.type(within(dialog).getByLabelText("Description"), "Route this task to reviewer.");
-    await user.selectOptions(within(dialog).getByLabelText("Owner Type"), "employee");
-    await user.selectOptions(within(dialog).getByLabelText("Owner Ref"), "reviewer");
     await user.click(within(dialog).getByRole("button", { name: "Create Task" }));
 
     await waitFor(() => {
       expect(api.createTask).toHaveBeenCalledWith(
         "default",
         expect.objectContaining({
-          owner_ref: "reviewer",
+          flow_id: "flow-alpha",
+          owner_ref: "backend-engineer",
           owner_type: "employee",
         }),
       );
@@ -1124,7 +1114,7 @@ describe("TaskFlowPage", () => {
     expect(await screen.findByText("Task Flow")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Settings" }));
     const dialog = await screen.findByRole("dialog", { name: "Task Flow Settings" });
-    expect(within(dialog).getByText(/profile-local employee/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/validated human operator/i)).toBeInTheDocument();
 
     const pollInput = screen.getByDisplayValue("5");
     await user.clear(pollInput);

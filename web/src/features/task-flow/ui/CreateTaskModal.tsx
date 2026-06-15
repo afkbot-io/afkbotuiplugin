@@ -22,6 +22,7 @@ type CreateTaskModalProps = {
   profileId: string;
   profiles: TaskFlowProfile[];
   employees: TaskFlowEmployeeOption[];
+  rootEmployee: TaskFlowEmployeeOption | null;
 };
 
 export function CreateTaskModal({
@@ -37,6 +38,7 @@ export function CreateTaskModal({
   profileId,
   profiles,
   employees,
+  rootEmployee,
 }: CreateTaskModalProps) {
   return (
     <ModalDialog
@@ -59,6 +61,7 @@ export function CreateTaskModal({
           profiles={profiles}
           showFlowField
           employees={employees}
+          lockedOwner={rootEmployee}
         />
         <div className="button-row">
           <AsyncButton className="button button--primary" idleLabel="Create Task" loading={busy} pendingLabel="Creating…" type="submit" />

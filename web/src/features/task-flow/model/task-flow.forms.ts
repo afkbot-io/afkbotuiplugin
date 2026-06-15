@@ -10,7 +10,6 @@ import type {
 } from "@/features/task-flow/model/task-flow.types";
 
 export const TASK_FLOW_EMPLOYEE_TYPE = "employee";
-export const TASK_FLOW_SUBAGENT_ALIAS_TYPE = "employee";
 export const TASK_FLOW_HUMAN_TYPE = "human";
 export const TASK_FLOW_STATUS_OPTIONS = ["plan", "todo", "blocked", "running", "review", "completed", "failed", "cancelled"] as const;
 
@@ -22,9 +21,18 @@ type ActorRefValidationContext = {
 type ActorRefValidationLabel = "actor" | "default owner" | "owner" | "reviewer";
 
 export function normalizeTaskFlowConfig(config: Record<string, unknown>): TaskFlowConfig {
+  const actorType = normalizeActorType(config.task_flow_actor_type || "human");
+  if (actorType !== TASK_FLOW_HUMAN_TYPE) {
+    return {
+      task_flow_actor_ref: "web-user",
+      task_flow_actor_type: TASK_FLOW_HUMAN_TYPE,
+      task_flow_board_limit_per_column: Number(config.task_flow_board_limit_per_column || 20),
+      task_flow_poll_interval_sec: Number(config.task_flow_poll_interval_sec || 5),
+    };
+  }
   return {
     task_flow_actor_ref: String(config.task_flow_actor_ref || "web-user"),
-    task_flow_actor_type: normalizeActorType(config.task_flow_actor_type || "human"),
+    task_flow_actor_type: TASK_FLOW_HUMAN_TYPE,
     task_flow_board_limit_per_column: Number(config.task_flow_board_limit_per_column || 20),
     task_flow_poll_interval_sec: Number(config.task_flow_poll_interval_sec || 5),
   };
@@ -71,7 +79,7 @@ export function taskDraftFromTask(task: TaskFlowTask): TaskFlowTaskDraft {
     owner_ref: String(task.owner_ref || ""),
     owner_type: normalizeActorType(task.owner_type),
     priority: String(task.priority ?? 50),
-    description: String(task.description || task.prompt || ""),
+    description: String(task.description || ""),
     requires_review: Boolean(task.requires_review),
     reviewer_ref: String(task.reviewer_ref || ""),
     reviewer_type: normalizeActorType(task.reviewer_type),
@@ -118,9 +126,14 @@ export function validateProjectDraft(draft: TaskFlowProjectDraft, context?: Acto
   return "";
 }
 
-export function validateTaskDraft(draft: TaskFlowTaskDraft, context?: ActorRefValidationContext) {
+export function validateTaskDraft(
+  draft: TaskFlowTaskDraft,
+  context?: ActorRefValidationContext,
+  options: { requireFlow?: boolean } = {},
+) {
   const title = draft.title.trim();
   const description = draft.description.trim();
+  const requireFlow = options.requireFlow ?? true;
   if (!title) {
     return "Task title is required.";
   }
@@ -132,6 +145,9 @@ export function validateTaskDraft(draft: TaskFlowTaskDraft, context?: ActorRefVa
   }
   if (description.length > 12000) {
     return "Task description must be 12000 characters or less.";
+  }
+  if (requireFlow && !draft.flow_id.trim()) {
+    return "Project flow is required.";
   }
   if (normalizeNumberField(draft.priority, { fallback: null, min: 0, max: 100 }) === null) {
     return "Task priority must be between 0 and 100.";
@@ -161,23 +177,24 @@ export function validateReviewDraft(draft: TaskFlowReviewDraft, context?: ActorR
 }
 
 export function validateSettingsDraft(draft: TaskFlowSettingsDraft, context?: ActorRefValidationContext) {
+  void context;
   if (normalizeNumberField(draft.task_flow_poll_interval_sec, { fallback: null, min: 1, max: 300 }) === null) {
     return "Poll interval must be between 1 and 300 seconds.";
   }
   if (normalizeNumberField(draft.task_flow_board_limit_per_column, { fallback: null, min: 1, max: 200 }) === null) {
     return "Board limit must be between 1 and 200 tasks per column.";
   }
-  const actorError = validateEmployeeScopedActorRef(draft.task_flow_actor_type, draft.task_flow_actor_ref, "actor", context);
-  if (actorError) {
-    return actorError;
+  if (normalizeActorType(draft.task_flow_actor_type) !== TASK_FLOW_HUMAN_TYPE) {
+    return "Task Flow public UI actions must use a human operator.";
   }
   return "";
 }
 
 export function buildSettingsPatch(draft: TaskFlowSettingsDraft) {
+  void draft.task_flow_actor_type;
   return {
-    task_flow_actor_ref: draft.task_flow_actor_ref.trim() || "web-user",
-    task_flow_actor_type: normalizeActorType(draft.task_flow_actor_type) || "human",
+    task_flow_actor_ref: "web-user",
+    task_flow_actor_type: TASK_FLOW_HUMAN_TYPE,
     task_flow_board_limit_per_column: normalizeNumberField(draft.task_flow_board_limit_per_column, {
       fallback: 20,
       max: 200,
@@ -241,11 +258,6 @@ export function normalizeActorType(value: unknown) {
   return normalized;
 }
 
-export function isEmployeeActorType(value: unknown) {
-  const normalized = normalizeActorType(value);
-  return normalized === TASK_FLOW_EMPLOYEE_TYPE;
-}
-
 export function getEmployeeOwnerRefOptions(profileId: string, employees: TaskFlowEmployeeOption[]) {
   const normalizedProfileId = String(profileId || "").trim() || "default";
   const seen = new Set<string>();
@@ -270,6 +282,50 @@ export function getEmployeeOwnerRefOptions(profileId: string, employees: TaskFlo
       value,
     }];
   });
+}
+
+export function getRootEmployeeOwnerOption(profileId: string, employees: TaskFlowEmployeeOption[]) {
+  const normalizedProfileId = String(profileId || "").trim() || "default";
+  const roots = employees.filter((employee) => {
+    const employeeProfileId = String(employee.profile_id || "").trim() || normalizedProfileId;
+    const status = String(employee.status || "active").trim() || "active";
+    return employeeProfileId === normalizedProfileId && status === "active" && Boolean(employee.is_root);
+  });
+  return roots.length === 1 ? roots[0] : null;
+}
+
+export function getRootEmployeeOwnerError(profileId: string, employees: TaskFlowEmployeeOption[]) {
+  const normalizedProfileId = String(profileId || "").trim() || "default";
+  const roots = employees.filter((employee) => {
+    const employeeProfileId = String(employee.profile_id || "").trim() || normalizedProfileId;
+    const status = String(employee.status || "active").trim() || "active";
+    return employeeProfileId === normalizedProfileId && status === "active" && Boolean(employee.is_root);
+  });
+  if (roots.length === 1) {
+    return "";
+  }
+  if (!roots.length) {
+    return "Create one active root employee before adding Task Flow work.";
+  }
+  return "Resolve the organization chart before adding Task Flow work: exactly one active root employee is required.";
+}
+
+export function withRootEmployeeOwner(
+  draft: TaskFlowTaskDraft,
+  rootEmployee: TaskFlowEmployeeOption | null,
+): TaskFlowTaskDraft {
+  if (!rootEmployee) {
+    return draft;
+  }
+  const ownerRef = String(rootEmployee.owner_ref || rootEmployee.name || "").trim();
+  if (!ownerRef) {
+    return draft;
+  }
+  return {
+    ...draft,
+    owner_ref: ownerRef,
+    owner_type: TASK_FLOW_EMPLOYEE_TYPE,
+  };
 }
 
 export function resolveActorRefForType({
@@ -327,6 +383,13 @@ function validateEmployeeScopedActorRef(
   context?: ActorRefValidationContext,
 ) {
   const normalizedType = normalizeActorType(type);
+  const normalizedRef = String(ref || "").trim();
+  if (!normalizedType && !normalizedRef) {
+    return "";
+  }
+  if (normalizedType !== TASK_FLOW_EMPLOYEE_TYPE) {
+    return `Task Flow ${label} must be an employee.`;
+  }
   if (normalizedType === TASK_FLOW_EMPLOYEE_TYPE) {
     return validateEmployeeActorRef(ref, label, context);
   }

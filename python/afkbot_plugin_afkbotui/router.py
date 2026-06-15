@@ -46,7 +46,7 @@ class UiPluginConfig(BaseModel):
     default_profile_id: str = Field(default="default", min_length=1, max_length=120)
     task_flow_poll_interval_sec: int = Field(default=5, ge=1, le=300)
     task_flow_board_limit_per_column: int = Field(default=20, ge=1, le=200)
-    task_flow_actor_type: Literal["human", "employee"] = "human"
+    task_flow_actor_type: Literal["human"] = "human"
     task_flow_actor_ref: str = Field(default="web-user", min_length=1, max_length=120)
 
 
@@ -59,16 +59,8 @@ class UiPluginConfigPatchPayload(BaseModel):
     default_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
     task_flow_poll_interval_sec: int | None = Field(default=None, ge=1, le=300)
     task_flow_board_limit_per_column: int | None = Field(default=None, ge=1, le=200)
-    task_flow_actor_type: Literal["human", "employee"] | None = None
+    task_flow_actor_type: Literal["human"] | None = None
     task_flow_actor_ref: str | None = Field(default=None, min_length=1, max_length=120)
-
-
-class UiPluginConfigEnvelope(BaseModel):
-    """Envelope compatible with older Task Flow config writes."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    config: UiPluginConfigPatchPayload
 
 
 class TaskFlowEmployeeCreatePayload(BaseModel):
@@ -112,6 +104,8 @@ class AutomationPatchPayload(BaseModel):
 class TaskFlowCreatePayload(BaseModel):
     """Request body for one task flow create action."""
 
+    model_config = ConfigDict(extra="forbid")
+
     title: str = Field(min_length=1, max_length=240)
     description: str | None = None
     created_by_type: str = Field(default="human", min_length=1)
@@ -138,12 +132,13 @@ class TaskFlowPatchPayload(BaseModel):
 class TaskCreatePayload(BaseModel):
     """Request body for one task create action."""
 
+    model_config = ConfigDict(extra="forbid")
+
     title: str = Field(min_length=1, max_length=240)
-    description: str | None = Field(default=None, min_length=1, max_length=12000)
-    prompt: str | None = Field(default=None, min_length=1, max_length=12000)
+    description: str = Field(min_length=1, max_length=12000)
     created_by_type: str = Field(default="human", min_length=1)
     created_by_ref: str = Field(default="web-user", min_length=1)
-    flow_id: str | None = None
+    flow_id: str = Field(min_length=1)
     priority: int = Field(default=50, ge=0, le=100)
     due_at: datetime | None = None
     owner_type: str | None = None
@@ -160,6 +155,8 @@ class TaskCreatePayload(BaseModel):
 class TaskCommentCreatePayload(BaseModel):
     """Request body for one kanban task comment."""
 
+    model_config = ConfigDict(extra="forbid")
+
     actor_type: str = Field(default="human", min_length=1)
     actor_ref: str = Field(min_length=1)
     message: str = Field(min_length=1, max_length=4000)
@@ -170,9 +167,10 @@ class TaskCommentCreatePayload(BaseModel):
 class TaskPatchPayload(BaseModel):
     """Request body for one task update."""
 
+    model_config = ConfigDict(extra="forbid")
+
     title: str | None = None
     description: str | None = Field(default=None, max_length=12000)
-    prompt: str | None = Field(default=None, max_length=12000)
     status: str | None = None
     priority: int | None = None
     due_at: datetime | None = None
@@ -191,12 +189,16 @@ class TaskPatchPayload(BaseModel):
 class ReviewApprovePayload(BaseModel):
     """Request body for approving one review task."""
 
+    model_config = ConfigDict(extra="forbid")
+
     actor_type: str = Field(default="human", min_length=1)
     actor_ref: str = Field(default="web-user", min_length=1)
 
 
 class ReviewRequestChangesPayload(BaseModel):
     """Request body for requesting changes on one review task."""
+
+    model_config = ConfigDict(extra="forbid")
 
     reason_text: str = Field(min_length=1, max_length=4000)
     actor_type: str = Field(default="human", min_length=1)
@@ -208,6 +210,8 @@ class ReviewRequestChangesPayload(BaseModel):
 
 class TaskBulkUpdatePayload(BaseModel):
     """Request body for bulk task changes from the Task Flow board."""
+
+    model_config = ConfigDict(extra="forbid")
 
     task_ids: tuple[str, ...] = Field(min_length=1)
     status: str | None = None
@@ -231,6 +235,8 @@ class TaskBulkUpdatePayload(BaseModel):
 class TaskBulkDeletePayload(BaseModel):
     """Request body for bulk task deletion from the Task Flow board."""
 
+    model_config = ConfigDict(extra="forbid")
+
     task_ids: tuple[str, ...] = Field(min_length=1)
     actor_type: str = Field(default="human", min_length=1)
     actor_ref: str = Field(default="web-user", min_length=1)
@@ -238,6 +244,8 @@ class TaskBulkDeletePayload(BaseModel):
 
 class TaskDocumentPutPayload(BaseModel):
     """Request body for creating or updating one Task Flow document."""
+
+    model_config = ConfigDict(extra="forbid")
 
     scope_type: Literal["flow", "task"]
     scope_id: str = Field(min_length=1, max_length=128)
@@ -323,12 +331,6 @@ class BootstrapFilePatchPayload(BaseModel):
     content: str | None = Field(default=None, max_length=200000)
 
 
-def _task_payload_description(payload: TaskCreatePayload | TaskPatchPayload) -> str | None:
-    """Return canonical Task Flow description from new or legacy UI payloads."""
-
-    return payload.description if payload.description is not None else payload.prompt
-
-
 def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRouter:
     """Build a router exposing the unified AFKBOT admin workspace APIs."""
 
@@ -345,10 +347,9 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 detail={"error_code": "invalid_plugin_config", "reason": str(exc)},
             ) from exc
 
-    def write_config(payload: UiPluginConfigPatchPayload | UiPluginConfigEnvelope) -> UiPluginConfig:
-        patch = payload.config if isinstance(payload, UiPluginConfigEnvelope) else payload
+    def write_config(payload: UiPluginConfigPatchPayload) -> UiPluginConfig:
         current = read_config().model_dump(mode="json")
-        current.update(patch.model_dump(exclude_none=True))
+        current.update(payload.model_dump(exclude_none=True))
         try:
             registry.write_config(current)
         except PluginServiceError as exc:
@@ -357,7 +358,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
 
     def serialize_config(config: UiPluginConfig) -> dict[str, object]:
         payload = config.model_dump(mode="json")
-        return {"config": payload, "plugin_config": {"config": payload}}
+        return {"config": payload}
 
     @router.get("/health")
     async def health() -> dict[str, str]:
@@ -372,11 +373,11 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         return serialize_config(read_config())
 
     @router.patch("/config")
-    async def patch_config(payload: UiPluginConfigPatchPayload | UiPluginConfigEnvelope) -> dict[str, object]:
+    async def patch_config(payload: UiPluginConfigPatchPayload) -> dict[str, object]:
         return serialize_config(write_config(payload))
 
     @router.put("/config")
-    async def put_config(payload: UiPluginConfigPatchPayload | UiPluginConfigEnvelope) -> dict[str, object]:
+    async def put_config(payload: UiPluginConfigPatchPayload) -> dict[str, object]:
         return serialize_config(write_config(payload))
 
     @router.delete("/config")
@@ -626,6 +627,11 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             actor_ref=payload.created_by_ref,
             config=config,
         )
+        _ensure_public_task_work_principal_is_employee(
+            principal_type=payload.default_owner_type,
+            principal_ref=payload.default_owner_ref,
+            label="default owner",
+        )
         try:
             item = await service.create_flow(
                 profile_id=profile_id,
@@ -657,6 +663,12 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             actor_ref=payload.actor_ref,
             config=config,
         )
+        if "default_owner_ref" in payload.model_fields_set or "default_owner_type" in payload.model_fields_set:
+            _ensure_public_task_work_principal_is_employee(
+                principal_type=payload.default_owner_type,
+                principal_ref=payload.default_owner_ref,
+                label="default owner",
+            )
         kwargs: dict[str, object] = {
             "actor_ref": actor_ref,
             "actor_type": actor_type,
@@ -896,11 +908,21 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             actor_ref=payload.created_by_ref,
             config=config,
         )
+        _ensure_public_task_work_principal_is_employee(
+            principal_type=payload.owner_type,
+            principal_ref=payload.owner_ref,
+            label="owner",
+        )
+        _ensure_public_task_work_principal_is_employee(
+            principal_type=payload.reviewer_type,
+            principal_ref=payload.reviewer_ref,
+            label="reviewer",
+        )
         try:
             item = await service.create_task(
                 profile_id=profile_id,
                 title=payload.title,
-                description=_task_payload_description(payload),
+                description=payload.description,
                 created_by_type=actor_type,
                 created_by_ref=actor_ref,
                 flow_id=payload.flow_id,
@@ -943,28 +965,6 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
         return {"context": payload.model_dump(mode="json")}
-
-    @router.get("/task-flow/feed")
-    async def task_flow_agent_feed(
-        profile_id: str = "default",
-        owner_type: str | None = None,
-        owner_ref: str | None = None,
-        limit: int | None = 30,
-        event_limit: int | None = 20,
-    ) -> dict[str, object]:
-        service = get_task_flow_service(get_settings())
-        config = read_config()
-        try:
-            payload = await service.build_agent_inbox(
-                profile_id=profile_id,
-                owner_type=owner_type or config.task_flow_actor_type,
-                owner_ref=owner_ref or config.task_flow_actor_ref,
-                task_limit=limit,
-                event_limit=event_limit,
-            )
-        except TaskFlowServiceError as exc:
-            raise _task_http_error(exc) from exc
-        return {"feed": payload.model_dump(mode="json")}
 
     @router.get("/task-flow/employees")
     async def task_flow_employees(profile_id: str = "default", q: str = "") -> dict[str, object]:
@@ -1146,12 +1146,23 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             actor_ref=payload.actor_ref,
             config=config,
         )
+        _ensure_public_task_work_principal_is_employee(
+            principal_type=payload.owner_type,
+            principal_ref=payload.owner_ref,
+            label="owner",
+        )
+        if "reviewer_ref" in payload.model_fields_set or "reviewer_type" in payload.model_fields_set:
+            _ensure_public_task_work_principal_is_employee(
+                principal_type=payload.reviewer_type,
+                principal_ref=payload.reviewer_ref,
+                label="reviewer",
+            )
         try:
             update_kwargs: dict[str, object] = {
                 "profile_id": profile_id,
                 "task_id": task_id,
                 "title": payload.title,
-                "description": _task_payload_description(payload),
+                "description": payload.description,
                 "status": payload.status,
                 "priority": payload.priority,
                 "due_at": payload.due_at,
@@ -1219,6 +1230,17 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             actor_ref=payload.actor_ref,
             config=config,
         )
+        _ensure_public_task_work_principal_is_employee(
+            principal_type=payload.owner_type,
+            principal_ref=payload.owner_ref,
+            label="owner",
+        )
+        if "reviewer_ref" in payload.model_fields_set or "reviewer_type" in payload.model_fields_set:
+            _ensure_public_task_work_principal_is_employee(
+                principal_type=payload.reviewer_type,
+                principal_ref=payload.reviewer_ref,
+                label="reviewer",
+            )
         updated_tasks: list[dict[str, object]] = []
         errors: list[dict[str, object]] = []
         for task_id in payload.task_ids:
@@ -1473,6 +1495,11 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             actor_type=payload.actor_type,
             actor_ref=payload.actor_ref,
             config=config,
+        )
+        _ensure_public_task_work_principal_is_employee(
+            principal_type=payload.owner_type,
+            principal_ref=payload.owner_ref,
+            label="owner",
         )
         try:
             item = await service.request_review_changes(
@@ -2143,8 +2170,10 @@ def _serialize_task_flow_employee(employee: object) -> dict[str, object]:
         summary = str(payload.get("title") or payload.get("role") or payload.get("name") or payload.get("id") or "")
     profile_id = str(payload.get("profile_id") or "")
     employee_id = str(payload.get("id") or "")
+    is_root = payload.get("manager_id") is None
     return {
         **payload,
+        "is_root": is_root,
         "owner_ref": employee_id,
         "path": f"profiles/{profile_id}/employees/{employee_id}.md",
         "summary": summary,
@@ -2207,14 +2236,14 @@ def _markdown_line(value: str) -> str:
 
 def _normalize_task_flow_actor_type(value: object) -> str:
     raw = str(value or "").strip().lower()
-    return raw if raw in {"human", "employee"} else "human"
+    return raw if raw in {"human", "employee"} else raw
 
 
 def _normalize_task_flow_actor_ref(*, actor_type: str, value: object) -> str:
-    raw = str(value or "").strip()
-    if actor_type == "human" and raw.lower() in {"", "default", "web-user", "web-user/default"}:
+    if actor_type == "human":
         return resolve_local_human_ref(get_settings())
-    return raw or (resolve_local_human_ref(get_settings()) if actor_type == "human" else "cto")
+    raw = str(value or "").strip()
+    return raw or "cto"
 
 
 def _normalize_task_flow_human_principal_ref(
@@ -2236,15 +2265,50 @@ def _resolve_task_flow_actor_identity(
     """Resolve UI actor input into the public Task Flow principal identity."""
 
     resolved_actor_type = _normalize_task_flow_actor_type(actor_type or config.task_flow_actor_type)
-    actor_ref_value = actor_ref or config.task_flow_actor_ref
     if resolved_actor_type == "employee":
-        resolved_actor_type = "human"
-        actor_ref_value = "web-user"
+        raise _public_employee_runtime_http_error(
+            "task_employee_actor_forbidden",
+            "Public UI cannot act as an employee without a trusted employee runtime session",
+        )
+    if resolved_actor_type != "human":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error_code": "invalid_task_flow_actor_type",
+                "reason": "Task Flow actor_type must be human for public UI requests",
+            },
+        )
+    actor_ref_value = actor_ref or config.task_flow_actor_ref
     resolved_actor_ref = _normalize_task_flow_actor_ref(
         actor_type=resolved_actor_type,
         value=actor_ref_value,
     )
     return resolved_actor_type, resolved_actor_ref
+
+
+def _ensure_public_task_work_principal_is_employee(
+    *,
+    principal_type: object,
+    principal_ref: object,
+    label: str,
+) -> None:
+    normalized_type = str(principal_type or "").strip().lower()
+    normalized_ref = str(principal_ref or "").strip()
+    if not normalized_type and not normalized_ref:
+        return
+    if normalized_type == "employee":
+        return
+    raise _public_employee_runtime_http_error(
+        "task_employee_principal_required",
+        f"Public Task Flow {label} must be an employee principal",
+    )
+
+
+def _public_employee_runtime_http_error(error_code: str, reason: str) -> HTTPException:
+    return HTTPException(
+        status_code=403,
+        detail={"error_code": error_code, "reason": reason},
+    )
 
 
 def _automation_http_error(exc: AutomationsServiceError) -> HTTPException:
@@ -2371,19 +2435,9 @@ def _normalize_config_payload(payload: object) -> dict[str, object]:
 
     if not isinstance(payload, dict):
         return {}
-    raw_actor_type = payload.get(
-        "task_flow_actor_type",
-        payload.get("actor_type", "human"),
-    )
+    raw_actor_type = payload.get("task_flow_actor_type", "human")
     task_flow_actor_type = _normalize_task_flow_actor_type(raw_actor_type)
-    actor_ref = (
-        "web-user"
-        if str(raw_actor_type or "").strip().lower() not in {"human", "employee"}
-        else payload.get(
-            "task_flow_actor_ref",
-            payload.get("actor_ref", "web-user"),
-        )
-    )
+    actor_ref = payload.get("task_flow_actor_ref", "web-user")
 
     return {
         "poll_interval_sec": payload.get("poll_interval_sec", 5),
@@ -2392,10 +2446,7 @@ def _normalize_config_payload(payload: object) -> dict[str, object]:
             "task_flow_poll_interval_sec",
             5,
         ),
-        "task_flow_board_limit_per_column": payload.get(
-            "task_flow_board_limit_per_column",
-            payload.get("board_limit_per_column", 20),
-        ),
+        "task_flow_board_limit_per_column": payload.get("task_flow_board_limit_per_column", 20),
         "task_flow_actor_type": task_flow_actor_type,
         "task_flow_actor_ref": _normalize_task_flow_actor_ref(
             actor_type=task_flow_actor_type,

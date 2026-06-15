@@ -27,7 +27,7 @@ export function normalizeConfig(config: Record<string, unknown> | null | undefin
     task_flow_board_limit_per_column: Number(
       config?.task_flow_board_limit_per_column || defaultConfig.task_flow_board_limit_per_column,
     ),
-    task_flow_actor_type: String(config?.task_flow_actor_type || defaultConfig.task_flow_actor_type),
+    task_flow_actor_type: "human",
     task_flow_actor_ref: String(config?.task_flow_actor_ref || defaultConfig.task_flow_actor_ref),
   };
 }

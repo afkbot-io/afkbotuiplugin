@@ -2,7 +2,6 @@ import { ActorRefField } from "@/features/task-flow/ui/ActorRefField";
 import {
   resolveActorRefForType,
   TASK_FLOW_EMPLOYEE_TYPE,
-  TASK_FLOW_HUMAN_TYPE,
   TASK_FLOW_STATUS_OPTIONS,
 } from "@/features/task-flow/model/task-flow.api";
 import type {
@@ -20,6 +19,7 @@ type TaskFormFieldsProps = {
   onChange: (draft: TaskFlowTaskDraft) => void;
   profileId: string;
   profiles: TaskFlowProfile[];
+  lockedOwner?: TaskFlowEmployeeOption | null;
   showBlockedReason?: boolean;
   showFlowField?: boolean;
   showStatus?: boolean;
@@ -33,6 +33,7 @@ export function TaskFormFields({
   onChange,
   profileId,
   profiles,
+  lockedOwner = null,
   showBlockedReason = false,
   showFlowField = false,
   showStatus = false,
@@ -109,9 +110,9 @@ export function TaskFormFields({
         ) : null}
         {showFlowField ? (
           <label className="field field--compact">
-            <span className="field__label">Flow</span>
-            <select onChange={(event) => handleFieldChange("flow_id", event.target.value)} value={draft.flow_id}>
-              <option value="">All Flows</option>
+            <span className="field__label">Project</span>
+            <select onChange={(event) => handleFieldChange("flow_id", event.target.value)} required value={draft.flow_id}>
+              <option disabled value="">Select project</option>
               {flows.map((flow) => (
                 <option key={flow.id} value={flow.id}>
                   {flow.title}
@@ -131,34 +132,45 @@ export function TaskFormFields({
           />
         </label>
       </div>
-      <div className="field-grid">
-        <label className="field field--compact">
-          <span className="field__label">Owner Type</span>
-          <select onChange={(event) => handleOwnerTypeChange(event.target.value)} value={draft.owner_type}>
-            <option value="">None</option>
-            <option value={TASK_FLOW_EMPLOYEE_TYPE}>Employee</option>
-            <option value={TASK_FLOW_HUMAN_TYPE}>Human</option>
-          </select>
-        </label>
-        <ActorRefField
-          config={config}
-          label="Owner Ref"
-          name="owner_ref"
-          onChange={(value) => handleFieldChange("owner_ref", value)}
-          profileId={profileId}
-          profiles={profiles}
-          employees={employees}
-          typeValue={draft.owner_type}
-          value={draft.owner_ref}
-        />
-      </div>
+      {lockedOwner ? (
+        <div className="field-grid">
+          <label className="field field--compact">
+            <span className="field__label">Owner Type</span>
+            <input readOnly value="Employee" />
+          </label>
+          <label className="field field--compact">
+            <span className="field__label">Intake Owner</span>
+            <input readOnly value={lockedOwner.summary || lockedOwner.name || lockedOwner.owner_ref || ""} />
+          </label>
+        </div>
+      ) : (
+        <div className="field-grid">
+          <label className="field field--compact">
+            <span className="field__label">Owner Type</span>
+            <select onChange={(event) => handleOwnerTypeChange(event.target.value)} value={draft.owner_type}>
+              <option value="">None</option>
+              <option value={TASK_FLOW_EMPLOYEE_TYPE}>Employee</option>
+            </select>
+          </label>
+          <ActorRefField
+            config={config}
+            label="Owner Ref"
+            name="owner_ref"
+            onChange={(value) => handleFieldChange("owner_ref", value)}
+            profileId={profileId}
+            profiles={profiles}
+            employees={employees}
+            typeValue={draft.owner_type}
+            value={draft.owner_ref}
+          />
+        </div>
+      )}
       <div className="field-grid">
         <label className="field field--compact">
           <span className="field__label">Reviewer Type</span>
           <select onChange={(event) => handleReviewerTypeChange(event.target.value)} value={draft.reviewer_type}>
             <option value="">None</option>
             <option value={TASK_FLOW_EMPLOYEE_TYPE}>Employee</option>
-            <option value={TASK_FLOW_HUMAN_TYPE}>Human</option>
           </select>
         </label>
         <ActorRefField

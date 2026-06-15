@@ -6,8 +6,6 @@ export const taskFlowQueryKeys = {
   context: (profileId: string, taskId: string) => [...taskFlowQueryKeys.all, profileId, "context", taskId] as const,
   documents: (profileId: string, scopeType: string, scopeId: string) =>
     [...taskFlowQueryKeys.all, profileId, "documents", scopeType, scopeId] as const,
-  feed: (profileId: string, actorType: string, actorRef: string) =>
-    [...taskFlowQueryKeys.all, profileId, "feed", actorType, actorRef] as const,
   projects: (profileId: string) => [...taskFlowQueryKeys.all, profileId, "projects"] as const,
   review: (profileId: string, flowId: string, actorType: string, actorRef: string) =>
     [...taskFlowQueryKeys.all, profileId, "review", flowId || "all", actorType, actorRef] as const,

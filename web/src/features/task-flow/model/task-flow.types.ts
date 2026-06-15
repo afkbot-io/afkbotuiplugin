@@ -28,13 +28,17 @@ export type TaskFlowProfile = {
 };
 
 export type TaskFlowEmployeeOption = {
+  is_root?: boolean | null;
+  manager_id?: string | null;
   name: string;
   origin?: string | null;
   owner_ref?: string | null;
   path?: string | null;
   profile_id?: string | null;
+  role?: string | null;
   summary?: string | null;
   status?: string | null;
+  title?: string | null;
 };
 
 export type TaskFlowOrgChartIssue = {
@@ -115,7 +119,6 @@ export type TaskFlowTask = {
   owner_type?: TaskFlowActorType | null;
   priority?: number | null;
   profile_id?: string | null;
-  prompt?: string | null;
   review_actionable?: boolean | null;
   requires_review?: boolean | null;
   reviewer_ref?: string | null;
@@ -229,23 +232,29 @@ export type TaskFlowContextBundle = {
   flow?: TaskFlowProject | null;
   flow_documents?: TaskFlowDocument[];
   generated_at?: string | null;
+  knowledge_packet?: {
+    blocking_reasons?: string[];
+    context_budget_chars?: number | null;
+    documents?: Array<{
+      confirmation_status?: string | null;
+      document_key?: string | null;
+      excerpt?: string | null;
+      revision?: number | null;
+      scope_id?: string | null;
+      scope_type?: string | null;
+      title?: string | null;
+    }>;
+    health_status?: string | null;
+    missing_flow_document_keys?: string[];
+    ready_for_delegation?: boolean | null;
+    ready_for_execution?: boolean | null;
+    required_flow_document_keys?: string[];
+    unconfirmed_flow_document_keys?: string[];
+  } | null;
   recent_comments?: TaskFlowComment[];
   recent_events?: TaskFlowEvent[];
   task?: TaskFlowTask | null;
   task_documents?: TaskFlowDocument[];
-};
-
-export type TaskFlowEmployeeFeed = {
-  blocked_count?: number;
-  mention_event_count?: number;
-  owner_ref: string;
-  owner_type: string;
-  recent_events?: TaskFlowEvent[];
-  review_count?: number;
-  running_count?: number;
-  tasks?: TaskFlowTask[];
-  todo_count?: number;
-  total_count?: number;
 };
 
 export type TaskFlowDocumentDraft = {

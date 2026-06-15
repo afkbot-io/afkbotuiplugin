@@ -10,7 +10,6 @@ import {
 } from "@/features/task-flow/model/task-flow.presentation";
 import {
   TASK_FLOW_EMPLOYEE_TYPE,
-  TASK_FLOW_HUMAN_TYPE,
   resolveActorRefForType,
 } from "@/features/task-flow/model/task-flow.api";
 import type {
@@ -251,7 +250,6 @@ export function TaskInspector({
                 >
                   <option value="">Keep current</option>
                   <option value={TASK_FLOW_EMPLOYEE_TYPE}>Employee</option>
-                  <option value={TASK_FLOW_HUMAN_TYPE}>Human</option>
                 </select>
               </label>
               <ActorRefField

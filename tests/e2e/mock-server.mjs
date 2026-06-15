@@ -54,8 +54,8 @@ let taskFlows = [
     id: "flow-beta",
     title: "Ops Follow-up",
     description: "Backlog for rollout, QA, and release tasks.",
-    default_owner_type: "human",
-    default_owner_ref: "web-user",
+    default_owner_type: "employee",
+    default_owner_ref: "cto",
     created_by_type: "human",
     created_by_ref: "web-user",
     labels: ["ops"],
@@ -100,10 +100,10 @@ const boardTasks = [
     profile_id: "default",
     flow_id: "flow-alpha",
     due_at: "2026-04-22T12:00:00.000Z",
-    owner_type: "human",
-    owner_ref: "web-user",
-    reviewer_type: "human",
-    reviewer_ref: "web-user",
+    owner_type: "employee",
+    owner_ref: "cto",
+    reviewer_type: "employee",
+    reviewer_ref: "planner",
     requires_review: true,
     labels: ["qa"],
   },
@@ -441,31 +441,6 @@ function matchApiRoute(pathname, requestUrl = "/") {
           },
         ],
         total_count: filteredBoardTasks.length,
-      },
-    };
-  }
-
-  if (pathname === "/v1/plugins/afkbotui/task-flow/feed") {
-    return {
-      feed: {
-        blocked_count: 0,
-        mention_event_count: 1,
-        owner_ref: "cto",
-        owner_type: "employee",
-        recent_events: [
-          {
-            id: 31,
-            task_id: "task-rollout",
-            task_title: "Prepare rollout checklist",
-            event_type: "wake_requested",
-            created_at: "2026-04-21T09:47:00.000Z",
-          },
-        ],
-        review_count: 0,
-        running_count: 0,
-        tasks: boardTasks.filter((task) => task.owner_type === "employee"),
-        todo_count: 1,
-        total_count: 1,
       },
     };
   }

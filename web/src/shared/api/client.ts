@@ -13,9 +13,6 @@ type AuthSessionResponse = {
 };
 type ConfigResponse = Record<string, unknown> & {
   config?: Record<string, unknown>;
-  plugin_config?: {
-    config?: Record<string, unknown>;
-  };
 };
 type ProfilesResponse = {
   profiles?: Array<{
@@ -464,12 +461,6 @@ export class ApiClient {
   async getTaskContext(profileId: string, taskId: string) {
     return this.request<Record<string, unknown>>(`/task-flow/tasks/${encodeURIComponent(taskId)}/context`, {
       params: { profile_id: profileId },
-    });
-  }
-
-  async getTaskFeed(profileId: string, params: Record<string, unknown> = {}) {
-    return this.request<Record<string, unknown>>("/task-flow/feed", {
-      params: { profile_id: profileId, ...params },
     });
   }
 

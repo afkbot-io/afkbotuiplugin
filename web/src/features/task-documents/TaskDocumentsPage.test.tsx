@@ -76,14 +76,14 @@ describe("TaskDocumentsPage", () => {
       listTaskFlowDocumentWorkspace: vi.fn(async () => ({
         task_documents: [
           {
-            body: "QA notes.",
+            body: "Review notes.",
             confirmation_status: "draft",
-            document_key: "qa",
+            document_key: "review",
             id: "doc-1",
             revision: 3,
             scope_id: "flow-1",
-            scope_type: "flow",
-            title: "QA notes",
+            scope_type: "task",
+            title: "Review notes",
           },
         ],
       })),
@@ -119,14 +119,14 @@ describe("TaskDocumentsPage", () => {
       listTaskFlowDocumentWorkspace: vi.fn(async () => ({
         task_documents: [
           {
-            body: "Old roadmap.",
+            body: "Old status.",
             confirmation_status: "draft",
-            document_key: "roadmap",
+            document_key: "status",
             id: "doc-1",
             revision: 4,
             scope_id: "flow-1",
             scope_type: "flow",
-            title: "Roadmap",
+            title: "Project Status",
           },
         ],
       })),

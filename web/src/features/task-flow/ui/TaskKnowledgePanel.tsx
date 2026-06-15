@@ -20,7 +20,8 @@ type TaskKnowledgePanelProps = {
   savingDocument: boolean;
 };
 
-const DOCUMENT_KEY_OPTIONS = ["plan", "spec", "roadmap", "decisions", "handoff", "qa", "notes"] as const;
+const FLOW_DOCUMENT_KEY_OPTIONS = ["brief", "plan", "spec", "decisions", "status"] as const;
+const TASK_DOCUMENT_KEY_OPTIONS = ["handoff", "notes", "review", "evidence"] as const;
 
 export function TaskKnowledgePanel({
   busyDocumentId = "",
@@ -33,17 +34,17 @@ export function TaskKnowledgePanel({
 }: TaskKnowledgePanelProps) {
   const [draft, setDraft] = useState<TaskFlowDocumentDraft>({
     body: "",
-    document_key: "plan",
+    document_key: "handoff",
     scope_type: "task",
-    title: "Task plan",
+    title: "Task handoff",
   });
 
   useEffect(() => {
     setDraft({
       body: "",
-      document_key: "plan",
+      document_key: "handoff",
       scope_type: "task",
-      title: "Task plan",
+      title: "Task handoff",
     });
   }, [context?.task?.id]);
 
@@ -52,6 +53,7 @@ export function TaskKnowledgePanel({
     [context?.flow_documents, context?.task_documents],
   );
   const selectedScopeId = draft.scope_type === "flow" ? context?.flow?.id || "" : context?.task?.id || "";
+  const documentKeyOptions = draft.scope_type === "flow" ? FLOW_DOCUMENT_KEY_OPTIONS : TASK_DOCUMENT_KEY_OPTIONS;
   const matchingDocument = documents.find(
     (document) => document.scope_type === draft.scope_type && document.scope_id === selectedScopeId && document.document_key === draft.document_key,
   );
@@ -84,11 +86,13 @@ export function TaskKnowledgePanel({
       {context ? (
         <>
           <div className="knowledge-grid">
+            <ContextMetric label="Packet docs" value={context.knowledge_packet?.documents?.length || 0} />
             <ContextMetric label="Flow docs" value={context.flow_documents?.length || 0} />
             <ContextMetric label="Task docs" value={context.task_documents?.length || 0} />
             <ContextMetric label="Dependencies" value={context.dependencies?.length || 0} />
-            <ContextMetric label="Delegated" value={context.delegated_tasks?.length || 0} />
           </div>
+
+          <KnowledgePacketSummary context={context} />
 
           <DocumentList
             busyDocumentId={busyDocumentId}
@@ -116,8 +120,9 @@ export function TaskKnowledgePanel({
                     const scopeType = event.target.value === "flow" ? "flow" : "task";
                     setDraft((current) => ({
                       ...current,
+                      document_key: scopeType === "flow" ? "brief" : "handoff",
                       scope_type: scopeType,
-                      title: scopeType === "flow" ? "Flow plan" : "Task plan",
+                      title: scopeType === "flow" ? "Project Brief" : "Task handoff",
                     }));
                   }}
                   value={draft.scope_type}
@@ -134,7 +139,7 @@ export function TaskKnowledgePanel({
                   onChange={(event) => setDraft((current) => ({ ...current, document_key: event.target.value }))}
                   value={draft.document_key}
                 >
-                  {DOCUMENT_KEY_OPTIONS.map((key) => (
+                  {documentKeyOptions.map((key) => (
                     <option key={key} value={key}>
                       {formatStatusLabel(key)}
                     </option>
@@ -154,7 +159,7 @@ export function TaskKnowledgePanel({
               <span className="field__label">Body</span>
               <textarea
                 onChange={(event) => setDraft((current) => ({ ...current, body: event.target.value }))}
-                placeholder="Persist plan, spec, handoff, QA notes, or decisions for every employee working this flow."
+                placeholder="Persist a compact project decision, task handoff, review note, or evidence entry."
                 rows={6}
                 value={draft.body}
               />
@@ -175,6 +180,69 @@ export function TaskKnowledgePanel({
         <p className="muted-copy">Select a task to load its working context.</p>
       )}
     </section>
+  );
+}
+
+function KnowledgePacketSummary({ context }: { context: TaskFlowContextBundle }) {
+  const packet = context.knowledge_packet;
+  if (!packet) {
+    return null;
+  }
+  const documents = packet.documents || [];
+  const missing = packet.missing_flow_document_keys || [];
+  const unconfirmed = packet.unconfirmed_flow_document_keys || [];
+  const blockers = packet.blocking_reasons || [];
+  const healthStatus = String(packet.health_status || "needs_attention");
+  const readyForDelegation = packet.ready_for_delegation === true;
+  const readyForExecution = packet.ready_for_execution === true;
+  const healthBadgeClass = healthStatus === "ready" ? "badge--success" : "badge--warning";
+  return (
+    <div className="knowledge-doc-list">
+      <div className="knowledge-doc-list__head">
+        <h5>Runtime packet</h5>
+        <div className="knowledge-doc-list__actions">
+          <span className={`badge ${healthBadgeClass}`}>{healthStatus}</span>
+          <span className="badge badge--muted">{packet.context_budget_chars || 0} chars</span>
+        </div>
+      </div>
+      <div className="knowledge-gates">
+        <span className={`badge ${readyForDelegation ? "badge--success" : "badge--warning"}`}>
+          Delegation {readyForDelegation ? "ready" : "blocked"}
+        </span>
+        <span className={`badge ${readyForExecution ? "badge--success" : "badge--warning"}`}>
+          Execution {readyForExecution ? "ready" : "blocked"}
+        </span>
+      </div>
+      {blockers.length ? (
+        <p className="muted-copy">Knowledge blockers: {blockers.join("; ")}</p>
+      ) : null}
+      {missing.length ? (
+        <p className="muted-copy">Missing spine docs: {missing.join(", ")}</p>
+      ) : null}
+      {unconfirmed.length ? (
+        <p className="muted-copy">Unconfirmed spine docs: {unconfirmed.join(", ")}</p>
+      ) : null}
+      {documents.length ? (
+        documents.slice(0, 8).map((document, index) => (
+          <article className="knowledge-doc" key={`${document.scope_type}-${document.scope_id}-${document.document_key}-${index}`}>
+            <div className="knowledge-doc__head">
+              <div>
+                <h5>{document.title || document.document_key}</h5>
+                <p className="muted">
+                  {document.scope_type}.{document.document_key} · r{document.revision || 1}
+                </p>
+              </div>
+              <span className={`badge ${document.confirmation_status === "confirmed" ? "badge--success" : "badge--warning"}`}>
+                {document.confirmation_status || "draft"}
+              </span>
+            </div>
+            <p className="knowledge-doc__body">{truncate(document.excerpt || "", 220) || "No excerpt."}</p>
+          </article>
+        ))
+      ) : (
+        <p className="muted-copy">No runtime packet docs yet.</p>
+      )}
+    </div>
   );
 }
 
