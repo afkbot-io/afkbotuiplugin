@@ -343,6 +343,28 @@ function createApi({
         return (taskItem.status === "review" || taskItem.review_actionable) && (!flowId || taskItem.flow_id === flowId);
       }),
     })),
+    runTaskFlowKnowledgeMaintenance: vi.fn(async (_profileId: string, payload: Record<string, unknown> = {}) => ({
+      knowledge_maintenance: {
+        checked_flow_count: 1,
+        created_task_count: 1,
+        flows: [
+          {
+            action: "created",
+            flow_id: String(payload.flow_id || "flow-alpha"),
+            flow_title: "Website launch",
+            health_status: "needs_attention",
+            reasons: ["unconfirmed_docs:brief,plan,spec"],
+            task: buildTask({
+              id: "task-cto-maintenance",
+              source_type: "knowledge_maintenance",
+              title: "Maintain project knowledge",
+            }),
+          },
+        ],
+        skipped_flow_count: 0,
+        woken_task_count: 0,
+      },
+    })),
     listTaskFlowEmployees: vi.fn(async () => ({
       employees: employeeItems || [
         {
@@ -1055,7 +1077,7 @@ describe("TaskFlowPage", () => {
     const { api, notify } = renderTaskFlowPage();
 
     expect(await screen.findByText("Task Flow")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Review/i }));
+    await user.click(screen.getByRole("button", { name: /^Review\b/i }));
 
     const dialog = await screen.findByRole("dialog", { name: "Tasks Waiting on Review" });
     const reviewTaskButton = within(dialog).getByRole("button", { name: /Review copy/i });
@@ -1078,6 +1100,27 @@ describe("TaskFlowPage", () => {
     });
   });
 
+  it("runs CTO knowledge maintenance for the selected flow", async () => {
+    const user = userEvent.setup();
+    const { api, notify } = renderTaskFlowPage();
+
+    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "CTO Review" }));
+
+    await waitFor(() => {
+      expect(api.runTaskFlowKnowledgeMaintenance).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          actor_ref: "web-user",
+          actor_type: "human",
+        }),
+      );
+    });
+    expect(await screen.findByText("CTO knowledge review")).toBeInTheDocument();
+    expect(screen.getByText("unconfirmed_docs:brief,plan,spec")).toBeInTheDocument();
+    expect(notify).toHaveBeenCalledWith("CTO review queued 1 task and woke 0.", "success");
+  });
+
   it("keeps review actions visible for claimed review tasks", async () => {
     const user = userEvent.setup();
     renderTaskFlowPage({
@@ -1094,7 +1137,7 @@ describe("TaskFlowPage", () => {
     });
 
     expect(await screen.findByText("Task Flow")).toBeInTheDocument();
-    await user.click(await screen.findByRole("button", { name: /Review 1/i }));
+    await user.click(await screen.findByRole("button", { name: /^Review 1$/i }));
     const dialog = await screen.findByRole("dialog", { name: "Tasks Waiting on Review" });
     await user.click(within(dialog).getByRole("button", { name: /Claimed review/i }));
 

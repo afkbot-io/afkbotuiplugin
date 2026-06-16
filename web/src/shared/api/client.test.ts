@@ -143,6 +143,7 @@ describe("ApiClient text-library resources", () => {
       .fn()
       .mockResolvedValueOnce(jsonResponse({ task_documents: [] }))
       .mockResolvedValueOnce(jsonResponse({ task_documents: [{ id: "doc-2" }] }))
+      .mockResolvedValueOnce(jsonResponse({ knowledge_maintenance: { checked_flow_count: 1 } }))
       .mockResolvedValueOnce(jsonResponse({ task_document: { id: "doc-1" } }))
       .mockResolvedValueOnce(jsonResponse({ task_document: { id: "doc-1", confirmation_status: "confirmed" } }))
       .mockResolvedValueOnce(jsonResponse({ deleted: true, task_document: { id: "doc-1" } }))
@@ -159,6 +160,7 @@ describe("ApiClient text-library resources", () => {
 
     await client.listTaskFlowDocuments("default", "flow", "flow-1");
     await client.listTaskFlowDocumentWorkspace("default", { confirmation_status: "draft", query: "plan", scope_type: "task" });
+    await client.runTaskFlowKnowledgeMaintenance("default", { flow_id: "flow-1" });
     await client.putTaskFlowDocument("default", { document_key: "plan", scope_id: "flow-1", scope_type: "flow" });
     await client.confirmTaskFlowDocument("default", "doc-1", { expected_revision: 2 });
     await client.deleteTaskFlowDocument("default", "doc-1", { expected_revision: 2 });
@@ -183,36 +185,44 @@ describe("ApiClient text-library resources", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
+      `${origin}/v1/plugins/afkbotui/task-flow/knowledge-maintenance?profile_id=default`,
+      expect.objectContaining({
+        body: JSON.stringify({ flow_id: "flow-1" }),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
       `${origin}/v1/plugins/afkbotui/task-flow/docs?profile_id=default`,
       expect.objectContaining({ method: "PUT" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
+      5,
       `${origin}/v1/plugins/afkbotui/task-flow/docs/doc-1/confirm?profile_id=default`,
       expect.objectContaining({ method: "POST" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      5,
+      6,
       `${origin}/v1/plugins/afkbotui/task-flow/docs/doc-1?profile_id=default`,
       expect.objectContaining({ method: "DELETE" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      6,
+      7,
       `${origin}/v1/plugins/afkbotui/task-flow/flows/flow-1?profile_id=default`,
       expect.objectContaining({ method: "PATCH" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      7,
+      8,
       `${origin}/v1/plugins/afkbotui/task-flow/tasks/task-1/context?profile_id=default`,
       expect.objectContaining({ method: "GET" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      8,
+      9,
       `${origin}/v1/plugins/afkbotui/task-flow/employees?profile_id=default&q=backend`,
       expect.objectContaining({ method: "GET" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      9,
+      10,
       `${origin}/v1/plugins/afkbotui/task-flow/employees?profile_id=default`,
       expect.objectContaining({
         body: JSON.stringify({ id: "backend-engineer", manager_id: "cto", name: "Backend Engineer", role: "developer", title: "Backend Engineer" }),
@@ -220,7 +230,7 @@ describe("ApiClient text-library resources", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      10,
+      11,
       `${origin}/v1/plugins/afkbotui/task-flow/employees/backend-engineer?profile_id=default`,
       expect.objectContaining({
         body: JSON.stringify({ id: "backend-engineer", manager_id: "cto", name: "Backend Engineer", role: "developer", status: "disabled", title: "Backend Engineer" }),
@@ -228,12 +238,12 @@ describe("ApiClient text-library resources", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      11,
+      12,
       `${origin}/v1/plugins/afkbotui/task-flow/employees/backend-engineer?profile_id=default`,
       expect.objectContaining({ method: "DELETE" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      12,
+      13,
       `${origin}/v1/plugins/afkbotui/task-flow/org-chart?profile_id=default`,
       expect.objectContaining({ method: "GET" }),
     );

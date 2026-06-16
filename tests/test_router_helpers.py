@@ -623,6 +623,10 @@ def test_task_flow_bulk_and_review_routes_resolve_human_actor_placeholders(monke
             observed["list_review_tasks"] = kwargs
             return []
 
+        async def ensure_knowledge_maintenance_tasks(self, **kwargs: object) -> Dumpable:
+            observed["ensure_knowledge_maintenance_tasks"] = kwargs
+            return Dumpable({"checked_flow_count": 1, "created_task_count": 1})
+
         async def approve_review_task(self, **kwargs: object) -> Dumpable:
             observed["approve_review_task"] = kwargs
             return Dumpable({"id": kwargs["task_id"], "status": "completed"})
@@ -693,6 +697,24 @@ def test_task_flow_bulk_and_review_routes_resolve_human_actor_placeholders(monke
     assert review_response.status_code == 200
     assert observed["list_review_tasks"]["actor_type"] == "human"
     assert observed["list_review_tasks"]["actor_ref"] == "cli_user:local"
+
+    all_reviewers_response = client.get(
+        "/v1/plugins/afkbotui/task-flow/review",
+        params={"profile_id": "default", "all_reviewers": "true"},
+    )
+    assert all_reviewers_response.status_code == 200
+    assert observed["list_review_tasks"]["actor_type"] is None
+    assert observed["list_review_tasks"]["actor_ref"] is None
+
+    maintenance_response = client.post(
+        "/v1/plugins/afkbotui/task-flow/knowledge-maintenance",
+        json={"actor_ref": "web-user", "actor_type": "human", "flow_id": "flow-1"},
+        params={"profile_id": "default"},
+    )
+    assert maintenance_response.status_code == 200
+    assert observed["ensure_knowledge_maintenance_tasks"]["actor_type"] == "human"
+    assert observed["ensure_knowledge_maintenance_tasks"]["actor_ref"] == "cli_user:local"
+    assert observed["ensure_knowledge_maintenance_tasks"]["flow_id"] == "flow-1"
 
     approve_response = client.post(
         "/v1/plugins/afkbotui/task-flow/tasks/task-1/review/approve",

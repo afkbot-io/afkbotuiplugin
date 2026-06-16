@@ -2,6 +2,17 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.16 - 2026-06-16
+
+- require AFKBOT `1.9.19+` for autonomous CTO knowledge-maintenance tasks and
+  `work_mode=knowledge_maintenance`
+- add a Task Flow `CTO Review` action that starts a bounded knowledge sweep and
+  reports checked, created, and woken flow results in the board
+- list Task Flow review work through the all-reviewers read-only queue so
+  operator diagnostics can see every pending reviewer inbox without actor
+  selector leakage
+- sync release metadata to version `1.0.16`
+
 ## 1.0.15 - 2026-06-15
 
 - require AFKBOT `1.9.17+` for the employee-only Task Flow contract and

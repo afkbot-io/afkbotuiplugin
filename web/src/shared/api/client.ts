@@ -395,6 +395,14 @@ export class ApiClient {
     });
   }
 
+  async runTaskFlowKnowledgeMaintenance(profileId: string, payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>("/task-flow/knowledge-maintenance", {
+      body: payload,
+      method: "POST",
+      params: { profile_id: profileId },
+    });
+  }
+
   async putTaskFlowDocument(profileId: string, payload: Record<string, unknown>) {
     return this.request<Record<string, unknown>>("/task-flow/docs", {
       body: payload,

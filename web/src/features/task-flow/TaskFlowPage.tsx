@@ -45,6 +45,7 @@ import {
   bulkDeleteTaskItems,
   putTaskDocument,
   requestTaskReviewChanges,
+  runTaskFlowKnowledgeMaintenance,
   updateTaskProject,
   withRootEmployeeOwner,
 } from "@/features/task-flow/model/task-flow.api";
@@ -54,7 +55,13 @@ import {
   shouldAutoRefreshTaskSession,
 } from "@/features/task-flow/model/task-flow.presentation";
 import { taskFlowQueryKeys } from "@/features/task-flow/model/task-flow.query-keys";
-import type { TaskFlowDocument, TaskFlowDocumentDraft, TaskFlowTask, TaskSessionInsights } from "@/features/task-flow/model/task-flow.types";
+import type {
+  TaskFlowDocument,
+  TaskFlowDocumentDraft,
+  TaskFlowKnowledgeMaintenanceSweep,
+  TaskFlowTask,
+  TaskSessionInsights,
+} from "@/features/task-flow/model/task-flow.types";
 import { TaskBoard } from "@/features/task-flow/ui/TaskBoard";
 import { CreateTaskModal } from "@/features/task-flow/ui/CreateTaskModal";
 import { DeleteSelectedTasksModal } from "@/features/task-flow/ui/DeleteSelectedTasksModal";
@@ -91,6 +98,8 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   const [savingTask, setSavingTask] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
   const [manualRefreshingBoard, setManualRefreshingBoard] = useState(false);
+  const [runningKnowledgeMaintenance, setRunningKnowledgeMaintenance] = useState(false);
+  const [knowledgeMaintenanceResult, setKnowledgeMaintenanceResult] = useState<TaskFlowKnowledgeMaintenanceSweep | null>(null);
   const [savingDocumentId, setSavingDocumentId] = useState("");
   const [refreshingSessionKeys, setRefreshingSessionKeys] = useState<Set<string>>(() => new Set());
   const [sessionInsights, setSessionInsights] = useState<TaskSessionInsights | null>(null);
@@ -378,6 +387,30 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
       setManualRefreshingBoard(false);
     }
   }, [refreshAll]);
+
+  const handleRunKnowledgeMaintenance = useCallback(async () => {
+    setRunningKnowledgeMaintenance(true);
+    try {
+      const result = await runTaskFlowKnowledgeMaintenance(api, profileId, state.flowFilter, taskFlowConfig);
+      if (profileIdRef.current !== profileId) {
+        return;
+      }
+      setKnowledgeMaintenanceResult(result);
+      const created = Number(result?.created_task_count || 0);
+      const woken = Number(result?.woken_task_count || 0);
+      notify(
+        `CTO review queued ${created} task${created === 1 ? "" : "s"} and woke ${woken}.`,
+        created || woken ? "success" : "info",
+      );
+      await refreshAll(false);
+    } catch (error) {
+      if (profileIdRef.current === profileId) {
+        notify(resolveTaskFlowError(error), "danger");
+      }
+    } finally {
+      setRunningKnowledgeMaintenance(false);
+    }
+  }, [api, notify, profileId, refreshAll, state.flowFilter, taskFlowConfig]);
 
   useEffect(() => {
     if (!previousActiveRef.current && active) {
@@ -968,15 +1001,28 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         onOpenEmployees={() => navigateToRoute("employees")}
         onFilterChange={handleFlowFilterChange}
         onManageFlows={state.openManageProjectsModal}
+        onRunKnowledgeMaintenance={() => void handleRunKnowledgeMaintenance()}
         onOpenReview={state.openReviewModal}
         onOpenSettings={state.openSettingsModal}
         onRefresh={() => void refreshBoardManually()}
         refreshing={manualRefreshingBoard}
+        knowledgeMaintenanceRunning={runningKnowledgeMaintenance}
         reviewCount={reviewTasks.length}
         selectedCount={state.selectedTaskIds.size}
       />
 
       {pageError ? <div className="inline-alert inline-alert--danger">{resolveTaskFlowError(pageError)}</div> : null}
+      {knowledgeMaintenanceResult ? (
+        <KnowledgeMaintenanceSummary
+          flowTitleById={flowTitleById}
+          onOpenTask={(taskId) => {
+            state.selectTask(taskId);
+            closeSessionFeed();
+            setSessionInsights(null);
+          }}
+          result={knowledgeMaintenanceResult}
+        />
+      ) : null}
       {createTaskDisabledReason && createTaskRecovery ? (
         <div className="inline-alert inline-alert--warning taskflow-gate-alert" role="status">
           <span>{createTaskDisabledReason}</span>
@@ -1162,6 +1208,51 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     </section>
   );
 });
+
+function KnowledgeMaintenanceSummary({
+  flowTitleById,
+  onOpenTask,
+  result,
+}: {
+  flowTitleById: Map<string, string>;
+  onOpenTask: (taskId: string) => void;
+  result: TaskFlowKnowledgeMaintenanceSweep;
+}) {
+  const flows = Array.isArray(result.flows) ? result.flows : [];
+  return (
+    <div className="inline-alert inline-alert--info taskflow-maintenance-summary" role="status">
+      <div>
+        <strong>CTO knowledge review</strong>
+        <span>
+          {" "}
+          checked {Number(result.checked_flow_count || 0)}, created {Number(result.created_task_count || 0)}, woke{" "}
+          {Number(result.woken_task_count || 0)}
+        </span>
+      </div>
+      {flows.length ? (
+        <div className="taskflow-maintenance-summary__items">
+          {flows.slice(0, 4).map((flow) => {
+            const taskId = flow.task?.id || "";
+            const flowTitle = flowTitleById.get(flow.flow_id) || flow.flow_title || flow.flow_id;
+            const reasons = Array.isArray(flow.reasons) ? flow.reasons : [];
+            return (
+              <div className="taskflow-maintenance-summary__item" key={`${flow.flow_id}-${flow.action || "checked"}`}>
+                <span className="badge badge--muted">{flow.action || flow.health_status || "checked"}</span>
+                <span>{flowTitle}</span>
+                {reasons.length ? <span className="muted">{reasons.join(", ")}</span> : null}
+                {taskId ? (
+                  <button className="button button--ghost button--tiny" onClick={() => onOpenTask(taskId)} type="button">
+                    Open task
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function findBoardTask(board: AppRouteProps["config"] | unknown, taskId: string) {
   const typedBoard = board as { columns?: Array<{ tasks?: TaskFlowTask[] }> } | null;

@@ -129,6 +129,32 @@ export type TaskFlowTask = {
   title: string;
 };
 
+export type TaskFlowKnowledgeMaintenanceFlow = {
+  action?: string | null;
+  flow_id: string;
+  flow_title?: string | null;
+  health_status?: string | null;
+  missing_flow_document_keys?: string[];
+  open_blocked_task_count?: number | null;
+  open_review_task_count?: number | null;
+  profile_id?: string | null;
+  reasons?: string[];
+  task?: TaskFlowTask | null;
+  unconfirmed_flow_document_keys?: string[];
+};
+
+export type TaskFlowKnowledgeMaintenanceSweep = {
+  actor_ref?: string | null;
+  actor_type?: string | null;
+  checked_flow_count?: number | null;
+  created_task_count?: number | null;
+  flows?: TaskFlowKnowledgeMaintenanceFlow[];
+  generated_at?: string | null;
+  profile_id?: string | null;
+  skipped_flow_count?: number | null;
+  woken_task_count?: number | null;
+};
+
 export type TaskFlowBoardColumn = {
   count: number;
   id: TaskFlowStatus;

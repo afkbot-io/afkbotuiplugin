@@ -17,6 +17,7 @@ import type {
   TaskFlowDocument,
   TaskFlowDocumentDraft,
   TaskFlowEvent,
+  TaskFlowKnowledgeMaintenanceSweep,
   TaskFlowProject,
   TaskFlowProjectDraft,
   TaskFlowReviewDraft,
@@ -84,6 +85,10 @@ type TaskFlowApi = {
   listTaskFlows: (profileId: string) => Promise<{ task_flows?: TaskFlowProject[] }>;
   listTaskRuns: (profileId: string, taskId: string, params?: Record<string, unknown>) => Promise<{ task_runs?: TaskFlowRun[] }>;
   putTaskFlowDocument: (profileId: string, payload: Record<string, unknown>) => Promise<{ task_document?: TaskFlowDocument }>;
+  runTaskFlowKnowledgeMaintenance: (
+    profileId: string,
+    payload: Record<string, unknown>,
+  ) => Promise<{ knowledge_maintenance?: TaskFlowKnowledgeMaintenanceSweep }>;
   confirmTaskFlowDocument: (
     profileId: string,
     documentId: string,
@@ -153,9 +158,25 @@ export async function listTaskFlowReview(api: unknown, profileId: string, flowId
   const payload = await coerceTaskFlowApi(api).listReviewTasks(profileId, {
     actor_ref: actor.actor_ref,
     actor_type: actor.actor_type,
+    all_reviewers: true,
     flow_id: flowId || undefined,
   });
   return Array.isArray(payload.review_tasks) ? payload.review_tasks : [];
+}
+
+export async function runTaskFlowKnowledgeMaintenance(
+  api: unknown,
+  profileId: string,
+  flowId: string,
+  config: TaskFlowConfig,
+) {
+  const actor = operatorActorPayload(config);
+  const payload = await coerceTaskFlowApi(api).runTaskFlowKnowledgeMaintenance(profileId, {
+    actor_ref: actor.actor_ref,
+    actor_type: actor.actor_type,
+    flow_id: flowId || undefined,
+  });
+  return normalizeKnowledgeMaintenanceSweep(payload.knowledge_maintenance);
 }
 
 export async function getTaskDetail(api: unknown, profileId: string, taskId: string): Promise<TaskFlowTaskDetail> {
@@ -295,6 +316,22 @@ function normalizeTaskContext(context: TaskFlowContextBundle | null | undefined)
     recent_comments: Array.isArray(context.recent_comments) ? context.recent_comments : [],
     recent_events: Array.isArray(context.recent_events) ? context.recent_events : [],
     task_documents: Array.isArray(context.task_documents) ? context.task_documents : [],
+  };
+}
+
+function normalizeKnowledgeMaintenanceSweep(
+  sweep: TaskFlowKnowledgeMaintenanceSweep | null | undefined,
+): TaskFlowKnowledgeMaintenanceSweep | null {
+  if (!sweep) {
+    return null;
+  }
+  return {
+    ...sweep,
+    checked_flow_count: Number(sweep.checked_flow_count || 0),
+    created_task_count: Number(sweep.created_task_count || 0),
+    flows: Array.isArray(sweep.flows) ? sweep.flows : [],
+    skipped_flow_count: Number(sweep.skipped_flow_count || 0),
+    woken_task_count: Number(sweep.woken_task_count || 0),
   };
 }
 

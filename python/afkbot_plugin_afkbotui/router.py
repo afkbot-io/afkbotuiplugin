@@ -129,6 +129,17 @@ class TaskFlowPatchPayload(BaseModel):
     labels: tuple[str, ...] | None = None
 
 
+class TaskKnowledgeMaintenancePayload(BaseModel):
+    """Request body for manually starting one Task Flow knowledge-maintenance sweep."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    actor_type: str | None = None
+    actor_ref: str | None = None
+    flow_id: str | None = Field(default=None, max_length=120)
+    limit: int | None = Field(default=None, ge=1, le=100)
+
+
 class TaskCreatePayload(BaseModel):
     """Request body for one task create action."""
 
@@ -1438,14 +1449,18 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         flow_id: str | None = None,
         labels: str = "",
         limit: int | None = 20,
+        all_reviewers: bool = False,
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
         config = read_config()
-        resolved_actor_type, resolved_actor_ref = _resolve_task_flow_actor_identity(
-            actor_type=actor_type,
-            actor_ref=actor_ref,
-            config=config,
-        )
+        if all_reviewers:
+            resolved_actor_type, resolved_actor_ref = None, None
+        else:
+            resolved_actor_type, resolved_actor_ref = _resolve_task_flow_actor_identity(
+                actor_type=actor_type,
+                actor_ref=actor_ref,
+                config=config,
+            )
         try:
             payload = await service.list_review_tasks(
                 profile_id=profile_id,
@@ -1458,6 +1473,30 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
         return {"review_tasks": [item.model_dump(mode="json") for item in payload]}
+
+    @router.post("/task-flow/knowledge-maintenance")
+    async def task_flow_knowledge_maintenance(
+        payload: TaskKnowledgeMaintenancePayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.actor_type,
+            actor_ref=payload.actor_ref,
+            config=config,
+        )
+        try:
+            result = await service.ensure_knowledge_maintenance_tasks(
+                profile_id=profile_id,
+                flow_id=payload.flow_id,
+                actor_type=actor_type,
+                actor_ref=actor_ref,
+                limit=payload.limit,
+            )
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+        return {"knowledge_maintenance": result.model_dump(mode="json")}
 
     @router.post("/task-flow/tasks/{task_id}/review/approve")
     async def task_flow_review_approve(

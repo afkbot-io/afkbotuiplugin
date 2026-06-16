@@ -489,6 +489,37 @@ function matchApiRoute(pathname, requestUrl = "/") {
     };
   }
 
+  if (pathname === "/v1/plugins/afkbotui/task-flow/knowledge-maintenance" && method === "POST") {
+    return {
+      knowledge_maintenance: {
+        generated_at: new Date().toISOString(),
+        profile_id: "default",
+        actor_type: "human",
+        actor_ref: "web-user",
+        checked_flow_count: 1,
+        created_task_count: 1,
+        woken_task_count: 0,
+        skipped_flow_count: 0,
+        flows: [
+          {
+            profile_id: "default",
+            flow_id: "flow-alpha",
+            flow_title: "Website launch",
+            health_status: "needs_attention",
+            reasons: ["unconfirmed_docs:brief,plan,spec"],
+            action: "created",
+            task: {
+              ...boardTasks[0],
+              id: "task-cto-maintenance",
+              source_type: "knowledge_maintenance",
+              title: "Maintain project knowledge",
+            },
+          },
+        ],
+      },
+    };
+  }
+
   if (/^\/v1\/plugins\/afkbotui\/task-flow\/tasks\/[^/]+$/u.test(pathname)) {
     const taskId = decodeURIComponent(pathname.split("/").at(-1) || "");
     return {

@@ -11,12 +11,14 @@ type TaskFlowHeaderProps = {
   onOpenEmployees: () => void;
   onFilterChange: (flowId: string) => void;
   onManageFlows: () => void;
+  onRunKnowledgeMaintenance: () => void;
   onOpenReview: () => void;
   onOpenSettings: () => void;
   onRefresh: () => void;
   createTaskDisabled?: boolean;
   createTaskDisabledReason?: string;
   refreshing: boolean;
+  knowledgeMaintenanceRunning?: boolean;
   reviewCount: number;
   selectedCount: number;
 };
@@ -30,12 +32,14 @@ export function TaskFlowHeader({
   onOpenEmployees,
   onFilterChange,
   onManageFlows,
+  onRunKnowledgeMaintenance,
   onOpenReview,
   onOpenSettings,
   onRefresh,
   createTaskDisabled = false,
   createTaskDisabledReason = "",
   refreshing,
+  knowledgeMaintenanceRunning = false,
   reviewCount,
   selectedCount,
 }: TaskFlowHeaderProps) {
@@ -68,6 +72,13 @@ export function TaskFlowHeader({
           <button className="button button--ghost button--compact" onClick={onOpenReview} type="button">
             Review <span className="button__count">{reviewCount}</span>
           </button>
+          <AsyncButton
+            className="button button--ghost button--compact"
+            idleLabel="CTO Review"
+            loading={knowledgeMaintenanceRunning}
+            onClick={onRunKnowledgeMaintenance}
+            pendingLabel="Reviewing…"
+          />
           <button className="button button--ghost button--compact" onClick={onOpenEmployees} type="button">
             Employees
           </button>
