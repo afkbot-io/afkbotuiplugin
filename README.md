@@ -2,7 +2,7 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, and profile-local text libraries.
 
-Current release: `1.0.17`
+Current release: `1.0.18`
 
 ## Overview
 
@@ -18,7 +18,7 @@ Current frontend/runtime contract:
 
 The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*` or `web/dist/assets/features/*` payloads.
 
-## What Is In 1.0.17
+## What Is In 1.0.18
 
 - single-shell workspace with `Automations`, `Task Flow`, `Docs`, `Subagents`, `Skills`, and `Bootstrap`
 - React-native route surfaces for every section, with shared loaders, dialogs, async buttons, and responsive layout primitives
@@ -41,6 +41,7 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 - Task Flow flow/task delete and bulk-delete actions send explicit operator actor payloads, and browser-side employee actor selections are treated as local human operator actions rather than spoofed employee runtime mutations
 - Task Flow live activity opens only from verified active runtime session metadata; stale `last_session_*` task fields no longer create inspector session links
 - Task Flow task patch routes do not accept manual `session_id` or `session_profile_id` binding from the public plugin API
+- prompt-mode cron/webhook automations create Task Flow tasks through AFKBOT core as the trusted `automation:<profile_id>:<automation_id>` principal, not as a browser-side operator session
 - Task Flow flow edits preserve validated local human audit attribution across operator-side actions
 - moving a Task Flow task out of `Blocked` clears blocker metadata explicitly, while ordinary task edits preserve existing blocker reasons unless the payload changes them
 - autonomous manager escalation tasks show source-task badges and Task Flow labels on the board so recovery work is visible without opening every task
@@ -85,8 +86,8 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 
 ## Requirements
 
-- AFKBOT UI `1.0.17`
-- AFKBOT `>=1.9.20,<2.0.0`
+- AFKBOT UI `1.0.18`
+- AFKBOT `>=1.9.21,<2.0.0`
 - current AFKBOT `1.x` auth/chat runtime surface, including:
   - `/v1/auth/session`
   - `/v1/auth/logout`

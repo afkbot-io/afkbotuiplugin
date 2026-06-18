@@ -67,6 +67,15 @@ test("dist workspace routes render against mock API without runtime failures", a
   await expect(page.getByRole("dialog").getByRole("heading", { name: "Alpha Project" })).toBeVisible();
   await page.getByRole("button", { name: "Close flow manager modal" }).click();
 
+  await openRoute(page, "Docs");
+  await expect(page.getByRole("heading", { name: "Docs" })).toBeVisible();
+  await page.getByRole("region", { name: "Document filters" }).getByLabel("Flow").selectOption("flow-alpha");
+  const flowPlanCard = page.getByRole("button", { name: /Flow plan/i });
+  await expect(flowPlanCard).toBeVisible();
+  await expect(flowPlanCard.getByText("Проект: Alpha Project")).toBeVisible();
+  await expect(page.getByText("Revision")).toBeVisible();
+  await expect(flowPlanCard.getByText("draft", { exact: true })).toBeVisible();
+
   await openRoute(page, "Subagents");
   await expect(page.getByRole("heading", { name: "Subagents" })).toBeVisible();
   await expect(page.getByRole("button", { name: /planner/i })).toBeVisible();

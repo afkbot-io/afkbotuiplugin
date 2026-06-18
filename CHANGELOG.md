@@ -2,6 +2,15 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.18 - 2026-06-18
+
+- require AFKBOT `1.9.21+` so prompt-mode cron/webhook automations can create
+  Task Flow work as the trusted `automation:<profile_id>:<automation_id>`
+  principal without `task_creator_forbidden`
+- keep the UI release aligned with the current Task Flow employee, docs,
+  attachment, and project-scoped board contract shipped in AFKBOT `1.9.21`
+- sync release metadata to version `1.0.18`
+
 ## 1.0.17 - 2026-06-18
 
 - require AFKBOT `1.9.20+` for starter-plugin auto-update, secure credential

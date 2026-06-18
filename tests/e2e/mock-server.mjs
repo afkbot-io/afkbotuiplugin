@@ -179,6 +179,7 @@ let taskDocuments = {
       body: "Coordinate rollout tasks through confirmed docs and task handoffs.",
       revision: 1,
       confirmation_status: "draft",
+      created_at: "2026-04-21T09:40:00.000Z",
       updated_at: "2026-04-21T09:42:00.000Z",
     },
   ],
@@ -193,6 +194,7 @@ let taskDocuments = {
       revision: 1,
       confirmation_status: "confirmed",
       confirmed_revision: 1,
+      created_at: "2026-04-21T09:41:00.000Z",
       updated_at: "2026-04-21T09:44:00.000Z",
     },
   ],
@@ -500,6 +502,36 @@ function matchApiRoute(pathname, requestUrl = "/") {
     const scopeId = requestUrlObject.searchParams.get("scope_id") || "";
     return {
       task_documents: taskDocuments[`${scopeType}:${scopeId}`] || [],
+    };
+  }
+
+  if (pathname === "/v1/plugins/afkbotui/task-flow/documents") {
+    const scopeType = requestUrlObject.searchParams.get("scope_type") || "";
+    const scopeId = requestUrlObject.searchParams.get("scope_id") || "";
+    const documentKey = requestUrlObject.searchParams.get("document_key") || "";
+    const confirmationStatus = requestUrlObject.searchParams.get("confirmation_status") || "";
+    const query = String(requestUrlObject.searchParams.get("query") || "").trim().toLowerCase();
+    const documents = Object.values(taskDocuments)
+      .flat()
+      .filter((document) => !scopeType || document.scope_type === scopeType)
+      .filter((document) => !scopeId || document.scope_id === scopeId)
+      .filter((document) => !documentKey || document.document_key === documentKey)
+      .filter((document) => !confirmationStatus || document.confirmation_status === confirmationStatus)
+      .filter((document) => {
+        if (!query) {
+          return true;
+        }
+        return [
+          document.id,
+          document.scope_type,
+          document.scope_id,
+          document.document_key,
+          document.title,
+          document.body,
+        ].some((value) => String(value || "").toLowerCase().includes(query));
+      });
+    return {
+      task_documents: documents,
     };
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "afkbotui",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "description": "Unified AFKBOT workspace plugin for automations, Task Flow, subagents, skills, and bootstrap files.",
   "private": true,
   "type": "module",
