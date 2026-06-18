@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { ActorRefField } from "@/features/task-flow/ui/ActorRefField";
+import { TaskAttachmentPicker, formatBytes } from "@/features/task-flow/ui/TaskAttachmentPicker";
 import { TaskSessionSummaryCard } from "@/features/task-flow/ui/TaskSessionSummaryCard";
 import { TaskFormFields } from "@/features/task-flow/ui/TaskFormFields";
 import {
@@ -14,8 +15,10 @@ import {
 } from "@/features/task-flow/model/task-flow.api";
 import type {
   TaskFlowConfig,
+  TaskFlowAttachmentInput,
   TaskFlowProfile,
   TaskFlowEmployeeOption,
+  TaskFlowDocument,
   TaskFlowTaskDetail,
   TaskFlowTaskDraft,
   TaskSessionInsights,
@@ -38,9 +41,11 @@ type TaskInspectorProps = {
   onRefreshSession: () => void;
   onRequestChanges: (draft: { owner_ref: string; owner_type: string; reason_text: string }) => void;
   onSave: () => void;
-  onSubmitComment: (message: string) => void;
+  onSubmitComment: (message: string, attachments: TaskFlowAttachmentInput[], documentRefs: TaskFlowDocument[]) => Promise<boolean> | boolean;
   commenting?: boolean;
+  getAttachmentHref: (attachmentId: string) => string;
   knowledgePanel?: ReactNode;
+  referenceDocuments?: TaskFlowDocument[];
   profileId: string;
   profiles: TaskFlowProfile[];
   saving: boolean;
@@ -66,7 +71,9 @@ export function TaskInspector({
   onSave,
   onSubmitComment,
   commenting = false,
+  getAttachmentHref,
   knowledgePanel,
+  referenceDocuments = [],
   profileId,
   profiles,
   saving,
@@ -76,7 +83,9 @@ export function TaskInspector({
   employees,
 }: TaskInspectorProps) {
   const [comment, setComment] = useState("");
+  const [commentAttachments, setCommentAttachments] = useState<TaskFlowAttachmentInput[]>([]);
   const [expandedCommentIds, setExpandedCommentIds] = useState<Set<string>>(() => new Set());
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(() => new Set());
   const [reviewDraft, setReviewDraft] = useState({
     owner_ref: "",
     owner_type: "",
@@ -85,13 +94,16 @@ export function TaskInspector({
   const editSectionRef = useRef<HTMLFormElement | null>(null);
   const sessionSectionRef = useRef<HTMLElement | null>(null);
   const reviewSectionRef = useRef<HTMLElement | null>(null);
+  const attachmentsSectionRef = useRef<HTMLElement | null>(null);
   const docsSectionRef = useRef<HTMLDivElement | null>(null);
   const commentsSectionRef = useRef<HTMLElement | null>(null);
   const activitySectionRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     setComment("");
+    setCommentAttachments([]);
     setExpandedCommentIds(new Set());
+    setSelectedDocumentIds(new Set());
     setReviewDraft({
       owner_ref: "",
       owner_type: "",
@@ -118,19 +130,24 @@ export function TaskInspector({
 
   const session = getRenderedTaskSession(task, sessionInsights);
   const reviewActionable = Boolean(task.review_actionable || task.status === "review");
+  const selectedDocumentRefs = referenceDocuments.filter((document) => selectedDocumentIds.has(document.id));
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     onSave();
   };
 
-  const handleCommentSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleCommentSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!comment.trim()) {
+    if (!comment.trim() && !commentAttachments.length && !selectedDocumentRefs.length) {
       return;
     }
-    onSubmitComment(comment);
-    setComment("");
+    const submitted = await onSubmitComment(comment, commentAttachments, selectedDocumentRefs);
+    if (submitted) {
+      setComment("");
+      setCommentAttachments([]);
+      setSelectedDocumentIds(new Set());
+    }
   };
 
   const handleRequestChanges = () => {
@@ -180,6 +197,7 @@ export function TaskInspector({
           <TaskSectionNavButton label="Edit" shortLabel="E" onClick={() => scrollToSection(editSectionRef)} />
           <TaskSectionNavButton disabled={!session?.session_id} label="Session" shortLabel="S" onClick={() => scrollToSection(sessionSectionRef)} />
           <TaskSectionNavButton disabled={!reviewActionable} label="Review" shortLabel="R" onClick={() => scrollToSection(reviewSectionRef)} />
+          <TaskSectionNavButton label="Files" shortLabel="F" onClick={() => scrollToSection(attachmentsSectionRef)} />
           <TaskSectionNavButton disabled={!knowledgePanel} label="Docs" shortLabel="D" onClick={() => scrollToSection(docsSectionRef)} />
           <TaskSectionNavButton label="Comments" shortLabel="C" onClick={() => scrollToSection(commentsSectionRef)} />
           <TaskSectionNavButton label="Activity" shortLabel="A" onClick={() => scrollToSection(activitySectionRef)} />
@@ -187,6 +205,7 @@ export function TaskInspector({
         <div className="task-inspector__sections">
           <form className="editor-form" onSubmit={handleSubmit} ref={editSectionRef}>
             <TaskFormFields
+              attachmentLabel="Add files on save"
               config={config}
               draft={draft}
               onChange={onDraftChange}
@@ -276,6 +295,34 @@ export function TaskInspector({
             </section>
           ) : null}
 
+          <section className="detail-section" ref={attachmentsSectionRef}>
+            <div className="panel-head panel-head--compact">
+              <div>
+                <p className="panel-head__eyebrow">Files</p>
+                <h4 className="panel-head__title">Task attachments</h4>
+              </div>
+            </div>
+            {(detail.task_attachments || []).length ? (
+              <div className="attachment-list attachment-list--persisted">
+                {sortByNewest(detail.task_attachments || [], "created_at").map((attachment) => (
+                  <a
+                    className="attachment-list__item attachment-list__item--link"
+                    href={getAttachmentHref(attachment.id)}
+                    key={attachment.id}
+                  >
+                    <div>
+                      <strong>{attachment.name}</strong>
+                      <span>{formatBytes(attachment.byte_size || 0)} / {attachment.content_type || attachment.kind || "file"}</span>
+                    </div>
+                    <span className="badge badge--muted">Download</span>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p className="muted-copy">No files attached yet.</p>
+            )}
+          </section>
+
           <div className="task-inspector__anchor" ref={docsSectionRef}>
             {knowledgePanel}
           </div>
@@ -298,7 +345,7 @@ export function TaskInspector({
                 return (
                   <article className="timeline-item" key={key}>
                     <p className={expanded ? "timeline-item__copy" : "timeline-item__copy timeline-item__copy--clamped"}>
-                      {expanded || !isLong ? rawMessage : collapsedMessage}
+                      {renderCommentText(expanded || !isLong ? rawMessage : collapsedMessage)}
                     </p>
                     {isLong ? (
                       <button
@@ -332,7 +379,48 @@ export function TaskInspector({
               <span className="field__label">Add comment</span>
               <textarea onChange={(event) => setComment(event.target.value)} placeholder="Add context or operator note…" rows={3} value={comment} />
             </label>
-            <AsyncButton className="button button--primary" idleLabel="Send Comment" loading={commenting} pendingLabel="Sending…" type="submit" />
+            <TaskAttachmentPicker
+              disabled={commenting}
+              label="Attach files to comment"
+              onChange={setCommentAttachments}
+              value={commentAttachments}
+            />
+            {referenceDocuments.length ? (
+              <div className="field reference-picker">
+                <span className="field__label">Reference docs</span>
+                <div className="reference-picker__grid">
+                  {referenceDocuments.map((document) => (
+                    <label className="checkbox-row checkbox-row--compact" key={document.id}>
+                      <input
+                        checked={selectedDocumentIds.has(document.id)}
+                        disabled={commenting}
+                        onChange={(event) => {
+                          setSelectedDocumentIds((current) => {
+                            const next = new Set(current);
+                            if (event.target.checked) {
+                              next.add(document.id);
+                            } else {
+                              next.delete(document.id);
+                            }
+                            return next;
+                          });
+                        }}
+                        type="checkbox"
+                      />
+                      <span>{document.title || document.document_key}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <AsyncButton
+              className="button button--primary"
+              disabled={!comment.trim() && !commentAttachments.length && !selectedDocumentRefs.length}
+              idleLabel="Send Comment"
+              loading={commenting}
+              pendingLabel="Sending…"
+              type="submit"
+            />
           </form>
           </section>
 
@@ -394,6 +482,29 @@ function TaskSectionNavButton({ disabled = false, label, onClick, shortLabel }: 
       {shortLabel}
     </button>
   );
+}
+
+function renderCommentText(message: string) {
+  const nodes: ReactNode[] = [];
+  const pattern = /\[([^\]\n]{1,160})\]\((#[^)]+|\/v1\/plugins\/afkbotui\/[^)\s]+)\)/g;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(message)) !== null) {
+    const [raw, label, href] = match;
+    if (match.index > cursor) {
+      nodes.push(message.slice(cursor, match.index));
+    }
+    nodes.push(
+      <a href={href} key={`${href}-${match.index}`}>
+        {label}
+      </a>,
+    );
+    cursor = match.index + raw.length;
+  }
+  if (cursor < message.length) {
+    nodes.push(message.slice(cursor));
+  }
+  return nodes.length ? nodes : message;
 }
 
 function sortByNewest<T extends object>(items: T[], primaryKey: keyof T, fallbackKey?: keyof T) {

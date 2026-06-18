@@ -9,6 +9,8 @@ import {
 } from "@/features/task-flow/model/task-flow.forms";
 import type {
   TaskFlowBoard,
+  TaskFlowAttachment,
+  TaskFlowAttachmentInput,
   TaskFlowComment,
   TaskFlowConfig,
   TaskFlowEmployeeDraft,
@@ -33,6 +35,7 @@ import type {
 } from "@/features/task-flow/model/task-flow.types";
 
 type TaskFlowApi = {
+  addTaskAttachments: (profileId: string, taskId: string, payload: Record<string, unknown>) => Promise<{ task_attachments?: TaskFlowAttachment[] }>;
   addTaskComment: (profileId: string, taskId: string, payload: Record<string, unknown>) => Promise<unknown>;
   approveReviewTask: (profileId: string, taskId: string, payload: Record<string, unknown>) => Promise<unknown>;
   bulkDeleteTasks: (profileId: string, payload: Record<string, unknown>) => Promise<{
@@ -45,10 +48,12 @@ type TaskFlowApi = {
   createTask: (profileId: string, payload: Record<string, unknown>) => Promise<{ task?: TaskFlowTask }>;
   createTaskFlow: (profileId: string, payload: Record<string, unknown>) => Promise<{ task_flow?: TaskFlowProject }>;
   deleteTask: (profileId: string, taskId: string, payload?: Record<string, unknown>) => Promise<unknown>;
+  deleteTaskAttachment?: (profileId: string, taskId: string, attachmentId: string, payload?: Record<string, unknown>) => Promise<unknown>;
   deleteTaskFlow: (profileId: string, flowId: string, payload?: Record<string, unknown>) => Promise<unknown>;
   getTask: (profileId: string, taskId: string) => Promise<{ task?: TaskFlowTask }>;
   getTaskBoard: (profileId: string, params?: Record<string, unknown>) => Promise<{ board?: TaskFlowBoard }>;
   getTaskContext: (profileId: string, taskId: string) => Promise<{ context?: TaskFlowContextBundle }>;
+  getTaskAttachmentDownloadUrl?: (profileId: string, taskId: string, attachmentId: string) => string;
   getTaskSessionInsights: (
     profileId: string,
     taskId: string,
@@ -79,6 +84,7 @@ type TaskFlowApi = {
     scopeType: string,
     scopeId: string,
   ) => Promise<{ task_documents?: TaskFlowDocument[] }>;
+  listTaskAttachments: (profileId: string, taskId: string) => Promise<{ task_attachments?: TaskFlowAttachment[] }>;
   listTaskComments: (profileId: string, taskId: string) => Promise<{ task_comments?: TaskFlowComment[] }>;
   listTaskDependencies: (profileId: string, taskId: string) => Promise<{ task_dependencies?: TaskFlowDependency[] }>;
   listTaskEvents: (profileId: string, taskId: string, params?: Record<string, unknown>) => Promise<{ task_events?: TaskFlowEvent[] }>;
@@ -146,20 +152,26 @@ export async function deleteTaskFlowEmployee(api: unknown, profileId: string, em
 }
 
 export async function getTaskFlowBoard(api: unknown, profileId: string, flowId: string, config: TaskFlowConfig) {
+  if (!flowId.trim()) {
+    throw new Error("Project flow is required.");
+  }
   const payload = await coerceTaskFlowApi(api).getTaskBoard(profileId, {
-    flow_id: flowId || undefined,
+    flow_id: flowId,
     limit_per_column: config.task_flow_board_limit_per_column,
   });
   return normalizeTaskFlowBoard(payload.board);
 }
 
 export async function listTaskFlowReview(api: unknown, profileId: string, flowId: string, config: TaskFlowConfig) {
+  if (!flowId.trim()) {
+    throw new Error("Project flow is required.");
+  }
   const actor = operatorActorPayload(config);
   const payload = await coerceTaskFlowApi(api).listReviewTasks(profileId, {
     actor_ref: actor.actor_ref,
     actor_type: actor.actor_type,
     all_reviewers: true,
-    flow_id: flowId || undefined,
+    flow_id: flowId,
   });
   return Array.isArray(payload.review_tasks) ? payload.review_tasks : [];
 }
@@ -170,19 +182,23 @@ export async function runTaskFlowKnowledgeMaintenance(
   flowId: string,
   config: TaskFlowConfig,
 ) {
+  if (!flowId.trim()) {
+    throw new Error("Project flow is required.");
+  }
   const actor = operatorActorPayload(config);
   const payload = await coerceTaskFlowApi(api).runTaskFlowKnowledgeMaintenance(profileId, {
     actor_ref: actor.actor_ref,
     actor_type: actor.actor_type,
-    flow_id: flowId || undefined,
+    flow_id: flowId,
   });
   return normalizeKnowledgeMaintenanceSweep(payload.knowledge_maintenance);
 }
 
 export async function getTaskDetail(api: unknown, profileId: string, taskId: string): Promise<TaskFlowTaskDetail> {
   const taskApi = coerceTaskFlowApi(api);
-  const [taskPayload, commentsPayload, eventsPayload, runsPayload, dependenciesPayload] = await Promise.all([
+  const [taskPayload, attachmentsPayload, commentsPayload, eventsPayload, runsPayload, dependenciesPayload] = await Promise.all([
     taskApi.getTask(profileId, taskId),
+    taskApi.listTaskAttachments(profileId, taskId),
     taskApi.listTaskComments(profileId, taskId),
     taskApi.listTaskEvents(profileId, taskId),
     taskApi.listTaskRuns(profileId, taskId),
@@ -190,6 +206,7 @@ export async function getTaskDetail(api: unknown, profileId: string, taskId: str
   ]);
   return {
     task: taskPayload.task || null,
+    task_attachments: Array.isArray(attachmentsPayload.task_attachments) ? attachmentsPayload.task_attachments : [],
     task_comments: Array.isArray(commentsPayload.task_comments) ? commentsPayload.task_comments : [],
     task_dependencies: Array.isArray(dependenciesPayload.task_dependencies) ? dependenciesPayload.task_dependencies : [],
     task_events: Array.isArray(eventsPayload.task_events) ? eventsPayload.task_events : [],
@@ -440,6 +457,7 @@ export async function createTaskItem(
     reviewer_ref: normalizeActorRef(draft.reviewer_type, draft.reviewer_ref, config),
     reviewer_type: reviewerType || null,
     title: draft.title.trim(),
+    attachments: normalizeAttachmentInputs(draft.attachments),
   });
   return payload.task || null;
 }
@@ -470,6 +488,7 @@ export async function updateTaskItem(
     reviewer_type: reviewerType || null,
     status: draft.status.trim(),
     title: draft.title.trim(),
+    attachments: normalizeAttachmentInputs(draft.attachments),
   });
   return payload.task || null;
 }
@@ -530,14 +549,143 @@ export async function createTaskComment(
   taskId: string,
   message: string,
   config: TaskFlowConfig,
+  attachments: TaskFlowAttachmentInput[] = [],
+  documentRefs: TaskFlowDocument[] = [],
 ) {
   const actor = operatorActorPayload(config);
-  await coerceTaskFlowApi(api).addTaskComment(profileId, taskId, {
+  const uploadedAttachments = await addTaskAttachments(api, profileId, taskId, config, attachments);
+  const finalMessage = buildCommentMessage({
+    attachments: uploadedAttachments,
+    baseMessage: message,
+    documentRefs,
+    profileId,
+    taskId,
+    api,
+  });
+  try {
+    await coerceTaskFlowApi(api).addTaskComment(profileId, taskId, {
+      actor_ref: actor.actor_ref,
+      actor_type: actor.actor_type,
+      comment_type: "note",
+      message: finalMessage,
+    });
+  } catch (error) {
+    await cleanupUploadedCommentAttachments(api, profileId, taskId, config, uploadedAttachments);
+    throw error;
+  }
+}
+
+export async function addTaskAttachments(
+  api: unknown,
+  profileId: string,
+  taskId: string,
+  config: TaskFlowConfig,
+  attachments: TaskFlowAttachmentInput[] = [],
+) {
+  const normalizedAttachments = normalizeAttachmentInputs(attachments);
+  if (!normalizedAttachments.length) {
+    return [];
+  }
+  const actor = operatorActorPayload(config);
+  const payload = await coerceTaskFlowApi(api).addTaskAttachments(profileId, taskId, {
     actor_ref: actor.actor_ref,
     actor_type: actor.actor_type,
-    comment_type: "note",
-    message: message.trim(),
+    attachments: normalizedAttachments,
   });
+  return Array.isArray(payload.task_attachments) ? payload.task_attachments : [];
+}
+
+export function getTaskAttachmentDownloadHref(api: unknown, profileId: string, taskId: string, attachmentId: string) {
+  const taskApi = coerceTaskFlowApi(api);
+  if (typeof taskApi.getTaskAttachmentDownloadUrl === "function") {
+    return taskApi.getTaskAttachmentDownloadUrl(profileId, taskId, attachmentId);
+  }
+  const query = new URLSearchParams({ profile_id: profileId });
+  return `/v1/plugins/afkbotui/task-flow/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}/download?${query.toString()}`;
+}
+
+function normalizeAttachmentInputs(attachments: TaskFlowAttachmentInput[] | undefined) {
+  return (attachments || [])
+    .map((attachment) => ({
+      content_base64: String(attachment.content_base64 || ""),
+      content_type: attachment.content_type || null,
+      kind: String(attachment.kind || "file"),
+      name: String(attachment.name || "").trim(),
+    }))
+    .filter((attachment) => attachment.name && attachment.content_base64);
+}
+
+function buildCommentMessage({
+  api,
+  attachments,
+  baseMessage,
+  documentRefs,
+  profileId,
+  taskId,
+}: {
+  api: unknown;
+  attachments: TaskFlowAttachment[];
+  baseMessage: string;
+  documentRefs: TaskFlowDocument[];
+  profileId: string;
+  taskId: string;
+}) {
+  const sections = [baseMessage.trim()].filter(Boolean);
+  if (attachments.length) {
+    sections.push(
+      [
+        "Attached files:",
+        ...attachments.map((attachment) => {
+          const href = getTaskAttachmentDownloadHref(api, profileId, taskId, attachment.id);
+          return `- [${escapeCommentLinkLabel(attachment.name)}](${href})`;
+        }),
+      ].join("\n"),
+    );
+  }
+  if (documentRefs.length) {
+    sections.push(
+      [
+        "Referenced docs:",
+        ...documentRefs.map((document) => (
+          `- [${escapeCommentLinkLabel(document.title || document.document_key)}](#task-doc-${encodeURIComponent(document.id)})`
+        )),
+      ].join("\n"),
+    );
+  }
+  return sections.join("\n\n");
+}
+
+async function cleanupUploadedCommentAttachments(
+  api: unknown,
+  profileId: string,
+  taskId: string,
+  config: TaskFlowConfig,
+  attachments: TaskFlowAttachment[],
+) {
+  if (!attachments.length) {
+    return;
+  }
+  const taskApi = coerceTaskFlowApi(api);
+  if (typeof taskApi.deleteTaskAttachment !== "function") {
+    return;
+  }
+  const actor = operatorActorPayload(config);
+  await Promise.allSettled(
+    attachments.map((attachment) =>
+      taskApi.deleteTaskAttachment?.(profileId, taskId, attachment.id, {
+        actor_ref: actor.actor_ref,
+        actor_type: actor.actor_type,
+      }),
+    ),
+  );
+}
+
+function escapeCommentLinkLabel(value: unknown) {
+  return String(value || "")
+    .replaceAll("[", "(")
+    .replaceAll("]", ")")
+    .replaceAll("\n", " ")
+    .trim();
 }
 
 export async function approveTaskReview(api: unknown, profileId: string, taskId: string, config: TaskFlowConfig) {

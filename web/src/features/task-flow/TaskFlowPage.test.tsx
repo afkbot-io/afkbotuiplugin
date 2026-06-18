@@ -159,6 +159,21 @@ function createApi({
     ],
     ["task-review", []],
   ]);
+  const attachmentsByTask = new Map<string, Array<Record<string, unknown>>>([
+    [
+      "task-1",
+      [
+        {
+          byte_size: 14,
+          content_type: "text/plain",
+          created_at: "2026-04-21T09:30:00.000Z",
+          id: "task-attachment-1",
+          kind: "text",
+          name: "brief.txt",
+        },
+      ],
+    ],
+  ]);
   const documents = new Map<string, Array<Record<string, unknown>>>([
     [
       "flow:flow-alpha",
@@ -203,6 +218,19 @@ function createApi({
       ]);
       return { ok: true };
     }),
+    addTaskAttachments: vi.fn(async (_profileId: string, taskId: string, payload: Record<string, unknown>) => {
+      const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+      const uploaded = attachments.map((attachment, index) => ({
+        byte_size: Number((attachment as Record<string, unknown>).byte_size || 0),
+        content_type: String((attachment as Record<string, unknown>).content_type || ""),
+        created_at: "2026-04-21T11:00:00.000Z",
+        id: `task-attachment-upload-${index + 1}`,
+        kind: String((attachment as Record<string, unknown>).kind || "file"),
+        name: String((attachment as Record<string, unknown>).name || `file-${index + 1}`),
+      }));
+      attachmentsByTask.set(taskId, [...(attachmentsByTask.get(taskId) || []), ...uploaded]);
+      return { task_attachments: uploaded };
+    }),
     approveReviewTask: vi.fn(async (_profileId: string, taskId: string) => {
       const currentTask = tasks.get(taskId);
       if (currentTask) {
@@ -219,6 +247,7 @@ function createApi({
     bulkUpdateTasks: vi.fn(async () => ({ ok: true })),
     createTask: vi.fn(async (_profileId: string, payload: Record<string, unknown>) => {
       const nextTask = buildTask({
+        attachment_count: Array.isArray(payload.attachments) ? payload.attachments.length : 0,
         id: "task-2",
         title: String(payload.title || "New task"),
         description: String(payload.description || "New prompt"),
@@ -228,6 +257,7 @@ function createApi({
       });
       tasks.set(nextTask.id, nextTask);
       commentsByTask.set(nextTask.id, []);
+      attachmentsByTask.set(nextTask.id, []);
       return { task: nextTask };
     }),
     createTaskFlow: vi.fn(async (_profileId: string, payload: Record<string, unknown>) => {
@@ -249,6 +279,13 @@ function createApi({
     deleteTask: vi.fn(async (_profileId: string, taskId: string) => {
       tasks.delete(taskId);
       commentsByTask.delete(taskId);
+      return { ok: true };
+    }),
+    deleteTaskAttachment: vi.fn(async (_profileId: string, taskId: string, attachmentId: string) => {
+      attachmentsByTask.set(
+        taskId,
+        (attachmentsByTask.get(taskId) || []).filter((attachment) => attachment.id !== attachmentId),
+      );
       return { ok: true };
     }),
     deleteTaskFlow: vi.fn(async (_profileId: string, flowId: string) => {
@@ -281,6 +318,9 @@ function createApi({
       return { task_flow: nextFlow };
     }),
     getTask: vi.fn(async (_profileId: string, taskId: string) => ({ task: tasks.get(taskId) || null })),
+    getTaskAttachmentDownloadUrl: vi.fn((_profileId: string, taskId: string, attachmentId: string) => (
+      `/v1/plugins/afkbotui/task-flow/tasks/${taskId}/attachments/${attachmentId}/download?profile_id=default`
+    )),
     getTaskContext: vi.fn(async (_profileId: string, taskId: string) => {
       const task = tasks.get(taskId) || null;
       const flow = task?.flow_id ? flows.find((flowItem) => flowItem.id === task.flow_id) || null : null;
@@ -331,6 +371,9 @@ function createApi({
           total_count: filteredTasks.length,
         };
       })(),
+    })),
+    listTaskAttachments: vi.fn(async (_profileId: string, taskId: string) => ({
+      task_attachments: attachmentsByTask.get(taskId) || [],
     })),
     getTaskSessionInsights: vi.fn(async () => sessionInsights || {
       progress: { cursor: { last_event_id: 0, run_id: null }, events: [] },
@@ -686,9 +729,9 @@ describe("TaskFlowPage", () => {
 
     expect(await screen.findByText("Task Flow")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Flows" }));
-    const dialog = await screen.findByRole("dialog", { name: "Flow Library" });
+    const dialog = await screen.findByRole("dialog", { name: "Project Flows" });
 
-    await user.click(within(dialog).getByRole("button", { name: "Show on Board" }));
+    await user.click(within(dialog).getByRole("button", { name: "Filtered on Board" }));
     expect(await within(dialog).findByText("Flow plan")).toBeInTheDocument();
 
     const docsSection = within(dialog).getByText("Flow docs").closest(".flow-manager__docs") as HTMLElement;
@@ -804,12 +847,8 @@ describe("TaskFlowPage", () => {
     });
     expect(screen.getAllByText("No tasks").length).toBeGreaterThan(0);
 
-    await user.selectOptions(screen.getByLabelText("Filter task board by flow"), "");
-
-    await waitFor(() => {
-      expect(screen.getByText("Fix planner output")).toBeInTheDocument();
-      expect(screen.getByText("Review copy")).toBeInTheDocument();
-    });
+    const flowSelect = screen.getByLabelText("Filter task board by flow") as HTMLSelectElement;
+    expect(Array.from(flowSelect.options).some((option) => option.value === "")).toBe(false);
   });
 
   it("opens the flow manager and creates a new flow", async () => {
@@ -818,10 +857,10 @@ describe("TaskFlowPage", () => {
 
     expect(await screen.findByText("Task Flow")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Flows" }));
-    expect(await screen.findByText("Flow Library")).toBeInTheDocument();
+    expect(await screen.findByText("Project Flows")).toBeInTheDocument();
 
-    await user.type(screen.getByLabelText("Title"), "Beta Project");
-    await user.type(screen.getByLabelText("Description"), "Secondary scope.");
+    await user.type(screen.getByLabelText("Flow name"), "Beta Project");
+    await user.type(screen.getByLabelText("Purpose"), "Secondary scope.");
     await user.click(screen.getByRole("button", { name: "Add Flow" }));
 
     await waitFor(() => {
@@ -845,7 +884,7 @@ describe("TaskFlowPage", () => {
 
     await user.click(screen.getByRole("button", { name: "Open Flows" }));
 
-    expect(await screen.findByRole("dialog", { name: "Flow Library" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Project Flows" })).toBeInTheDocument();
   });
 
   it("blocks new task creation until the organization chart has one root employee", async () => {
@@ -887,14 +926,16 @@ describe("TaskFlowPage", () => {
 
     expect(await screen.findByText("Task Flow")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Flows" }));
-    const dialog = await screen.findByRole("dialog", { name: "Flow Library" });
-    const flowItem = within(dialog).getByText("Alpha Project").closest(".flow-manager__item") as HTMLElement;
+    const dialog = await screen.findByRole("dialog", { name: "Project Flows" });
+    const flowItem = within(dialog)
+      .getByRole("heading", { name: "Alpha Project" })
+      .closest(".flow-manager__item") as HTMLElement;
 
     await user.click(within(flowItem).getByRole("button", { name: "Edit" }));
-    await user.clear(within(dialog).getByLabelText("Title"));
-    await user.type(within(dialog).getByLabelText("Title"), "Renamed Alpha");
-    await user.clear(within(dialog).getByLabelText("Description"));
-    await user.type(within(dialog).getByLabelText("Description"), "Updated delivery scope.");
+    await user.clear(within(dialog).getByLabelText("Flow name"));
+    await user.type(within(dialog).getByLabelText("Flow name"), "Renamed Alpha");
+    await user.clear(within(dialog).getByLabelText("Purpose"));
+    await user.type(within(dialog).getByLabelText("Purpose"), "Updated delivery scope.");
     await user.click(within(dialog).getByRole("button", { name: "Save Flow" }));
 
     await waitFor(() => {
@@ -922,12 +963,12 @@ describe("TaskFlowPage", () => {
     await waitFor(() => expect(newTaskButton).toBeEnabled());
 
     await user.click(newTaskButton);
-    const dialog = await screen.findByRole("dialog", { name: "New Backlog Item" });
-    expect(within(dialog).getByLabelText("Owner Type")).toHaveValue("Employee");
-    expect(within(dialog).getByLabelText("Intake Owner")).toHaveValue("CTO - Technical Director");
+    const dialog = await screen.findByRole("dialog", { name: "New Task" });
+    expect(within(dialog).getByLabelText("Assignee type")).toHaveValue("Employee");
+    expect(within(dialog).getByLabelText("Intake employee")).toHaveValue("CTO - Technical Director");
 
-    await user.type(within(dialog).getByLabelText("Title"), "Assign employee task");
-    await user.type(within(dialog).getByLabelText("Description"), "Route this task to a specialist.");
+    await user.type(within(dialog).getByLabelText("Task title"), "Assign employee task");
+    await user.type(within(dialog).getByLabelText(/What should be done/), "Route this task to a specialist.");
     await user.click(within(dialog).getByRole("button", { name: "Create Task" }));
 
     await waitFor(() => {
@@ -940,6 +981,43 @@ describe("TaskFlowPage", () => {
         }),
       );
       expect(notify).toHaveBeenCalledWith("Task created.", "success");
+    });
+  });
+
+  it("uploads selected files with a newly created task", async () => {
+    const user = userEvent.setup();
+    const { api } = renderTaskFlowPage();
+
+    expect(await screen.findByText("Task Flow")).toBeInTheDocument();
+    const newTaskButton = screen.getByRole("button", { name: "New Task" });
+    await waitFor(() => expect(newTaskButton).toBeEnabled());
+
+    await user.click(newTaskButton);
+    const dialog = await screen.findByRole("dialog", { name: "New Task" });
+    await user.type(within(dialog).getByLabelText("Task title"), "Task with file");
+    await user.type(within(dialog).getByLabelText(/What should be done/), "Use the attached requirements.");
+
+    const uploadInput = dialog.querySelector('input[aria-label="Files upload"]');
+    expect(uploadInput).toBeInstanceOf(HTMLInputElement);
+    await user.upload(uploadInput as HTMLInputElement, new File(["Ship this spec."], "requirements.txt", { type: "text/plain" }));
+    expect(within(dialog).getByText("requirements.txt")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Create Task" }));
+
+    await waitFor(() => {
+      expect(api.createTask).toHaveBeenCalledWith(
+        "default",
+        expect.objectContaining({
+          attachments: [
+            expect.objectContaining({
+              content_base64: "U2hpcCB0aGlzIHNwZWMu",
+              content_type: "text/plain",
+              kind: "text",
+              name: "requirements.txt",
+            }),
+          ],
+        }),
+      );
     });
   });
 
@@ -984,11 +1062,11 @@ describe("TaskFlowPage", () => {
     const newTaskButton = screen.getByRole("button", { name: "New Task" });
     await waitFor(() => expect(newTaskButton).toBeEnabled());
     await user.click(newTaskButton);
-    const dialog = await screen.findByRole("dialog", { name: "New Backlog Item" });
-    expect(within(dialog).getByLabelText("Intake Owner")).toHaveValue("Backend Engineer - Backend Engineer");
+    const dialog = await screen.findByRole("dialog", { name: "New Task" });
+    expect(within(dialog).getByLabelText("Intake employee")).toHaveValue("Backend Engineer - Backend Engineer");
 
-    await user.type(within(dialog).getByLabelText("Title"), "Assign employee");
-    await user.type(within(dialog).getByLabelText("Description"), "Route this task to reviewer.");
+    await user.type(within(dialog).getByLabelText("Task title"), "Assign employee");
+    await user.type(within(dialog).getByLabelText(/What should be done/), "Route this task to reviewer.");
     await user.click(within(dialog).getByRole("button", { name: "Create Task" }));
 
     await waitFor(() => {
@@ -1009,13 +1087,13 @@ describe("TaskFlowPage", () => {
 
     expect(await screen.findByText("Task Flow")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Flows" }));
-    const dialog = await screen.findByRole("dialog", { name: "Flow Library" });
+    const dialog = await screen.findByRole("dialog", { name: "Project Flows" });
 
     await user.click(within(dialog).getByRole("button", { name: "Delete" }));
     expect(within(dialog).getByText("Delete this flow and every task inside it?")).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    expect(await screen.findByRole("dialog", { name: "Flow Library" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Project Flows" })).toBeInTheDocument();
     expect(screen.queryByText("Delete this flow and every task inside it?")).not.toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Delete" }));
@@ -1068,8 +1146,84 @@ describe("TaskFlowPage", () => {
     commentRequest.resolve({ ok: true });
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Send Comment" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Send Comment" })).toBeDisabled();
     });
+  });
+
+  it("uploads comment files and references task documents in the comment body", async () => {
+    const user = userEvent.setup();
+    const { api } = renderTaskFlowPage();
+
+    expect(await screen.findByText("Fix planner output")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /fix planner output/i }));
+
+    expect(await screen.findByText("brief.txt")).toBeInTheDocument();
+    await user.type(screen.getByPlaceholderText("Add context or operator note…"), "Please review this evidence.");
+    const uploadInput = document.querySelector('input[aria-label="Attach files to comment upload"]');
+    expect(uploadInput).toBeInstanceOf(HTMLInputElement);
+    await user.upload(uploadInput as HTMLInputElement, new File(["Evidence"], "evidence.txt", { type: "text/plain" }));
+    await user.click(screen.getByRole("checkbox", { name: "Flow plan" }));
+    await user.click(screen.getByRole("button", { name: "Send Comment" }));
+
+    await waitFor(() => {
+      expect(api.addTaskAttachments).toHaveBeenCalledWith(
+        "default",
+        "task-1",
+        expect.objectContaining({
+          attachments: [
+            expect.objectContaining({
+              content_base64: "RXZpZGVuY2U=",
+              name: "evidence.txt",
+            }),
+          ],
+        }),
+      );
+      expect(api.addTaskComment).toHaveBeenCalledWith(
+        "default",
+        "task-1",
+        expect.objectContaining({
+          message: expect.stringContaining("[evidence.txt](/v1/plugins/afkbotui/task-flow/tasks/task-1/attachments/task-attachment-upload-1/download?profile_id=default)"),
+        }),
+      );
+      expect(api.addTaskComment).toHaveBeenCalledWith(
+        "default",
+        "task-1",
+        expect.objectContaining({
+          message: expect.stringContaining("[Flow plan](#task-doc-doc-flow-plan)"),
+        }),
+      );
+    });
+  });
+
+  it("keeps failed comment drafts and cleans up uploaded comment files", async () => {
+    const user = userEvent.setup();
+    const { api, notify } = renderTaskFlowPage();
+
+    api.addTaskComment.mockRejectedValueOnce(new Error("comment failed"));
+
+    expect(await screen.findByText("Fix planner output")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /fix planner output/i }));
+
+    await user.type(screen.getByPlaceholderText("Add context or operator note…"), "Keep this draft");
+    const uploadInput = document.querySelector('input[aria-label="Attach files to comment upload"]');
+    expect(uploadInput).toBeInstanceOf(HTMLInputElement);
+    await user.upload(uploadInput as HTMLInputElement, new File(["Evidence"], "evidence.txt", { type: "text/plain" }));
+    await user.click(screen.getByRole("button", { name: "Send Comment" }));
+
+    await waitFor(() => {
+      expect(api.deleteTaskAttachment).toHaveBeenCalledWith(
+        "default",
+        "task-1",
+        "task-attachment-upload-1",
+        expect.objectContaining({
+          actor_ref: "web-user",
+          actor_type: "human",
+        }),
+      );
+      expect(notify).toHaveBeenCalledWith("comment failed", "danger");
+    });
+    expect(screen.getByDisplayValue("Keep this draft")).toBeInTheDocument();
+    expect(screen.getByText("evidence.txt")).toBeInTheDocument();
   });
 
   it("exposes review queue items as buttons and lets an operator approve a queued task", async () => {

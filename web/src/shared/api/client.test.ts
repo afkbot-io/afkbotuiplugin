@@ -252,10 +252,8 @@ describe("ApiClient text-library resources", () => {
   it("invokes onUnauthorized when the auth session probe returns ui_auth_required", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       errorResponse(401, {
-        detail: {
-          error_code: "ui_auth_required",
-          message: "Session expired.",
-        },
+        error_code: "ui_auth_required",
+        reason: "Session expired.",
       }),
     );
     const onUnauthorized = vi.fn();
@@ -265,6 +263,7 @@ describe("ApiClient text-library resources", () => {
 
     await expect(client.getAuthSession()).rejects.toMatchObject({
       code: "ui_auth_required",
+      message: "Session expired.",
       status: 401,
     });
     expect(onUnauthorized).toHaveBeenCalledTimes(1);

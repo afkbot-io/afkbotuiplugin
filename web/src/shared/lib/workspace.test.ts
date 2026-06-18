@@ -84,6 +84,9 @@ describe("workspace helpers", () => {
     expect(routeLabel("docs")).toBe("Docs");
     expect(routeLabel("automations")).toBe("Automations");
     expect(normalizeError(new Error("boom"))).toBe("boom");
+    expect(normalizeError(Object.assign(new Error("expired"), { code: "ui_auth_required" }))).toBe(
+      "Your AFKBOT UI session expired. Sign in again, then retry the action.",
+    );
     expect(normalizeConfig(undefined)).toEqual(defaultConfig);
   });
 });

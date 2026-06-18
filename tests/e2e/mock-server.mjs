@@ -143,6 +143,26 @@ const taskRuns = {
   ],
 };
 
+const taskAttachments = {
+  "task-review": [],
+  "task-rollout": [
+    {
+      id: "attachment-rollout-notes",
+      task_id: "task-rollout",
+      profile_id: "default",
+      name: "rollout-notes.txt",
+      content_type: "text/plain",
+      kind: "text",
+      byte_size: 36,
+      sha256: "mock-rollout-notes-sha256",
+      created_by_type: "human",
+      created_by_ref: "web-user",
+      created_at: "2026-04-21T09:45:00.000Z",
+      updated_at: "2026-04-21T09:45:00.000Z",
+    },
+  ],
+};
+
 const taskDependencies = {
   "task-review": [],
   "task-rollout": [],
@@ -553,6 +573,13 @@ function matchApiRoute(pathname, requestUrl = "/") {
     const taskId = decodeURIComponent(pathname.split("/").at(-2) || "");
     return {
       task_comments: taskComments[taskId] || [],
+    };
+  }
+
+  if (/^\/v1\/plugins\/afkbotui\/task-flow\/tasks\/[^/]+\/attachments$/u.test(pathname)) {
+    const taskId = decodeURIComponent(pathname.split("/").at(-2) || "");
+    return {
+      task_attachments: taskAttachments[taskId] || [],
     };
   }
 

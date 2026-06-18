@@ -41,7 +41,7 @@ export function App() {
       return;
     }
     setAuthRedirecting(true);
-    setGlobalError("Authentication required. Redirecting to login…");
+    setGlobalError("Your operator session expired. Redirecting to AFKBOT sign-in…");
     const current = readCurrentUiUrl();
     const next = current.startsWith("/") ? current : webBase;
     scheduleWindowRedirect(buildLoginUrl(next));

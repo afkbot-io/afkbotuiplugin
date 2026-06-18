@@ -118,7 +118,7 @@ export function ManageProjectsModal({
       onClose={onCancel}
       onSubmit={onSubmit}
       open={open}
-      title="Flow Library"
+      title="Project Flows"
       wide
     >
         {error ? <div className="inline-alert inline-alert--danger">{error}</div> : null}
@@ -126,25 +126,17 @@ export function ManageProjectsModal({
           <section className="flow-manager__section">
             <div className="flow-manager__summary">
               <div>
-                <p className="surface-page__eyebrow">Existing Flows</p>
+                <p className="surface-page__eyebrow">Project flows</p>
                 <h4 className="flow-manager__title">{formatProjectResultsLabel(visibleFlows.length, flows.length)}</h4>
                 <p className="muted">{formatProjectResultsNote(activeFlowId, flows, flowSearchQuery)}</p>
               </div>
-              <button
-                className={`button ${activeFlow ? "button--ghost" : "button--primary"} button--compact`}
-                disabled={busy || !activeFlow}
-                onClick={() => onFilter("")}
-                type="button"
-              >
-                {activeFlow ? "Show All Tasks" : "Showing All Tasks"}
-              </button>
             </div>
             <label className="field flow-manager__search">
               <span className="field__label">Search Flows</span>
               <input
                 autoComplete="off"
                 onChange={(event) => onSearchChange(event.target.value)}
-                placeholder="Search by name, id, label, description, or owner…"
+                placeholder="Search by name, label, description, owner, or id..."
                 spellCheck={false}
                 type="search"
                 value={flowSearchQuery}
@@ -168,7 +160,6 @@ export function ManageProjectsModal({
                             <span className={`badge ${isActive ? "badge--live" : "badge--muted"}`}>
                               {isActive ? "Current Flow" : "Available"}
                             </span>
-                            <span className="badge badge--violet">{flow.id}</span>
                           </div>
                         </div>
                         <div className="flow-manager__item-meta">
@@ -240,12 +231,12 @@ export function ManageProjectsModal({
           <section className="flow-manager__section flow-manager__section--form">
             <div className="panel-head panel-head--compact">
               <div>
-                <p className="panel-head__eyebrow">{editingFlow ? "Edit Flow" : "Add Flow"}</p>
-                <h4 className="flow-manager__title">{editingFlow ? editingFlow.title || editingFlow.id : "Create a new flow"}</h4>
+                <p className="panel-head__eyebrow">{editingFlow ? "Edit project flow" : "Add project flow"}</p>
+                <h4 className="flow-manager__title">{editingFlow ? editingFlow.title || editingFlow.id : "Create a project flow"}</h4>
               </div>
             </div>
             <label className="field">
-              <span className="field__label">Title</span>
+              <span className="field__label">Flow name</span>
               <input
                 maxLength={240}
                 onChange={(event) => onDraftChange({ ...draft, title: event.target.value })}
@@ -254,18 +245,18 @@ export function ManageProjectsModal({
               />
             </label>
             <label className="field">
-              <span className="field__label">Description</span>
+              <span className="field__label">Purpose</span>
               <textarea
                 maxLength={2000}
                 onChange={(event) => onDraftChange({ ...draft, description: event.target.value })}
-                placeholder="What work belongs in this flow?"
+                placeholder="What work belongs in this project flow?"
                 rows={4}
                 value={draft.description}
               />
             </label>
             <div className="field-grid">
               <label className="field field--compact">
-                <span className="field__label">Default Owner Type</span>
+                <span className="field__label">Default assignee type</span>
                 <select
                   onChange={(event) => handleDefaultOwnerTypeChange(event.target.value)}
                   value={draft.default_owner_type}
@@ -276,7 +267,7 @@ export function ManageProjectsModal({
               </label>
               <ActorRefField
                 config={config}
-                label="Default Owner Ref"
+                label="Default assignee"
                 name="default_owner_ref"
                 onChange={(value) => onDraftChange({ ...draft, default_owner_ref: value })}
                 profileId={profileId}
@@ -290,9 +281,10 @@ export function ManageProjectsModal({
               <span className="field__label">Labels</span>
               <input
                 onChange={(event) => onDraftChange({ ...draft, labels: event.target.value })}
-                placeholder="ops, review, sprint-1…"
+                placeholder="ops, review, sprint-1"
                 value={draft.labels}
               />
+              <span className="field__hint">Use labels for filtering and release grouping. The flow id remains technical metadata.</span>
             </label>
             <div className="button-row">
               <AsyncButton

@@ -51,10 +51,11 @@ export function TaskFlowHeader({
             <select
               aria-label="Filter task board by flow"
               className="select"
+              disabled={!flows.length}
               onChange={(event) => onFilterChange(event.target.value)}
-              value={flowFilter}
+              value={flows.some((flow) => flow.id === flowFilter) ? flowFilter : ""}
             >
-              <option value="">All Flows</option>
+              {!flows.length ? <option value="">Create a flow first</option> : null}
               {flows.map((flow) => (
                 <option key={flow.id} value={flow.id}>
                   {flow.title}

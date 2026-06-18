@@ -2,6 +2,25 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.17 - 2026-06-18
+
+- require AFKBOT `1.9.20+` for starter-plugin auto-update, secure credential
+  resume continuation, employee tool-policy gates, and Task Flow maintenance
+  cooldowns
+- make Task Flow project-scoped by default: operators create/select one Flow
+  before seeing tasks, board/review actions require that Flow, and empty
+  workspaces show a first-Flow creation form
+- add Task Flow file attachment controls for task creation and comments, keeping
+  attachment upload/removal visible in the inspector workflow
+- redesign Docs as filterable cards with Flow labels, scope/category/status,
+  revision metadata, and flow-first filtering
+- redesign Employees around a larger React Flow org chart with modal
+  create/edit/delete flows, tree sorting, drag-to-create reports, and selectable
+  tool/subagent access controls instead of raw allowlist text
+- keep Task Flow operator mutations on validated human actor identity for
+  comments, docs, review, flow/task edits, and delete actions
+- sync release metadata to version `1.0.17`
+
 ## 1.0.16 - 2026-06-16
 
 - require AFKBOT `1.9.19+` for autonomous CTO knowledge-maintenance tasks and

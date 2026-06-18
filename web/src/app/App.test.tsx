@@ -231,7 +231,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Sign out" }));
 
     expect(await screen.findByText("logout failed")).toBeInTheDocument();
-    expect(screen.getByText("Authentication required. Redirecting to login…")).toBeInTheDocument();
+    expect(screen.getByText("Your operator session expired. Redirecting to AFKBOT sign-in…")).toBeInTheDocument();
     expect(apiMethods.logout).toHaveBeenCalledTimes(1);
     expect(scheduleWindowRedirect).toHaveBeenCalledTimes(1);
   });
@@ -279,7 +279,7 @@ describe("App", () => {
       expect(scheduleWindowRedirect).toHaveBeenCalledTimes(1);
     });
     expect(routeRenderSpies.automations).not.toHaveBeenCalled();
-    expect(await screen.findByText("Authentication required. Redirecting to login…")).toBeInTheDocument();
+    expect(await screen.findByText("Your operator session expired. Redirecting to AFKBOT sign-in…")).toBeInTheDocument();
   });
 
   it("keeps the workspace loader visible until config and profiles resolve", async () => {

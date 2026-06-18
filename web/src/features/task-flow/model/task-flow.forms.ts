@@ -52,6 +52,7 @@ export function defaultProjectDraft(profiles: TaskFlowProfile[] = []): TaskFlowP
 export function defaultTaskDraft(config: TaskFlowConfig, profiles: TaskFlowProfile[] = [], flowId = ""): TaskFlowTaskDraft {
   void config;
   return {
+    attachments: [],
     blocked_reason_text: "",
     depends_on_task_ids: "",
     due_at: "",
@@ -71,6 +72,7 @@ export function defaultTaskDraft(config: TaskFlowConfig, profiles: TaskFlowProfi
 
 export function taskDraftFromTask(task: TaskFlowTask): TaskFlowTaskDraft {
   return {
+    attachments: [],
     blocked_reason_text: String(task.blocked_reason_text || ""),
     depends_on_task_ids: "",
     due_at: toDateTimeLocal(task.due_at),

@@ -104,6 +104,7 @@ export type TaskFlowSession = {
 
 export type TaskFlowTask = {
   active_session?: TaskFlowSession | null;
+  attachment_count?: number | null;
   blocked_reason_code?: string | null;
   blocked_reason_text?: string | null;
   description?: string | null;
@@ -127,6 +128,29 @@ export type TaskFlowTask = {
   source_type?: TaskFlowSourceType | null;
   status: TaskFlowStatus;
   title: string;
+};
+
+export type TaskFlowAttachmentInput = {
+  byte_size?: number;
+  content_base64: string;
+  content_type?: string | null;
+  kind?: string;
+  name: string;
+};
+
+export type TaskFlowAttachment = {
+  byte_size?: number | null;
+  content_type?: string | null;
+  created_at?: string | null;
+  created_by_ref?: string | null;
+  created_by_type?: string | null;
+  id: string;
+  kind?: string | null;
+  name: string;
+  profile_id?: string | null;
+  sha256?: string | null;
+  task_id?: string | null;
+  updated_at?: string | null;
 };
 
 export type TaskFlowKnowledgeMaintenanceFlow = {
@@ -222,6 +246,7 @@ export type TaskFlowDependency = {
 
 export type TaskFlowTaskDetail = {
   task: TaskFlowTask | null;
+  task_attachments: TaskFlowAttachment[];
   task_comments: TaskFlowComment[];
   task_dependencies: TaskFlowDependency[];
   task_events: TaskFlowEvent[];
@@ -334,6 +359,7 @@ export type TaskFlowProjectDraft = {
 };
 
 export type TaskFlowTaskDraft = {
+  attachments?: TaskFlowAttachmentInput[];
   blocked_reason_text: string;
   depends_on_task_ids: string;
   due_at: string;

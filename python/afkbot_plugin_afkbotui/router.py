@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import datetime
 from functools import lru_cache
 from typing import Literal
@@ -30,6 +31,7 @@ from afkbot.services.profile_runtime import ProfileServiceError, get_profile_ser
 from afkbot.services.skills import get_profile_skill_service
 from afkbot.services.subagents.profile_service import get_profile_subagent_service
 from afkbot.services.task_flow import TaskFlowServiceError, get_task_flow_service
+from afkbot.services.task_flow.contracts import TaskAttachmentCreate
 from afkbot.services.task_flow.human_ref import resolve_local_human_ref
 from afkbot.settings import get_settings
 
@@ -161,6 +163,17 @@ class TaskCreatePayload(BaseModel):
     labels: tuple[str, ...] = ()
     requires_review: bool = False
     depends_on_task_ids: tuple[str, ...] = ()
+    attachments: tuple[TaskAttachmentCreate, ...] = Field(default=(), max_length=20)
+
+
+class TaskAttachmentAppendPayload(BaseModel):
+    """Request body for appending attachments to one task."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    actor_type: str = Field(default="human", min_length=1)
+    actor_ref: str = Field(default="web-user", min_length=1)
+    attachments: tuple[TaskAttachmentCreate, ...] = Field(min_length=1, max_length=20)
 
 
 class TaskCommentCreatePayload(BaseModel):
@@ -195,6 +208,7 @@ class TaskPatchPayload(BaseModel):
     blocked_reason_text: str | None = None
     actor_type: str | None = None
     actor_ref: str | None = None
+    attachments: tuple[TaskAttachmentCreate, ...] = Field(default=(), max_length=20)
 
 
 class ReviewApprovePayload(BaseModel):
@@ -735,6 +749,8 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         profile_id: str = "default",
         query: str | None = None,
         scope_type: Literal["flow", "task"] | None = None,
+        scope_id: str | None = None,
+        document_key: str | None = None,
         confirmation_status: str | None = None,
         limit: int = Query(default=100, ge=1, le=200),
         offset: int = Query(default=0, ge=0),
@@ -744,6 +760,8 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
             payload = await service.list_documents(
                 profile_id=profile_id,
                 scope_type=scope_type,
+                scope_id=scope_id,
+                document_key=document_key,
                 confirmation_status=confirmation_status,
                 query=query,
                 limit=limit,
@@ -869,6 +887,14 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
         config = read_config()
+        if not str(flow_id or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error_code": "task_flow_required",
+                    "reason": "Select a project Flow before loading the Task Flow board.",
+                },
+            )
         try:
             payload = await service.build_board(
                 profile_id=profile_id,
@@ -954,6 +980,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 labels=payload.labels,
                 requires_review=payload.requires_review,
                 depends_on_task_ids=payload.depends_on_task_ids,
+                attachments=payload.attachments,
             )
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
@@ -976,6 +1003,93 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         except TaskFlowServiceError as exc:
             raise _task_http_error(exc) from exc
         return {"context": payload.model_dump(mode="json")}
+
+    @router.get("/task-flow/tasks/{task_id}/attachments")
+    async def task_flow_task_attachments(
+        task_id: str,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_task_flow_service(get_settings())
+        try:
+            payload = await service.list_task_attachments(profile_id=profile_id, task_id=task_id)
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+        return {"task_attachments": [item.model_dump(mode="json") for item in payload]}
+
+    @router.post("/task-flow/tasks/{task_id}/attachments")
+    async def task_flow_task_attachment_add(
+        task_id: str,
+        payload: TaskAttachmentAppendPayload,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.actor_type,
+            actor_ref=payload.actor_ref,
+            config=config,
+        )
+        try:
+            attachments = [
+                await service.add_task_attachment(
+                    profile_id=profile_id,
+                    task_id=task_id,
+                    actor_type=actor_type,
+                    actor_ref=actor_ref,
+                    attachment=attachment,
+                )
+                for attachment in payload.attachments
+            ]
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+        return {"task_attachments": [item.model_dump(mode="json") for item in attachments]}
+
+    @router.get("/task-flow/tasks/{task_id}/attachments/{attachment_id}/download")
+    async def task_flow_task_attachment_download(
+        task_id: str,
+        attachment_id: str,
+        profile_id: str = "default",
+    ) -> Response:
+        service = get_task_flow_service(get_settings())
+        try:
+            payload = await service.get_task_attachment_content(
+                profile_id=profile_id,
+                task_id=task_id,
+                attachment_id=attachment_id,
+            )
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+        return Response(
+            content=payload.content_bytes,
+            headers=_task_attachment_download_headers(payload.attachment.name),
+            media_type=_task_attachment_media_type(payload.attachment.content_type),
+        )
+
+    @router.delete("/task-flow/tasks/{task_id}/attachments/{attachment_id}")
+    async def task_flow_task_attachment_delete(
+        task_id: str,
+        attachment_id: str,
+        payload: ReviewApprovePayload | None = None,
+        profile_id: str = "default",
+    ) -> dict[str, object]:
+        service = get_task_flow_service(get_settings())
+        config = read_config()
+        actor_type, actor_ref = _resolve_task_flow_actor_identity(
+            actor_type=payload.actor_type if payload is not None else None,
+            actor_ref=payload.actor_ref if payload is not None else None,
+            config=config,
+        )
+        try:
+            await service.remove_task_attachment(
+                profile_id=profile_id,
+                task_id=task_id,
+                attachment_id=attachment_id,
+                actor_type=actor_type,
+                actor_ref=actor_ref,
+            )
+        except TaskFlowServiceError as exc:
+            raise _task_http_error(exc) from exc
+        return {"deleted": True, "attachment_id": attachment_id}
 
     @router.get("/task-flow/employees")
     async def task_flow_employees(profile_id: str = "default", q: str = "") -> dict[str, object]:
@@ -1186,6 +1300,7 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
                 "labels": payload.labels,
                 "actor_type": actor_type,
                 "actor_ref": actor_ref,
+                "attachments": payload.attachments,
             }
             if "blocked_reason_code" in payload.model_fields_set:
                 update_kwargs["blocked_reason_code"] = payload.blocked_reason_code
@@ -1453,6 +1568,14 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
     ) -> dict[str, object]:
         service = get_task_flow_service(get_settings())
         config = read_config()
+        if not str(flow_id or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error_code": "task_flow_required",
+                    "reason": "Select a project Flow before loading review tasks.",
+                },
+            )
         if all_reviewers:
             resolved_actor_type, resolved_actor_ref = None, None
         else:
@@ -2370,6 +2493,38 @@ def _task_http_error(exc: TaskFlowServiceError) -> HTTPException:
     else:
         status_code = 400
     return HTTPException(status_code=status_code, detail={"error_code": exc.error_code, "reason": exc.reason})
+
+
+def _task_attachment_download_headers(filename: str) -> dict[str, str]:
+    """Build safe download headers for a user-provided task attachment filename."""
+
+    cleaned = str(filename or "attachment")
+    cleaned = cleaned.replace("\\", "_").replace("/", "_").replace("\r", "_").replace("\n", "_")
+    safe_name = "".join(
+        char if 32 <= ord(char) < 127 and char not in {'"', ";"} else "_"
+        for char in cleaned
+    ).strip(" .")
+    if not safe_name:
+        safe_name = "attachment"
+    return {
+        "Content-Disposition": f'attachment; filename="{safe_name}"',
+        "X-Content-Type-Options": "nosniff",
+    }
+
+
+def _task_attachment_media_type(content_type: str | None) -> str:
+    """Return a safe media type for a user-provided attachment content type."""
+
+    value = str(content_type or "").strip()
+    if not value or any(ord(char) < 32 or ord(char) == 127 for char in value):
+        return "application/octet-stream"
+    if not re.fullmatch(
+        r"[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+"
+        r"(?:\s*;\s*[A-Za-z0-9!#$&^_.+-]+=[A-Za-z0-9!#$&^_.+-]+)*",
+        value,
+    ):
+        return "application/octet-stream"
+    return value
 
 
 def _employee_http_error(exc: EmployeeServiceError) -> HTTPException:

@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "r
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { AppRouteProps, RouteHandle } from "@/app/routes";
-import type { TaskFlowDocument } from "@/features/task-flow/model/task-flow.types";
+import type { TaskFlowDocument, TaskFlowProject } from "@/features/task-flow/model/task-flow.types";
 import { formatStatusLabel, truncate } from "@/features/task-flow/model/task-flow.presentation";
 import { formatDateTime } from "@/shared/lib/time";
 import { normalizeError } from "@/shared/lib/workspace";
@@ -24,18 +24,35 @@ type DocumentWorkspaceApi = {
     profileId: string,
     params?: Record<string, unknown>,
   ) => Promise<{ task_documents?: TaskFlowDocument[] }>;
+  listTaskFlows: (profileId: string) => Promise<{ task_flows?: TaskFlowProject[] }>;
 };
 
 const SCOPE_OPTIONS = [
-  { label: "All Scopes", value: "" },
-  { label: "Flows", value: "flow" },
-  { label: "Tasks", value: "task" },
+  { label: "Project Docs", value: "flow" },
+  { label: "Task Docs", value: "task" },
 ] as const;
 
 const STATUS_OPTIONS = [
   { label: "All Statuses", value: "" },
   { label: "Draft", value: "draft" },
   { label: "Confirmed", value: "confirmed" },
+] as const;
+
+const FLOW_DOCUMENT_OPTIONS = [
+  { label: "All Categories", value: "" },
+  { label: "Brief", value: "brief" },
+  { label: "Plan", value: "plan" },
+  { label: "Spec", value: "spec" },
+  { label: "Decisions", value: "decisions" },
+  { label: "Status", value: "status" },
+] as const;
+
+const TASK_DOCUMENT_OPTIONS = [
+  { label: "All Categories", value: "" },
+  { label: "Handoff", value: "handoff" },
+  { label: "Notes", value: "notes" },
+  { label: "Review", value: "review" },
+  { label: "Evidence", value: "evidence" },
 ] as const;
 
 function coerceDocumentApi(api: unknown) {
@@ -54,23 +71,52 @@ export const TaskDocumentsPage = forwardRef<RouteHandle, AppRouteProps>(function
 ) {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
-  const [scopeType, setScopeType] = useState("");
+  const [scopeType, setScopeType] = useState<"flow" | "task">("flow");
+  const [flowId, setFlowId] = useState("");
+  const [documentKey, setDocumentKey] = useState("");
   const [confirmationStatus, setConfirmationStatus] = useState("");
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [pendingDeleteId, setPendingDeleteId] = useState("");
   const trimmedQuery = query.trim();
-  const queryKey = ["task-flow-documents", profileId, trimmedQuery, scopeType, confirmationStatus];
+  const queryKey = ["task-flow-documents", profileId, trimmedQuery, scopeType, flowId, documentKey, confirmationStatus];
+
+  const flowsQuery = useQuery({
+    enabled: active && Boolean(profileId),
+    queryKey: ["task-flow-documents", profileId, "flows"],
+    queryFn: async () => {
+      const payload = await coerceDocumentApi(api).listTaskFlows(profileId);
+      return Array.isArray(payload.task_flows) ? payload.task_flows : [];
+    },
+  });
+  const flows = flowsQuery.data || [];
+
+  useEffect(() => {
+    if (!active || flowsQuery.isFetching) {
+      return;
+    }
+    if (!flows.length) {
+      if (flowId) {
+        setFlowId("");
+      }
+      return;
+    }
+    if (!flows.some((flow) => flow.id === flowId)) {
+      setFlowId(flows[0].id);
+    }
+  }, [active, flowId, flows, flowsQuery.isFetching]);
 
   const documentsQuery = useQuery({
-    enabled: active && Boolean(profileId),
+    enabled: active && Boolean(profileId) && (scopeType !== "flow" || Boolean(flowId)),
     queryKey,
     queryFn: async () => {
       const payload = await coerceDocumentApi(api).listTaskFlowDocumentWorkspace(profileId, {
         confirmation_status: confirmationStatus || undefined,
+        document_key: documentKey || undefined,
         limit: 100,
         offset: 0,
         query: trimmedQuery || undefined,
-        scope_type: scopeType || undefined,
+        scope_id: scopeType === "flow" ? flowId : undefined,
+        scope_type: scopeType,
       });
       return Array.isArray(payload.task_documents) ? payload.task_documents : [];
     },
@@ -78,11 +124,16 @@ export const TaskDocumentsPage = forwardRef<RouteHandle, AppRouteProps>(function
 
   useImperativeHandle(ref, () => ({
     refresh: async () => {
-      await documentsQuery.refetch();
+      await Promise.all([flowsQuery.refetch(), documentsQuery.refetch()]);
     },
   }));
 
   const documents = documentsQuery.data || [];
+  const flowTitleById = useMemo(
+    () => new Map(flows.map((flow) => [flow.id, flow.title || flow.id])),
+    [flows],
+  );
+  const categoryOptions = scopeType === "flow" ? FLOW_DOCUMENT_OPTIONS : TASK_DOCUMENT_OPTIONS;
   const selectedDocument = useMemo(
     () => documents.find((document) => document.id === selectedDocumentId) || documents[0] || null,
     [documents, selectedDocumentId],
@@ -174,9 +225,41 @@ export const TaskDocumentsPage = forwardRef<RouteHandle, AppRouteProps>(function
               />
             </label>
             <label className="field">
+              <span className="field__label">Flow</span>
+              <select
+                disabled={!flows.length || scopeType !== "flow"}
+                onChange={(event) => setFlowId(event.target.value)}
+                value={flowId}
+              >
+                {!flows.length ? <option value="">No flows yet</option> : null}
+                {flows.map((flow) => (
+                  <option key={flow.id} value={flow.id}>
+                    {flow.title || flow.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
               <span className="field__label">Scope</span>
-              <select onChange={(event) => setScopeType(event.target.value)} value={scopeType}>
+              <select
+                onChange={(event) => {
+                  setScopeType(event.target.value as "flow" | "task");
+                  setDocumentKey("");
+                  setSelectedDocumentId("");
+                }}
+                value={scopeType}
+              >
                 {SCOPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field__label">Category</span>
+              <select onChange={(event) => setDocumentKey(event.target.value)} value={documentKey}>
+                {categoryOptions.map((option) => (
                   <option key={option.value || "all"} value={option.value}>
                     {option.label}
                   </option>
@@ -201,34 +284,38 @@ export const TaskDocumentsPage = forwardRef<RouteHandle, AppRouteProps>(function
 
       <section className="surface-shell surface-shell--split docs-workspace">
         <div className="docs-list-pane">
-          {documentsQuery.isLoading ? (
+          {documentsQuery.isLoading || (flowsQuery.isLoading && scopeType === "flow") ? (
             <SurfaceLoader message="Loading documents…" />
           ) : documents.length ? (
-            <div className="docs-list" aria-label="Documents">
+            <div className="docs-card-grid" aria-label="Documents">
               {documents.map((document) => (
                 <button
-                  className={`docs-list__item${selectedDocument?.id === document.id ? " docs-list__item--active" : ""}`}
+                  className={`docs-card${selectedDocument?.id === document.id ? " docs-card--active" : ""}`}
                   key={document.id}
                   onClick={() => setSelectedDocumentId(document.id)}
                   type="button"
                 >
-                  <span className="docs-list__item-head">
-                    <span className="docs-list__item-title">{document.title || document.document_key}</span>
+                  <span className="docs-card__head">
+                    <span className="docs-card__title">{document.title || document.document_key}</span>
                     <span className={`badge ${isConfirmed(document) ? "badge--success" : "badge--warning"}`}>
                       {isConfirmed(document) ? "confirmed" : "draft"}
                     </span>
                   </span>
-                  <span className="docs-list__item-meta">
-                    {formatStatusLabel(document.scope_type)} · {document.document_key} · r{document.revision}
+                  <span className="docs-card__meta">
+                    {documentScopeLabel(document, flowTitleById)} · {formatStatusLabel(document.document_key)} · r{document.revision}
                   </span>
-                  <span className="docs-list__item-body">{truncate(document.body, 190) || "No body yet."}</span>
+                  <span className="docs-card__dates">
+                    <span>Created {formatDateTime(document.created_at)}</span>
+                    <span>Updated {formatDateTime(document.updated_at)}</span>
+                  </span>
+                  <span className="docs-card__body">{truncate(document.body, 220) || "No body yet."}</span>
                 </button>
               ))}
             </div>
           ) : (
             <div className="empty-state">
               <h2>No documents</h2>
-              <p>Task Flow documents will appear here after agents or operators save them.</p>
+              <p>{scopeType === "flow" && !flowId ? "Create a Flow first to store project knowledge." : "Task Flow documents will appear here after agents or operators save them."}</p>
             </div>
           )}
         </div>
@@ -239,6 +326,7 @@ export const TaskDocumentsPage = forwardRef<RouteHandle, AppRouteProps>(function
               busy={confirmMutation.isPending && confirmMutation.variables?.id === selectedDocument.id}
               deleting={deleteMutation.isPending && deleteMutation.variables?.id === selectedDocument.id}
               document={selectedDocument}
+              flowTitleById={flowTitleById}
               onCancelDelete={() => setPendingDeleteId("")}
               onConfirm={() => confirmMutation.mutate(selectedDocument)}
               onConfirmDelete={() => deleteMutation.mutate(selectedDocument)}
@@ -270,6 +358,7 @@ function DocumentPreview({
   busy,
   deleting,
   document,
+  flowTitleById,
   onCancelDelete,
   onConfirm,
   onConfirmDelete,
@@ -279,6 +368,7 @@ function DocumentPreview({
   busy: boolean;
   deleting: boolean;
   document: TaskFlowDocument;
+  flowTitleById: Map<string, string>;
   onCancelDelete: () => void;
   onConfirm: () => void;
   onConfirmDelete: () => void;
@@ -301,8 +391,12 @@ function DocumentPreview({
 
       <dl className="kv-grid docs-preview__meta">
         <div>
-          <dt>Scope ID</dt>
-          <dd>{document.scope_id}</dd>
+          <dt>Scope</dt>
+          <dd>{documentScopeLabel(document, flowTitleById)}</dd>
+        </div>
+        <div>
+          <dt>Created</dt>
+          <dd>{formatDateTime(document.created_at)}</dd>
         </div>
         <div>
           <dt>Revision</dt>
@@ -359,4 +453,11 @@ function DocumentPreview({
 
 function isConfirmed(document: TaskFlowDocument) {
   return document.confirmed_revision === document.revision || document.confirmation_status === "confirmed";
+}
+
+function documentScopeLabel(document: TaskFlowDocument, flowTitleById: Map<string, string>) {
+  if (document.scope_type === "flow") {
+    return `Проект: ${flowTitleById.get(document.scope_id) || document.scope_id}`;
+  }
+  return `Task: ${document.scope_id}`;
 }

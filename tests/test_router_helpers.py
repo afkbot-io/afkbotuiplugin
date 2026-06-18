@@ -17,6 +17,7 @@ from afkbot_plugin_afkbotui.router import (
     _last_activity_datetime,
     _serialize_graph_preview_trace,
     _serialize_graph_preview_validation,
+    _task_attachment_media_type,
 )
 
 
@@ -362,6 +363,28 @@ def test_task_flow_task_routes_use_description_and_reject_prompt_payload(monkeyp
                 "title": "Route task",
             }
 
+    class DumpableAttachment:
+        def __init__(self, *, name: str = "brief.txt") -> None:
+            self.name = name
+            self.content_type = "text/plain"
+
+        def model_dump(self, *, mode: str) -> dict[str, object]:
+            assert mode == "json"
+            return {
+                "byte_size": 12,
+                "content_type": self.content_type,
+                "created_at": "2026-04-21T10:00:00Z",
+                "created_by_ref": "cli_user:local",
+                "created_by_type": "human",
+                "id": "task-attachment-1",
+                "kind": "text",
+                "name": self.name,
+                "profile_id": "default",
+                "sha256": "abc",
+                "task_id": "task-1",
+                "updated_at": "2026-04-21T10:00:00Z",
+            }
+
     class FakeTaskFlowService:
         async def create_task(self, **kwargs: object) -> DumpableTask:
             observed["create"] = kwargs
@@ -374,6 +397,25 @@ def test_task_flow_task_routes_use_description_and_reject_prompt_payload(monkeyp
             observed["update"] = kwargs
             assert "prompt" not in kwargs
             return DumpableTask()
+
+        async def list_task_attachments(self, **kwargs: object) -> list[DumpableAttachment]:
+            observed["list_attachments"] = kwargs
+            return [DumpableAttachment()]
+
+        async def add_task_attachment(self, **kwargs: object) -> DumpableAttachment:
+            observed.setdefault("added_attachments", []).append(kwargs)
+            return DumpableAttachment(name="requirements.txt")
+
+        async def get_task_attachment_content(self, **kwargs: object) -> SimpleNamespace:
+            observed["download_attachment"] = kwargs
+            return SimpleNamespace(
+                attachment=DumpableAttachment(name='report/"unsafe".txt'),
+                content_bytes=b"attachment body",
+            )
+
+        async def remove_task_attachment(self, **kwargs: object) -> bool:
+            observed["delete_attachment"] = kwargs
+            return True
 
     class FakeRegistry:
         def read_config(self) -> dict[str, object]:
@@ -417,6 +459,7 @@ def test_task_flow_task_routes_use_description_and_reject_prompt_payload(monkeyp
     assert observed["create"]["created_by_ref"] == "cli_user:local"
     assert observed["create"]["owner_ref"] == "default"
     assert observed["create"]["reviewer_ref"] == "default"
+    assert observed["create"]["attachments"] == ()
 
     human_create_response = client.post(
         "/v1/plugins/afkbotui/task-flow/tasks",
@@ -444,6 +487,7 @@ def test_task_flow_task_routes_use_description_and_reject_prompt_payload(monkeyp
     assert observed["update"]["actor_type"] == "human"
     assert observed["update"]["actor_ref"] == "cli_user:local"
     assert observed["update"]["description"] == "Update the route contract."
+    assert observed["update"]["attachments"] == ()
     assert "reviewer_type" not in observed["update"]
 
     prompt_response = client.post(
@@ -494,6 +538,52 @@ def test_task_flow_task_routes_use_description_and_reject_prompt_payload(monkeyp
     assert clear_reviewer_response.status_code == 200
     assert observed["update"]["reviewer_type"] is None
     assert observed["update"]["reviewer_ref"] is None
+
+    attachment_list_response = client.get(
+        "/v1/plugins/afkbotui/task-flow/tasks/task-1/attachments",
+        params={"profile_id": "default"},
+    )
+    assert attachment_list_response.status_code == 200
+    assert attachment_list_response.json()["task_attachments"][0]["name"] == "brief.txt"
+    assert observed["list_attachments"] == {"profile_id": "default", "task_id": "task-1"}
+
+    attachment_add_response = client.post(
+        "/v1/plugins/afkbotui/task-flow/tasks/task-1/attachments",
+        json={
+            "attachments": [
+                {
+                    "content_base64": "UmVxdWlyZW1lbnRz",
+                    "content_type": "text/plain",
+                    "kind": "text",
+                    "name": "requirements.txt",
+                }
+            ]
+        },
+        params={"profile_id": "default"},
+    )
+    assert attachment_add_response.status_code == 200
+    added_attachment = observed["added_attachments"][0]
+    assert added_attachment["actor_type"] == "human"
+    assert added_attachment["actor_ref"] == "cli_user:local"
+    assert added_attachment["task_id"] == "task-1"
+
+    attachment_download_response = client.get(
+        "/v1/plugins/afkbotui/task-flow/tasks/task-1/attachments/task-attachment-1/download",
+        params={"profile_id": "default"},
+    )
+    assert attachment_download_response.status_code == 200
+    assert attachment_download_response.content == b"attachment body"
+    assert attachment_download_response.headers["content-disposition"] == 'attachment; filename="report__unsafe_.txt"'
+    assert attachment_download_response.headers["x-content-type-options"] == "nosniff"
+    assert _task_attachment_media_type("text/plain\r\nx: y") == "application/octet-stream"
+    assert _task_attachment_media_type("text/plain; charset=utf-8") == "text/plain; charset=utf-8"
+
+    attachment_delete_response = client.delete(
+        "/v1/plugins/afkbotui/task-flow/tasks/task-1/attachments/task-attachment-1",
+        params={"profile_id": "default"},
+    )
+    assert attachment_delete_response.status_code == 200
+    assert observed["delete_attachment"]["actor_ref"] == "cli_user:local"
 
 
 def test_task_flow_flow_update_route_forwards_metadata_patch(monkeypatch) -> None:

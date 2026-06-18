@@ -12,7 +12,7 @@ test("mobile shell stays compact and modal controls remain reachable", async ({ 
   await expect(page.getByRole("button", { name: /Prepare rollout checklist/i })).toBeVisible();
 
   await page.getByRole("button", { name: "Flows" }).click();
-  const flowDialog = page.getByRole("dialog", { name: "Flow Library" });
+  const flowDialog = page.getByRole("dialog", { name: "Project Flows" });
   await expect(flowDialog).toBeVisible();
   await expect(flowDialog.getByRole("button", { name: "Close flow manager modal" })).toBeVisible();
 

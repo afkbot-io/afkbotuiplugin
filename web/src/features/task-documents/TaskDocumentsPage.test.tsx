@@ -20,6 +20,9 @@ describe("TaskDocumentsPage", () => {
     const api = {
       confirmTaskFlowDocument: vi.fn(),
       deleteTaskFlowDocument: vi.fn(),
+      listTaskFlows: vi.fn(async () => ({
+        task_flows: [{ id: "flow-1", title: "Mega Chat" }],
+      })),
       listTaskFlowDocumentWorkspace: vi.fn(async () => ({
         task_documents: [
           {
@@ -28,9 +31,10 @@ describe("TaskDocumentsPage", () => {
             document_key: "handoff",
             id: "doc-1",
             revision: 2,
-            scope_id: "task-1",
-            scope_type: "task",
+            scope_id: "flow-1",
+            scope_type: "flow",
             title: "Agent handoff",
+            created_at: "2026-05-27T09:00:00Z",
             updated_at: "2026-05-27T10:00:00Z",
           },
         ],
@@ -73,6 +77,9 @@ describe("TaskDocumentsPage", () => {
     const api = {
       confirmTaskFlowDocument: vi.fn(async () => ({ task_document: { id: "doc-1" } })),
       deleteTaskFlowDocument: vi.fn(),
+      listTaskFlows: vi.fn(async () => ({
+        task_flows: [{ id: "flow-1", title: "Mega Chat" }],
+      })),
       listTaskFlowDocumentWorkspace: vi.fn(async () => ({
         task_documents: [
           {
@@ -82,7 +89,7 @@ describe("TaskDocumentsPage", () => {
             id: "doc-1",
             revision: 3,
             scope_id: "flow-1",
-            scope_type: "task",
+            scope_type: "flow",
             title: "Review notes",
           },
         ],
@@ -116,6 +123,9 @@ describe("TaskDocumentsPage", () => {
     const api = {
       confirmTaskFlowDocument: vi.fn(),
       deleteTaskFlowDocument: vi.fn(async () => ({ deleted: true, task_document: { id: "doc-1" } })),
+      listTaskFlows: vi.fn(async () => ({
+        task_flows: [{ id: "flow-1", title: "Mega Chat" }],
+      })),
       listTaskFlowDocumentWorkspace: vi.fn(async () => ({
         task_documents: [
           {

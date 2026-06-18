@@ -319,7 +319,7 @@ describe("task-flow api helpers", () => {
         }),
       },
       "default",
-      "",
+      "flow-alpha",
       {
         task_flow_actor_ref: "web-user",
         task_flow_actor_type: "human",

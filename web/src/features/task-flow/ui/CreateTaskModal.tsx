@@ -45,10 +45,11 @@ export function CreateTaskModal({
       busy={busy}
       closeLabel="Close create task modal"
       eyebrow="Create Task"
+      description={rootEmployee ? `Task will be routed through ${rootEmployee.summary || rootEmployee.name || "the root employee"}.` : "Create the first root employee before assigning work."}
       onClose={onCancel}
       onSubmit={onSubmit}
       open={open}
-      title="New Backlog Item"
+      title="New Task"
       wide
     >
         {error ? <div className="inline-alert inline-alert--danger">{error}</div> : null}

@@ -1,8 +1,8 @@
 {
   "plugin_id": "afkbotui",
   "name": "AFKBOT UI",
-  "version": "1.0.16",
-  "afkbot_version": ">=1.9.19,<2.0.0",
+  "version": "1.0.17",
+  "afkbot_version": ">=1.9.20,<2.0.0",
   "kind": "embedded",
   "entrypoint": "afkbot_plugin_afkbotui.plugin:register",
   "description": "Unified AFKBOT workspace for automations, Task Flow, and profile-local subagents, skills, and bootstrap files.",

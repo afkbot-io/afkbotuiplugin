@@ -280,7 +280,7 @@ function DocumentList({
         documents.map((document) => {
           const confirmed = document.confirmed_revision === document.revision || document.confirmation_status === "confirmed";
           return (
-            <article className="knowledge-doc" key={document.id}>
+            <article className="knowledge-doc" id={`task-doc-${document.id}`} key={document.id}>
               <div className="knowledge-doc__head">
                 <div>
                   <h5>{document.title || document.document_key}</h5>

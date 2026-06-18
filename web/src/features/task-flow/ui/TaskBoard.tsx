@@ -203,6 +203,7 @@ function TaskCard({
               {label}
             </span>
           ))}
+          {task.attachment_count ? <span className="badge badge--muted">files {task.attachment_count}</span> : null}
           {task.requires_review ? <span className="badge badge--warning">review</span> : null}
           {task.last_comment_created_at ? <span className="badge badge--muted">{formatDateTime(task.last_comment_created_at)}</span> : null}
           {task.due_at ? (

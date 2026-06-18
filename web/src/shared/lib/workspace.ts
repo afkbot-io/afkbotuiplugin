@@ -57,6 +57,13 @@ export function resolveProfileId(
 }
 
 export function normalizeError(error: unknown) {
+  const apiError = error as { code?: string; message?: string } | null | undefined;
+  if (apiError?.code === "ui_auth_required") {
+    return "Your AFKBOT UI session expired. Sign in again, then retry the action.";
+  }
+  if (apiError?.code === "ui_auth_not_configured") {
+    return "AFKBOT UI auth is required but is not configured. Run `afk auth setup` on the server, then sign in.";
+  }
   return error instanceof Error && error.message ? error.message : "Unexpected error.";
 }
 
