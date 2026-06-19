@@ -2,7 +2,7 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, and profile-local text libraries.
 
-Current release: `1.0.18`
+Current release: `1.0.19`
 
 ## Overview
 
@@ -18,7 +18,7 @@ Current frontend/runtime contract:
 
 The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*` or `web/dist/assets/features/*` payloads.
 
-## What Is In 1.0.18
+## What Is In 1.0.19
 
 - single-shell workspace with `Automations`, `Task Flow`, `Docs`, `Subagents`, `Skills`, and `Bootstrap`
 - React-native route surfaces for every section, with shared loaders, dialogs, async buttons, and responsive layout primitives
@@ -32,6 +32,7 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 - Task Flow includes CTO Review for manually starting the autonomous project-knowledge maintenance sweep and showing checked/created/woken flow results
 - Task Flow employees are profile-local workforce descriptors; profile is the organization boundary, flow is the project, and owner/reviewer/actor controls use canonical `employee` principals
 - Task Flow employee settings and org chart views show managers, direct reports, delegation scope, and runtime-safe owner choices without treating CLI subagents as Task Flow owners
+- Task Flow manager/root employees are expected to run intake/delegation work: they route focused child tasks, wait for evidence, and do not personally complete specialist execution
 - Employees is a first-class workspace route with a full-width React Flow org chart, tree/compact layout controls, click-through employee details, create/edit/delete modals, drag-from-node creation, delegation, tool policy, and org validation details
 - Docs workspace for profile-wide Task Flow document search, scope/status filtering, preview, revision metadata, confirmation, and deletion
 - Task cards show human-readable flow title badges instead of raw flow ids
@@ -86,8 +87,8 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 
 ## Requirements
 
-- AFKBOT UI `1.0.18`
-- AFKBOT `>=1.9.21,<2.0.0`
+- AFKBOT UI `1.0.19`
+- AFKBOT `>=1.9.23,<2.0.0`
 - current AFKBOT `1.x` auth/chat runtime surface, including:
   - `/v1/auth/session`
   - `/v1/auth/logout`

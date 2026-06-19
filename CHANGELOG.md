@@ -2,6 +2,14 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.19 - 2026-06-19
+
+- require AFKBOT `1.9.23+` for manager-intake delegation guards, coordinator
+  tool policy, and manager/leaf employee role prompts
+- keep the UI docs aligned with the employee-only Task Flow workflow where CTO
+  and leads delegate child tasks instead of personally executing specialist work
+- sync release metadata to version `1.0.19`
+
 ## 1.0.18 - 2026-06-18
 
 - require AFKBOT `1.9.21+` so prompt-mode cron/webhook automations can create
