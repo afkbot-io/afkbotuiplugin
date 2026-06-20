@@ -28,6 +28,10 @@ const LazyAutomationsRoute = lazy(async () => ({
   default: (await import("@/features/automations/AutomationsPage")).AutomationsPage,
 }));
 
+const LazyChatRoute = lazy(async () => ({
+  default: (await import("@/features/chat/ChatPage")).ChatPage,
+}));
+
 const LazyTaskFlowRoute = lazy(async () => ({
   default: (await import("@/features/task-flow/TaskFlowPage")).TaskFlowPage,
 }));
@@ -54,14 +58,19 @@ const LazyBootstrapPage = lazy(async () => ({
 
 export const routeConfigs: RouteConfig[] = [
   {
-    component: LazyAutomationsRoute,
-    id: "automations",
-    label: routeLabel("automations"),
+    component: LazyChatRoute,
+    id: "chat",
+    label: routeLabel("chat"),
   },
   {
     component: LazyTaskFlowRoute,
     id: "task-flow",
     label: routeLabel("task-flow"),
+  },
+  {
+    component: LazyAutomationsRoute,
+    id: "automations",
+    label: routeLabel("automations"),
   },
   {
     component: LazyTaskDocumentsRoute,

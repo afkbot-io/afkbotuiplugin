@@ -171,6 +171,39 @@ export class ApiClient {
     return this.request<ProfilesResponse>("/profiles");
   }
 
+  async getChatHistory(profileId: string, sessionId: string, params: Record<string, unknown> = {}) {
+    return this.request<Record<string, unknown>>("/chat/history", {
+      params: { profile_id: profileId, session_id: sessionId, ...params },
+    });
+  }
+
+  async getChatProgress(profileId: string, sessionId: string, params: Record<string, unknown> = {}) {
+    return this.request<Record<string, unknown>>("/chat/progress", {
+      params: { profile_id: profileId, session_id: sessionId, ...params },
+    });
+  }
+
+  async sendChatTurn(payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>("/chat/turn", {
+      body: payload,
+      method: "POST",
+    });
+  }
+
+  async answerChatQuestion(payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>("/chat/answer", {
+      body: payload,
+      method: "POST",
+    });
+  }
+
+  async submitChatSecureField(payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>("/chat/secure-field", {
+      body: payload,
+      method: "POST",
+    });
+  }
+
   async listAutomations(params: Record<string, unknown>) {
     return this.request<Record<string, unknown>>("/automations", { params });
   }

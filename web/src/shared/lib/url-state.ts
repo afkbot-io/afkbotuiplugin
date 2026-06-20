@@ -1,12 +1,12 @@
-export const ROUTES = ["automations", "task-flow", "docs", "employees", "subagents", "skills", "bootstrap"] as const;
+export const ROUTES = ["chat", "task-flow", "automations", "docs", "employees", "subagents", "skills", "bootstrap"] as const;
 
 export type RouteId = (typeof ROUTES)[number];
 
 export function normalizeRoute(route: string | null | undefined): RouteId {
   if (!route) {
-    return "automations";
+    return "chat";
   }
-  return ROUTES.includes(route as RouteId) ? (route as RouteId) : "automations";
+  return ROUTES.includes(route as RouteId) ? (route as RouteId) : "chat";
 }
 
 export function readUrlState() {

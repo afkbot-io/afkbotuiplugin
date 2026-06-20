@@ -1,4 +1,5 @@
 import http from "node:http";
+import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,6 +37,37 @@ let automations = [
   },
 ];
 const automationWebhookEndpoints = new Map();
+let nextChatTurnId = 2;
+const chatTurns = new Map([
+  [
+    "default:ui-default",
+    [
+      {
+        id: 1,
+        profile_id: "default",
+        session_id: "ui-default",
+        user_message: "Проверь рабочее пространство.",
+        assistant_message: "Рабочее пространство готово. Можно запускать задачи, Task Flow и автоматизации.",
+      },
+    ],
+  ],
+]);
+
+function getChatTurns(profileId, sessionId) {
+  const key = `${profileId}:${sessionId}`;
+  if (!chatTurns.has(key)) {
+    chatTurns.set(key, [
+      {
+        id: nextChatTurnId++,
+        profile_id: profileId,
+        session_id: sessionId,
+        user_message: "Проверь рабочее пространство.",
+        assistant_message: "Рабочее пространство готово. Можно запускать задачи, Task Flow и автоматизации.",
+      },
+    ]);
+  }
+  return chatTurns.get(key) || [];
+}
 
 let taskFlows = [
   {
@@ -373,6 +405,41 @@ function matchApiRoute(pathname, requestUrl = "/") {
     };
   }
 
+  if (pathname === "/v1/plugins/afkbotui/chat/history") {
+    const profileId = requestUrlObject.searchParams.get("profile_id") || "default";
+    const sessionId = requestUrlObject.searchParams.get("session_id") || `ui-${profileId}`;
+    const turns = getChatTurns(profileId, sessionId);
+    return {
+      profile_id: profileId,
+      session_id: sessionId,
+      turns,
+    };
+  }
+
+  if (pathname === "/v1/plugins/afkbotui/chat/progress") {
+    const runId = Number(requestUrlObject.searchParams.get("run_id") || 0) || null;
+    return {
+      cursor: {
+        last_event_id: runId ? 1 : 0,
+        run_id: runId,
+      },
+      events: runId
+        ? [
+            {
+              event_id: 1,
+              event_type: "turn.finalized",
+              stage: "done",
+              tool_name: "agent-loop",
+              created_at: "2026-04-21T12:20:00.000Z",
+              payload: {
+                summary: "Mock agent response finished.",
+              },
+            },
+          ]
+        : [],
+    };
+  }
+
   if (pathname === "/v1/plugins/afkbotui/automations") {
     return {
       automations: automations.map(maskAutomationWebhook),
@@ -505,6 +572,27 @@ function matchApiRoute(pathname, requestUrl = "/") {
     const scopeId = requestUrlObject.searchParams.get("scope_id") || "";
     return {
       task_documents: taskDocuments[`${scopeType}:${scopeId}`] || [],
+    };
+  }
+
+  if (pathname === "/v1/plugins/afkbotui/task-flow/documents") {
+    const query = String(requestUrlObject.searchParams.get("query") || "").trim().toLowerCase();
+    const scopeType = String(requestUrlObject.searchParams.get("scope_type") || "");
+    const confirmationStatus = String(requestUrlObject.searchParams.get("confirmation_status") || "");
+    const documents = Object.values(taskDocuments)
+      .flat()
+      .filter((document) => !scopeType || document.scope_type === scopeType)
+      .filter((document) => !confirmationStatus || document.confirmation_status === confirmationStatus)
+      .filter((document) => {
+        if (!query) {
+          return true;
+        }
+        return [document.title, document.document_key, document.scope_id, document.body].some((value) =>
+          String(value || "").toLowerCase().includes(query),
+        );
+      });
+    return {
+      task_documents: documents,
     };
   }
 
@@ -669,6 +757,32 @@ function maskAutomationWebhook(automation) {
 
 async function handleMutation(request, response, pathname) {
   const method = (request.method || "GET").toUpperCase();
+
+  if (pathname === "/v1/plugins/afkbotui/chat/turn" && method === "POST") {
+    const payload = await readJsonBody(request);
+    const profileId = String(payload?.profile_id || "default");
+    const sessionId = String(payload?.session_id || `ui-${profileId}`);
+    const message = String(payload?.message || "");
+    const turn = {
+      id: nextChatTurnId++,
+      profile_id: profileId,
+      session_id: sessionId,
+      user_message: message,
+      assistant_message: `Mock AFKBOT received: ${message}`,
+    };
+    const key = `${profileId}:${sessionId}`;
+    chatTurns.set(key, [...getChatTurns(profileId, sessionId), turn]);
+    sendJson(response, 200, {
+      envelope: {
+        action: "finalize",
+        message: turn.assistant_message,
+      },
+      profile_id: profileId,
+      run_id: 101,
+      session_id: sessionId,
+    });
+    return true;
+  }
 
   if (pathname === "/v1/plugins/afkbotui/automations" && method === "POST") {
     const payload = await readJsonBody(request);
@@ -943,6 +1057,71 @@ const server = http.createServer(async (request, response) => {
     });
   }
 });
+
+server.on("upgrade", (request, socket) => {
+  const pathname = normalizePathname(request.url || "/");
+  if (pathname !== "/v1/plugins/afkbotui/chat/progress/ws") {
+    socket.destroy();
+    return;
+  }
+  const key = request.headers["sec-websocket-key"];
+  if (typeof key !== "string") {
+    socket.destroy();
+    return;
+  }
+  const accept = crypto
+    .createHash("sha1")
+    .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+    .digest("base64");
+  socket.write(
+    [
+      "HTTP/1.1 101 Switching Protocols",
+      "Upgrade: websocket",
+      "Connection: Upgrade",
+      `Sec-WebSocket-Accept: ${accept}`,
+      "",
+      "",
+    ].join("\r\n"),
+  );
+
+  const sendProgress = () => {
+    const requestUrlObject = new URL(request.url || "/", "http://127.0.0.1");
+    const runId = Number(requestUrlObject.searchParams.get("run_id") || 0) || null;
+    socket.write(encodeWebSocketText(JSON.stringify({
+      cursor: {
+        last_event_id: runId ? 1 : 0,
+        run_id: runId,
+      },
+      events: runId
+        ? [
+            {
+              event_id: 1,
+              event_type: "turn.finalized",
+              stage: "done",
+              tool_name: "agent-loop",
+              created_at: "2026-04-21T12:20:00.000Z",
+              payload: {
+                summary: "Mock agent response finished over WebSocket.",
+              },
+            },
+          ]
+        : [],
+    })));
+  };
+  sendProgress();
+  const interval = setInterval(sendProgress, 500);
+  socket.on("close", () => clearInterval(interval));
+  socket.on("error", () => clearInterval(interval));
+});
+
+function encodeWebSocketText(text) {
+  const payload = Buffer.from(text, "utf8");
+  const header =
+    payload.length < 126
+      ? Buffer.from([0x81, payload.length])
+      : Buffer.from([0x81, 126, (payload.length >> 8) & 0xff, payload.length & 0xff]);
+  return Buffer.concat([header, payload]);
+}
 
 server.listen(port, "127.0.0.1", () => {
   process.stdout.write(`Mock AFKBOT UI server listening on http://127.0.0.1:${port}${pluginBase}/\n`);

@@ -15,14 +15,14 @@ test("shell stays compact and within viewport across desktop, mini-laptop, and t
     for (const route of ["automations", "task-flow"] as const) {
       await page.goto(`?tab=${route}&profile=default`);
 
-      const topbar = page.locator(".topbar__shell");
-      await expect(topbar).toBeVisible();
-      const topbarBox = await topbar.boundingBox();
+      const sidebar = page.locator(".workspace-sidebar");
+      await expect(sidebar).toBeVisible();
+      const sidebarBox = await sidebar.boundingBox();
 
-      expect(topbarBox?.y ?? 999).toBeLessThanOrEqual(18);
-      expect((topbarBox?.x ?? 999)).toBeGreaterThanOrEqual(0);
-      expect((topbarBox?.x ?? 0) + (topbarBox?.width ?? 0)).toBeLessThanOrEqual(viewport.width);
-      expect(topbarBox?.height ?? 999).toBeLessThanOrEqual(viewport.width <= 1024 ? 152 : 86);
+      expect(sidebarBox?.x ?? 999).toBeGreaterThanOrEqual(0);
+      expect(sidebarBox?.y ?? 999).toBeLessThanOrEqual(1);
+      expect(sidebarBox?.height ?? 0).toBeLessThanOrEqual(viewport.height);
+      expect(sidebarBox?.width ?? 0).toBeLessThanOrEqual(300);
 
       const overflow = await page.evaluate(() => {
         const width = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);

@@ -7,7 +7,7 @@ from datetime import datetime
 from functools import lru_cache
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import func, select
 
@@ -17,12 +17,22 @@ from afkbot.db.engine import create_engine
 from afkbot.db.session import create_session_factory, session_scope
 from afkbot.models.task_event import TaskEvent
 from afkbot.repositories.chat_turn_repo import ChatTurnRepository
-from afkbot.services.agent_loop.api_runtime import get_api_session_factory, poll_chat_progress
+from afkbot.services.agent_loop.api_runtime import (
+    get_api_session_factory,
+    poll_chat_progress,
+    resolve_pending_question_envelope,
+    resume_chat_after_secure_submit,
+    resume_chat_interaction,
+    run_chat_turn,
+)
 from afkbot.services.agent_loop.api_runtime_support import dispose_owned_engine, resolve_session_resources
 from afkbot.services.agent_loop.progress_stream import ProgressCursor
+from afkbot.services.agent_loop.turn_context import TurnContextOverrides
+from afkbot.services.agent_loop.turn_runtime import submit_secure_field
 from afkbot.services.automations import AutomationsServiceError, get_automations_service
 from afkbot.services.automations.contracts import AutomationMetadata
 from afkbot.services.employees import EmployeeService, EmployeeServiceError
+from afkbot.services.llm.reasoning import normalize_thinking_level
 from afkbot.services.plugins.contracts import PluginServiceError
 from afkbot.services.plugins.runtime_registry import PluginRuntimeRegistry
 from afkbot.services.policy import ProfileFilesLockedError
@@ -69,6 +79,47 @@ class UiPluginConfigEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     config: UiPluginConfigPatchPayload
+
+
+class ChatTurnPayload(BaseModel):
+    """Request body for one native AFKBOT UI agent chat turn."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    message: str = Field(min_length=1, max_length=12000)
+    profile_id: str | None = Field(default=None, min_length=1, max_length=120)
+    session_id: str | None = Field(default=None, min_length=1, max_length=64)
+    client_msg_id: str | None = Field(default=None, min_length=1, max_length=128)
+    plan_only: bool = False
+    planning_mode: Literal["off", "auto", "on"] | None = None
+    thinking_level: str | None = Field(default=None, min_length=1, max_length=32)
+
+
+class ChatAnswerPayload(BaseModel):
+    """Request body for resuming one pending chat question."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    profile_id: str | None = Field(default=None, min_length=1, max_length=120)
+    session_id: str | None = Field(default=None, min_length=1, max_length=64)
+    question_id: str = Field(min_length=1, max_length=128)
+    approved: bool | None = None
+    answer: str | None = Field(default=None, min_length=1, max_length=12000)
+    client_msg_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class ChatSecureFieldPayload(BaseModel):
+    """Request body for secure credential value submission from the native chat UI."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    profile_id: str | None = Field(default=None, min_length=1, max_length=120)
+    session_id: str | None = Field(default=None, min_length=1, max_length=64)
+    question_id: str = Field(min_length=1, max_length=128)
+    secure_field: str = Field(min_length=1, max_length=128)
+    secret_value: str = Field(min_length=1, max_length=4096)
+    resume_after_submit: bool = False
+    client_msg_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class TaskFlowEmployeeCreatePayload(BaseModel):
@@ -395,6 +446,198 @@ def build_router(*, api_prefix: str, registry: PluginRuntimeRegistry) -> APIRout
         except ProfileServiceError as exc:
             raise _profile_http_error(exc) from exc
         return {"profiles": [item.model_dump(mode="json") for item in payload]}
+
+    @router.get("/chat/history")
+    async def chat_history(
+        profile_id: str = "default",
+        session_id: str | None = None,
+        limit: int = 60,
+        after_turn_id: int = 0,
+    ) -> dict[str, object]:
+        """Return persisted chat turns for the native embedded AFKBOT UI chat."""
+
+        resolved_profile_id = _normalize_chat_profile_id(profile_id)
+        resolved_session_id = _normalize_chat_session_id(
+            profile_id=resolved_profile_id,
+            session_id=session_id,
+        )
+        normalized_limit = max(1, min(int(limit or 60), 120))
+        resources = await resolve_session_resources(
+            shared_session_factory=get_api_session_factory(),
+            settings=get_settings(),
+        )
+        try:
+            async with session_scope(resources.session_factory) as db:
+                turns = await ChatTurnRepository(db).list_recent(
+                    profile_id=resolved_profile_id,
+                    session_id=resolved_session_id,
+                    limit=normalized_limit,
+                    min_turn_id_exclusive=max(0, int(after_turn_id or 0)),
+                )
+        finally:
+            await dispose_owned_engine(resources)
+        return {
+            "profile_id": resolved_profile_id,
+            "session_id": resolved_session_id,
+            "turns": [
+                {
+                    "id": item.id,
+                    "session_id": item.session_id,
+                    "profile_id": item.profile_id,
+                    "user_message": item.user_message,
+                    "assistant_message": item.assistant_message,
+                }
+                for item in turns
+            ],
+        }
+
+    @router.get("/chat/progress")
+    async def chat_progress(
+        profile_id: str = "default",
+        session_id: str | None = None,
+        run_id: int | None = None,
+        after_event_id: int = 0,
+        limit: int = 50,
+    ) -> dict[str, object]:
+        """Return recent runtime progress for the native embedded AFKBOT UI chat."""
+
+        resolved_profile_id = _normalize_chat_profile_id(profile_id)
+        resolved_session_id = _normalize_chat_session_id(
+            profile_id=resolved_profile_id,
+            session_id=session_id,
+        )
+        progress = await poll_chat_progress(
+            profile_id=resolved_profile_id,
+            session_id=resolved_session_id,
+            cursor=ProgressCursor(run_id=run_id, last_event_id=max(0, int(after_event_id or 0))),
+        )
+        normalized_limit = max(1, min(int(limit or 50), 120))
+        return {
+            "profile_id": resolved_profile_id,
+            "session_id": resolved_session_id,
+            "events": [item.model_dump(mode="json") for item in progress.events[-normalized_limit:]],
+            "cursor": progress.cursor.model_dump(mode="json"),
+        }
+
+    @router.websocket("/chat/progress/ws")
+    async def chat_progress_ws(
+        websocket: WebSocket,
+        profile_id: str = "default",
+        session_id: str | None = None,
+        run_id: int | None = None,
+        after_event_id: int = 0,
+        poll_interval_ms: int = 250,
+    ) -> None:
+        """Stream native embedded AFKBOT UI chat progress without exposing chat bearer tokens."""
+
+        resolved_profile_id = _normalize_chat_profile_id(profile_id)
+        resolved_session_id = _normalize_chat_session_id(
+            profile_id=resolved_profile_id,
+            session_id=session_id,
+        )
+        cursor = ProgressCursor(run_id=run_id, last_event_id=max(0, int(after_event_id or 0)))
+        poll_interval_sec = max(0.05, min(float(poll_interval_ms or 250) / 1000, 5.0))
+        await websocket.accept()
+        try:
+            while True:
+                progress = await poll_chat_progress(
+                    profile_id=resolved_profile_id,
+                    session_id=resolved_session_id,
+                    cursor=cursor,
+                )
+                cursor = progress.cursor
+                await websocket.send_json(progress.model_dump(mode="json"))
+                await asyncio.sleep(poll_interval_sec)
+        except WebSocketDisconnect:
+            return
+
+    @router.post("/chat/turn")
+    async def chat_turn(payload: ChatTurnPayload) -> dict[str, object]:
+        """Run one native embedded AFKBOT UI chat turn through the canonical runtime."""
+
+        resolved_profile_id = _normalize_chat_profile_id(payload.profile_id)
+        resolved_session_id = _normalize_chat_session_id(
+            profile_id=resolved_profile_id,
+            session_id=payload.session_id,
+        )
+        try:
+            thinking_level = normalize_thinking_level(payload.thinking_level)
+        except ValueError as exc:
+            raise _chat_http_error(str(exc)) from exc
+        result = await run_chat_turn(
+            message=payload.message,
+            profile_id=resolved_profile_id,
+            session_id=resolved_session_id,
+            client_msg_id=payload.client_msg_id,
+            context_overrides=_chat_turn_overrides(
+                plan_only=payload.plan_only,
+                planning_mode=payload.planning_mode,
+                thinking_level=thinking_level,
+            ),
+        )
+        return result.model_dump(mode="json")
+
+    @router.post("/chat/answer")
+    async def chat_answer(payload: ChatAnswerPayload) -> dict[str, object]:
+        """Resume a pending ask-question interaction from the native AFKBOT UI chat."""
+
+        resolved_profile_id = _normalize_chat_profile_id(payload.profile_id)
+        resolved_session_id = _normalize_chat_session_id(
+            profile_id=resolved_profile_id,
+            session_id=payload.session_id,
+        )
+        envelope = await resolve_pending_question_envelope(
+            profile_id=resolved_profile_id,
+            session_id=resolved_session_id,
+            question_id=payload.question_id,
+            action="ask_question",
+        )
+        if envelope is None:
+            raise _chat_http_error("Pending question not found for provided question_id")
+        result = await resume_chat_interaction(
+            envelope=envelope,
+            profile_id=resolved_profile_id,
+            session_id=resolved_session_id,
+            approved=payload.approved,
+            answer_text=payload.answer,
+            client_msg_id=payload.client_msg_id,
+        )
+        return result.model_dump(mode="json")
+
+    @router.post("/chat/secure-field")
+    async def chat_secure_field(payload: ChatSecureFieldPayload) -> dict[str, object]:
+        """Submit one secure field requested by the native AFKBOT UI chat."""
+
+        resolved_profile_id = _normalize_chat_profile_id(payload.profile_id)
+        resolved_session_id = _normalize_chat_session_id(
+            profile_id=resolved_profile_id,
+            session_id=payload.session_id,
+        )
+        envelope = await resolve_pending_question_envelope(
+            profile_id=resolved_profile_id,
+            session_id=resolved_session_id,
+            question_id=payload.question_id,
+            action="request_secure_field",
+            secure_field=payload.secure_field,
+        )
+        if envelope is None:
+            return {"ok": False, "error_code": "pending_secure_request_not_found", "next_turn": None}
+        ok, code = await submit_secure_field(
+            profile_id=resolved_profile_id,
+            envelope=envelope,
+            secret_value=payload.secret_value,
+            session_id=resolved_session_id,
+        )
+        next_turn = None
+        if ok and payload.resume_after_submit:
+            result = await resume_chat_after_secure_submit(
+                envelope=envelope,
+                profile_id=resolved_profile_id,
+                session_id=resolved_session_id,
+                client_msg_id=payload.client_msg_id,
+            )
+            next_turn = result.model_dump(mode="json")
+        return {"ok": ok, "error_code": code, "next_turn": next_turn}
 
     @router.get("/automations")
     async def list_automations(
@@ -2245,6 +2488,46 @@ def _resolve_task_flow_actor_identity(
         value=actor_ref_value,
     )
     return resolved_actor_type, resolved_actor_ref
+
+
+def _normalize_chat_profile_id(value: object) -> str:
+    normalized = str(value or "").strip()
+    return normalized or "default"
+
+
+def _normalize_chat_session_id(*, profile_id: str, session_id: object) -> str:
+    normalized = str(session_id or "").strip()
+    if normalized:
+        return normalized[:64]
+    safe_profile = "".join(
+        char.lower() if char.isalnum() else "-"
+        for char in str(profile_id or "default").strip()
+    ).strip("-")
+    safe_profile = safe_profile or "default"
+    return f"ui-{safe_profile}"[:64]
+
+
+def _chat_turn_overrides(
+    *,
+    plan_only: bool,
+    planning_mode: Literal["off", "auto", "on"] | None,
+    thinking_level: object,
+) -> TurnContextOverrides:
+    return TurnContextOverrides(
+        planning_mode="plan_only" if plan_only else "off",
+        execution_planning_mode="off" if plan_only else planning_mode,
+        thinking_level=thinking_level,
+    )
+
+
+def _chat_http_error(reason: str) -> HTTPException:
+    return HTTPException(
+        status_code=400,
+        detail={
+            "error_code": "chat_request_invalid",
+            "reason": reason,
+        },
+    )
 
 
 def _automation_http_error(exc: AutomationsServiceError) -> HTTPException:

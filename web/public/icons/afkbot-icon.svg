@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="AFKBOT">
+  <rect width="512" height="512" rx="108" fill="#06070b"/>
+  <path d="M88 96h336v320H88z" fill="#0f1119" stroke="rgba(255,255,255,.16)" stroke-width="10"/>
+  <path d="M137 348 230 164h52l93 184h-57l-15-34H209l-15 34h-57Zm92-80h55l-28-64-27 64Z" fill="#e9edf5"/>
+  <path d="M88 96h336v72H88z" fill="#2a7cff" opacity=".32"/>
+  <path d="M112 122h40M360 122h40" stroke="#ff6a1a" stroke-width="18" stroke-linecap="round"/>
+</svg>

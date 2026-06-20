@@ -67,15 +67,6 @@ export function TaskBoard({
 
   return (
     <div className="board-viewport" onMouseDown={onBoardMouseDown} ref={boardRef}>
-      {board.columns.length > 4 ? (
-        <>
-          <div aria-hidden="true" className="board-viewport__edge board-viewport__edge--left" />
-          <div aria-hidden="true" className="board-viewport__edge board-viewport__edge--right" />
-          <div className="board-viewport__hint" role="note">
-            Drag or scroll to see all columns
-          </div>
-        </>
-      ) : null}
       <div className="board-grid">
         {board.columns.map((column) => (
           <section

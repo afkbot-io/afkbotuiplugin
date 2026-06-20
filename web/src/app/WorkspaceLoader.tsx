@@ -48,12 +48,8 @@ export function WorkspaceLoader() {
             </div>
           </div>
           <div className="workspace-loader__boot-lines">
-            {BOOT_LINES.map((line, index) => (
-              <div
-                className="workspace-loader__boot-line"
-                key={line}
-                style={{ animationDelay: `${index * 120}ms` }}
-              >
+            {BOOT_LINES.map((line) => (
+              <div className="workspace-loader__boot-line" key={line}>
                 <span className="workspace-loader__boot-dot" />
                 <span className="workspace-loader__boot-text">{line}</span>
                 <span className="workspace-loader__boot-spinner" />

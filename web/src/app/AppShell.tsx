@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent, type React
 
 import { routeConfigs } from "@/app/routes";
 import { WorkspaceLoader } from "@/app/WorkspaceLoader";
+import { RouteIcon } from "@/shared/ui/RouteIcon";
 
 type Profile = {
   id?: string | null;
@@ -46,6 +47,7 @@ export function AppShell({
 }: AppShellProps) {
   const shellRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<number | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const setAmbientPosition = useCallback((clientX: number, clientY: number) => {
@@ -93,6 +95,10 @@ export function AppShell({
   }, [route]);
 
   useEffect(() => {
+    writeSidebarCollapsed(sidebarCollapsed);
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
     if (!mobileMenuOpen) {
       return;
     }
@@ -119,8 +125,59 @@ export function AppShell({
     [selectedProfileId],
   );
 
+  const activeRoute = routeConfigs.find((item) => item.id === route);
+  const navItems = routeConfigs.map((item) => {
+    const active = item.id === route;
+    return (
+      <a
+        key={item.id}
+        aria-current={active ? "page" : undefined}
+        className={`workspace-sidebar__link${active ? " workspace-sidebar__link--active" : ""}`}
+        data-route-link={item.id}
+        href={buildRouteHref(item.id)}
+        title={sidebarCollapsed ? item.label : undefined}
+        onClick={(event) => {
+          event.preventDefault();
+          onRouteChange(item.id);
+        }}
+      >
+        <span className="workspace-sidebar__link-icon" aria-hidden="true">
+          <RouteIcon routeId={item.id} />
+        </span>
+        <span className="workspace-sidebar__link-label">{item.label}</span>
+      </a>
+    );
+  });
+
+  const mobileNavItems = routeConfigs.map((item) => {
+    const active = item.id === route;
+    return (
+      <a
+        key={item.id}
+        aria-current={active ? "page" : undefined}
+        className={`workspace-mobile-nav__link${active ? " workspace-mobile-nav__link--active" : ""}`}
+        href={buildRouteHref(item.id)}
+        onClick={(event) => {
+          event.preventDefault();
+          setMobileMenuOpen(false);
+          onRouteChange(item.id);
+        }}
+      >
+        <span aria-hidden="true">
+          <RouteIcon routeId={item.id} />
+        </span>
+        {item.label}
+      </a>
+    );
+  });
+
   return (
-    <div className="unified-shell" onPointerLeave={handlePointerLeave} onPointerMove={handlePointerMove} ref={shellRef}>
+    <div
+      className={`unified-shell unified-shell--sidebar${sidebarCollapsed ? " unified-shell--sidebar-collapsed" : ""}`}
+      onPointerLeave={handlePointerLeave}
+      onPointerMove={handlePointerMove}
+      ref={shellRef}
+    >
       <div aria-hidden="true" className="workspace-ambient">
         <span className="workspace-ambient__glow workspace-ambient__glow--pointer" />
         <span className="workspace-ambient__glow workspace-ambient__glow--orange" />
@@ -132,73 +189,65 @@ export function AppShell({
       <a className="skip-link" href="#workspace-main">
         Skip to Content
       </a>
-      <header className="topbar">
-        <div className="topbar__shell">
-          <div className="topbar__brand" translate="no">
-            <span className="topbar__brand-lockup">
-              <span className="topbar__bracket">[</span>
-              <span className="topbar__brand-text">AFKBOT</span>
-              <span className="topbar__bracket">]</span>
+      <aside className="workspace-sidebar" aria-label="Workspace navigation">
+        <div className="workspace-sidebar__brand-row">
+          <div className="workspace-sidebar__brand" translate="no">
+            <span className="workspace-sidebar__brand-mark">A</span>
+            <span className="workspace-sidebar__brand-copy">
+              <span>AFKBOT</span>
+              <strong>Agent UI</strong>
             </span>
-            <span className="topbar__badge">BETA</span>
           </div>
-          <nav className="topbar__tabs" aria-label="Workspace sections">
-            {routeConfigs.map((item) => {
-              const active = item.id === route;
-              return (
-                <a
-                  key={item.id}
-                  aria-current={active ? "page" : undefined}
-                  className={`tab-button${active ? " tab-button--active" : ""}`}
-                  data-route-link={item.id}
-                  href={buildRouteHref(item.id)}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    onRouteChange(item.id);
-                  }}
-                >
-                  {item.label}
-                </a>
-              );
-            })}
-          </nav>
-          <div className="topbar__controls">
-            <div className="topbar__selectors">
-              <label className="topbar__field">
-                <span className="topbar__label">Profile</span>
-                <select
-                  aria-label="Select profile"
-                  className="select topbar__select"
-                  disabled={profileDisabled}
-                  id="workspace-profile-switch"
-                  onChange={(event) => onProfileChange(event.target.value)}
-                  value={selectedProfileId}
-                >
-                  {profiles.map((profile) => (
-                    <option key={profile.id || ""} value={profile.id || ""}>
-                      {profile.title || profile.id || "Untitled"}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="topbar__session" hidden={!authConfigured} id="workspace-auth">
-              <div className="topbar__session-copy">
-                <span className="topbar__label">Access</span>
-                <span className="topbar__session-status" id="workspace-auth-status">
-                  {authLabel}
-                </span>
-              </div>
-              <button className="button button--ghost button--compact" onClick={onLogout} type="button">
-                Sign out
-              </button>
-            </div>
+          <button
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="workspace-sidebar__collapse"
+            onClick={() => setSidebarCollapsed((current) => !current)}
+            type="button"
+          >
+            {sidebarCollapsed ? ">" : "<"}
+          </button>
+        </div>
+
+        <label className="workspace-sidebar__profile">
+          <span className="workspace-sidebar__eyebrow">Profile</span>
+          <select
+            aria-label="Select profile"
+            className="select workspace-sidebar__select"
+            disabled={profileDisabled}
+            id="workspace-profile-switch"
+            onChange={(event) => onProfileChange(event.target.value)}
+            value={selectedProfileId}
+          >
+            {profiles.map((profile) => (
+              <option key={profile.id || ""} value={profile.id || ""}>
+                {profile.title || profile.id || "Untitled"}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <nav className="workspace-sidebar__nav" aria-label="Workspace sections">
+          {navItems}
+        </nav>
+
+        <div className="workspace-sidebar__footer">
+          <div className="workspace-sidebar__auth" hidden={!authConfigured} id="workspace-auth">
+            <span className="workspace-sidebar__eyebrow">Access</span>
+            <span className="workspace-sidebar__auth-label" id="workspace-auth-status">{authLabel}</span>
+            <button className="button button--ghost button--compact" onClick={onLogout} type="button">
+              Sign out
+            </button>
           </div>
+        </div>
+      </aside>
+
+      <section className="workspace-frame">
+        <header className="workspace-mobile-bar">
           <button
             aria-controls="workspace-mobile-nav"
             aria-expanded={mobileMenuOpen}
             aria-label={mobileMenuOpen ? "Close workspace navigation" : "Open workspace navigation"}
-            className={`topbar__menu-button${mobileMenuOpen ? " topbar__menu-button--open" : ""}`}
+            className="workspace-mobile-bar__menu"
             onClick={() => setMobileMenuOpen((current) => !current)}
             type="button"
           >
@@ -206,46 +255,52 @@ export function AppShell({
             <span />
             <span />
           </button>
-        </div>
+          <div className="workspace-mobile-bar__title">
+            <span>AFKBOT</span>
+            <strong>{activeRoute?.label || "Workspace"}</strong>
+          </div>
+        </header>
+
         <div
           aria-hidden={!mobileMenuOpen}
-          className={`topbar__mobile-sheet${mobileMenuOpen ? " topbar__mobile-sheet--open" : ""}`}
+          className={`workspace-mobile-nav${mobileMenuOpen ? " workspace-mobile-nav--open" : ""}`}
           id="workspace-mobile-nav"
         >
           <button
-            aria-label="Close mobile navigation"
-            className="topbar__mobile-backdrop"
+            aria-label="Dismiss mobile navigation"
+            className="workspace-mobile-nav__backdrop"
             onClick={() => setMobileMenuOpen(false)}
             tabIndex={mobileMenuOpen ? 0 : -1}
             type="button"
           />
-          <div aria-label="Workspace navigation" className="topbar__mobile-panel" role="dialog">
-            <nav className="topbar__mobile-nav">
-              {routeConfigs.map((item) => {
-                const active = item.id === route;
-                return (
-                  <a
-                    key={item.id}
-                    aria-current={active ? "page" : undefined}
-                    className={`topbar__mobile-link${active ? " topbar__mobile-link--active" : ""}`}
-                    href={buildRouteHref(item.id)}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      setMobileMenuOpen(false);
-                      onRouteChange(item.id);
-                    }}
-                  >
-                    {item.label}
-                  </a>
-                );
-              })}
-            </nav>
+          <div aria-label="Workspace navigation" className="workspace-mobile-nav__panel" role="dialog">
+            <div className="workspace-mobile-nav__head">
+              <strong>AFKBOT</strong>
+              <button className="icon-button" aria-label="Close mobile navigation" onClick={() => setMobileMenuOpen(false)} type="button">
+                x
+              </button>
+            </div>
+            <label className="workspace-mobile-nav__profile">
+              <span className="workspace-sidebar__eyebrow">Profile</span>
+              <select
+                aria-label="Select mobile profile"
+                className="select"
+                disabled={profileDisabled}
+                onChange={(event) => onProfileChange(event.target.value)}
+                value={selectedProfileId}
+              >
+                {profiles.map((profile) => (
+                  <option key={profile.id || ""} value={profile.id || ""}>
+                    {profile.title || profile.id || "Untitled"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <nav className="workspace-mobile-nav__links">{mobileNavItems}</nav>
             {authConfigured ? (
-              <div className="topbar__mobile-session">
-                <div className="topbar__mobile-session-copy">
-                  <span className="topbar__label">Access</span>
-                  <span className="topbar__session-status">{authLabel}</span>
-                </div>
+              <div className="workspace-mobile-nav__auth">
+                <span className="workspace-sidebar__eyebrow">Access</span>
+                <span>{authLabel}</span>
                 <button className="button button--ghost button--compact" onClick={onLogout} type="button">
                   Sign out
                 </button>
@@ -253,21 +308,37 @@ export function AppShell({
             ) : null}
           </div>
         </div>
-      </header>
 
-      <main className="workspace-shell" id="workspace-main">
-        <div id="workspace-error">
-          {globalError ? <div className="inline-alert inline-alert--danger">{globalError}</div> : null}
-        </div>
-        <section className="boot-panel glass-panel" hidden={!booting} id="workspace-boot">
-          <WorkspaceLoader />
-        </section>
-        {routeViews}
-      </main>
+        <main className="workspace-shell" id="workspace-main">
+          <div id="workspace-error">
+            {globalError ? <div className="inline-alert inline-alert--danger">{globalError}</div> : null}
+          </div>
+          <section className="boot-panel glass-panel" hidden={!booting} id="workspace-boot">
+            <WorkspaceLoader />
+          </section>
+          {routeViews}
+        </main>
+      </section>
 
       <div aria-live="polite" className="flash-region" id="workspace-flash">
         {flash ? <div className={`flash flash--${flash.kind}`}>{flash.message}</div> : null}
       </div>
     </div>
   );
+}
+
+function readSidebarCollapsed() {
+  try {
+    return window.localStorage.getItem("afkbotui:sidebar-collapsed") === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeSidebarCollapsed(value: boolean) {
+  try {
+    window.localStorage.setItem("afkbotui:sidebar-collapsed", value ? "true" : "false");
+  } catch {
+    // The expanded layout is still usable when storage is unavailable.
+  }
 }

@@ -62,6 +62,8 @@ export function normalizeError(error: unknown) {
 
 export function routeLabel(route: RouteId) {
   switch (route) {
+    case "chat":
+      return "Chat";
     case "task-flow":
       return "Task Flow";
     case "docs":

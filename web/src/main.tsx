@@ -15,3 +15,10 @@ createRoot(rootNode).render(
     <App />
   </AppProviders>,
 );
+
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    const basePath = __WEB_BASE_PATH__.replace(/\/$/, "");
+    navigator.serviceWorker.register(`${basePath}/service-worker.js`).catch(() => undefined);
+  });
+}

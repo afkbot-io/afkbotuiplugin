@@ -17,7 +17,7 @@ async function openRoute(page: import("@playwright/test").Page, name: string) {
   await desktopLink.click();
 }
 
-test("dist workspace routes render against mock API without runtime failures", async ({ page }) => {
+test("dist workspace routes render against mock API without runtime failures", async ({ page }, testInfo) => {
   const consoleErrors: string[] = [];
   const pageErrors: string[] = [];
   const failedResponses: string[] = [];
@@ -36,8 +36,20 @@ test("dist workspace routes render against mock API without runtime failures", a
     }
   });
 
-  await page.goto("?tab=automations&profile=default");
+  const chatSessionId = `ui-${testInfo.project.name.replace(/[^a-z0-9-]/gi, "-").toLowerCase()}`;
+  await page.addInitScript(
+    ([key, value]) => window.localStorage.setItem(key, value),
+    ["afkbotui:chat-session:default", chatSessionId],
+  );
 
+  await page.goto("?tab=chat&profile=default");
+  await expect(page.getByRole("heading", { name: "Chat" })).toBeVisible();
+  await expect(page.getByText("Рабочее пространство готово.")).toBeVisible();
+  await page.getByLabel("Message AFKBOT").fill("Собери план проверки UI");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByText("Mock AFKBOT received: Собери план проверки UI").last()).toBeVisible();
+
+  await openRoute(page, "Automations");
   await expect(page.getByRole("heading", { name: "Automations" })).toBeVisible();
   await expect(page.getByText("Nightly Sync")).toBeVisible();
   await page.getByRole("button", { name: /Nightly Sync/i }).click();

@@ -5,8 +5,8 @@ test("mobile shell stays compact and modal controls remain reachable", async ({ 
 
   await page.goto("?tab=task-flow&profile=default");
 
-  const topbarBox = await page.locator(".topbar__shell").boundingBox();
-  expect(topbarBox?.height ?? 999).toBeLessThan(240);
+  const mobileBarBox = await page.locator(".workspace-mobile-bar").boundingBox();
+  expect(mobileBarBox?.height ?? 999).toBeLessThan(120);
 
   await expect(page.getByRole("heading", { name: "Task Flow" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Prepare rollout checklist/i })).toBeVisible();

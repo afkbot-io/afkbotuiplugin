@@ -10,6 +10,7 @@ export default defineConfig({
   use: {
     baseURL,
     headless: true,
+    serviceWorkers: "block",
     trace: "on-first-retry",
   },
   projects: [
