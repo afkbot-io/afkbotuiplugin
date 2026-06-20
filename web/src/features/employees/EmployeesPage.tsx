@@ -14,6 +14,21 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useState, type For
 
 import type { AppRouteProps, RouteHandle } from "@/app/routes";
 import {
+  ALL_TOOLS_TOKEN,
+  EMPLOYEE_TOOL_GROUPS,
+  KNOWN_EMPLOYEE_TOOLS,
+  ROOT_CREATE_ID,
+  allKnownEmployeeTools,
+  defaultEmployeeDraft,
+  employeeToDraft,
+  listSubagentOptions,
+  normalizeToolList,
+  slugifyEmployeeId,
+  updateSubagentToolGrant,
+  type EmployeeToolGroup,
+  type SubagentOption,
+} from "@/features/employees/employee-tools";
+import {
   createTaskFlowEmployee,
   deleteTaskFlowEmployee,
   getTaskFlowOrgChart,
@@ -25,8 +40,6 @@ import type { TaskFlowEmployee, TaskFlowEmployeeDraft, TaskFlowOrgChart } from "
 import { ModalDialog } from "@/shared/ui/ModalDialog";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { SurfaceLoader } from "@/shared/ui/SurfaceLoader";
-
-const ROOT_CREATE_ID = "__root__";
 
 export const EmployeesPage = forwardRef<RouteHandle, AppRouteProps>(function EmployeesPage(
   { active = true, api, notify, profileId },
@@ -50,6 +63,13 @@ export const EmployeesPage = forwardRef<RouteHandle, AppRouteProps>(function Emp
     enabled: active && Boolean(profileId),
     queryKey: ["employees", profileId, "org-chart"],
     queryFn: () => getTaskFlowOrgChart(api, profileId),
+    refetchOnWindowFocus: false,
+  });
+
+  const subagentsQuery = useQuery({
+    enabled: active && Boolean(profileId),
+    queryKey: ["employees", profileId, "subagents"],
+    queryFn: () => listSubagentOptions(api, profileId),
     refetchOnWindowFocus: false,
   });
 
@@ -89,10 +109,10 @@ export const EmployeesPage = forwardRef<RouteHandle, AppRouteProps>(function Emp
   });
 
   const refresh = async () => {
-    await Promise.all([employeesQuery.refetch(), orgChartQuery.refetch()]);
+    await Promise.all([employeesQuery.refetch(), orgChartQuery.refetch(), subagentsQuery.refetch()]);
   };
 
-  useImperativeHandle(ref, () => ({ refresh }), [employeesQuery, orgChartQuery]);
+  useImperativeHandle(ref, () => ({ refresh }), [employeesQuery, orgChartQuery, subagentsQuery]);
 
   const orgChart = orgChartQuery.data || null;
   const employeeRows = useMemo(() => buildEmployeeRows(orgChart), [orgChart]);
@@ -231,6 +251,7 @@ export const EmployeesPage = forwardRef<RouteHandle, AppRouteProps>(function Emp
         onSubmit={(draft) => createEmployeeMutation.mutate(draft)}
         parent={createParent}
         parentId={createParentId}
+        subagentOptions={subagentsQuery.data || []}
       />
       <EmployeeFormModal
         busy={updateEmployeeMutation.isPending}
@@ -246,6 +267,7 @@ export const EmployeesPage = forwardRef<RouteHandle, AppRouteProps>(function Emp
         }}
         parent={editingEmployee?.manager_id ? orgChart?.employees[editingEmployee.manager_id] || null : null}
         parentId={editingEmployee?.manager_id || ROOT_CREATE_ID}
+        subagentOptions={subagentsQuery.data || []}
       />
       <DeleteEmployeeModal
         busy={deleteEmployeeMutation.isPending}
@@ -356,6 +378,7 @@ function EmployeeFormModal({
   onSubmit,
   parent,
   parentId,
+  subagentOptions,
 }: {
   busy: boolean;
   employee?: TaskFlowEmployee | null;
@@ -366,6 +389,7 @@ function EmployeeFormModal({
   onSubmit: (draft: TaskFlowEmployeeDraft) => void;
   parent: TaskFlowEmployee | null | undefined;
   parentId: string;
+  subagentOptions: SubagentOption[];
 }) {
   const [draft, setDraft] = useState(() => employeeToDraft(employee) || defaultEmployeeDraft(parentId, employeeCount));
   useEffect(() => {
@@ -391,8 +415,7 @@ function EmployeeFormModal({
   };
   const unavailableManagerIds = new Set([employee?.id || "", ...(employee?.derived_reports || [])].filter(Boolean));
   const managerOptions = employees.filter((item) => !unavailableManagerIds.has(item.id));
-  const toolsValue = (draft.allowed_tools || []).join(", ");
-  const subagentsValue = (draft.subagent_allowlist || []).join(", ");
+  const allowedTools = draft.allowed_tools || [];
   const isEdit = mode === "edit";
 
   return (
@@ -459,38 +482,39 @@ function EmployeeFormModal({
             </select>
           </label>
         </div>
+        <EmployeeToolAccessField
+          disabled={busy}
+          value={allowedTools}
+          onChange={(allowed_tools) => update({ allowed_tools })}
+        />
         <div className="form-grid form-grid--two">
-          <label className="field">
-            <span>Allowed tools</span>
-            <input
-              disabled={busy}
-              onChange={(event) => update({ allowed_tools: parseCsv(event.target.value) })}
-              placeholder="task.*, file.read"
-              value={toolsValue}
-            />
+          <label className="field field--checkbox">
+            <span>Subagent execution</span>
+            <span className="checkbox-row">
+              <input
+                checked={Boolean(draft.can_use_subagents)}
+                disabled={busy}
+                onChange={(event) =>
+                  update({
+                    allowed_tools: updateSubagentToolGrant(allowedTools, event.target.checked),
+                    can_use_subagents: event.target.checked,
+                    subagent_allowlist: event.target.checked ? draft.subagent_allowlist || [] : [],
+                  })
+                }
+                type="checkbox"
+              />
+              <span>Allow this employee to start CLI subagents from its own Task Flow session</span>
+            </span>
+            <span className="field__hint">Requires the Subagents tool group or `*` access.</span>
           </label>
-          <label className="field">
-            <span>Subagent allowlist</span>
-            <input
-              disabled={busy}
-              onChange={(event) => update({ subagent_allowlist: parseCsv(event.target.value) })}
-              placeholder="reviewer, researcher"
-              value={subagentsValue}
-            />
-          </label>
+          <SubagentAccessField
+            disabled={busy || !draft.can_use_subagents}
+            enabled={Boolean(draft.can_use_subagents)}
+            onChange={(subagent_allowlist) => update({ subagent_allowlist })}
+            options={subagentOptions}
+            value={draft.subagent_allowlist || []}
+          />
         </div>
-        <label className="field field--checkbox">
-          <span>Runtime permissions</span>
-          <span className="checkbox-row">
-            <input
-              checked={Boolean(draft.can_use_subagents)}
-              disabled={busy}
-              onChange={(event) => update({ can_use_subagents: event.target.checked })}
-              type="checkbox"
-            />
-            <span>Can invoke subagent tools from employee sessions</span>
-          </span>
-        </label>
         <label className="field">
           <span>Description</span>
           <textarea disabled={busy} onChange={(event) => update({ body: event.target.value })} rows={6} value={draft.body || ""} />
@@ -505,6 +529,203 @@ function EmployeeFormModal({
         </div>
       </form>
     </ModalDialog>
+  );
+}
+
+function EmployeeToolAccessField({
+  disabled,
+  onChange,
+  value,
+}: {
+  disabled: boolean;
+  onChange: (tools: string[]) => void;
+  value: string[];
+}) {
+  const allAccess = value.includes(ALL_TOOLS_TOKEN);
+  const currentTools = allAccess ? allKnownEmployeeTools() : value;
+  const selected = new Set(currentTools);
+  const preservedTools = value.filter((tool) => tool !== ALL_TOOLS_TOKEN && !KNOWN_EMPLOYEE_TOOLS.has(tool));
+
+  const setGroup = (group: EmployeeToolGroup, enabled: boolean) => {
+    const next = new Set(allAccess ? allKnownEmployeeTools() : value.filter((tool) => tool !== ALL_TOOLS_TOKEN));
+    for (const tool of group.tools) {
+      if (enabled) {
+        next.add(tool);
+      } else {
+        next.delete(tool);
+      }
+    }
+    onChange(normalizeToolList(Array.from(next)));
+  };
+
+  return (
+    <div className="employee-tool-access">
+      <div className="employee-tool-access__head">
+        <div>
+          <span className="field__label">Tool access</span>
+          <p className="muted">Choose what this employee may do from trusted Task Flow sessions.</p>
+        </div>
+        <label className="employee-tool-card employee-tool-card--all">
+          <input
+            checked={allAccess}
+            disabled={disabled}
+            onChange={(event) => onChange(event.target.checked ? [ALL_TOOLS_TOKEN] : [])}
+            type="checkbox"
+          />
+          <span>
+            <strong>All access</strong>
+            <small>Stores `*` and allows every currently available tool.</small>
+          </span>
+        </label>
+      </div>
+      <div className="employee-tool-grid" aria-disabled={allAccess || disabled}>
+        {EMPLOYEE_TOOL_GROUPS.map((group) => {
+          const checked = allAccess || group.tools.every((tool) => selected.has(tool));
+          return (
+            <label className="employee-tool-card" key={group.id}>
+              <input
+                checked={checked}
+                disabled={disabled || allAccess}
+                onChange={(event) => setGroup(group, event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                <strong>{group.label}</strong>
+                <small>{group.description}</small>
+                <code>{group.tools.join(", ")}</code>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      {preservedTools.length ? (
+        <div className="employee-token-panel">
+          <span className="field__label">Preserved custom entries</span>
+          <p className="muted">
+            These entries already exist in the employee descriptor but are not part of the selectable catalog.
+          </p>
+          <div className="employee-token-list">
+            {preservedTools.map((tool) => (
+              <button
+                className="employee-token"
+                disabled={disabled || allAccess}
+                key={tool}
+                onClick={() => onChange(normalizeToolList(value.filter((item) => item !== tool)))}
+                title={`Remove ${tool}`}
+                type="button"
+              >
+                <code>{tool}</code>
+                <span aria-hidden="true">x</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SubagentAccessField({
+  disabled,
+  enabled,
+  onChange,
+  options,
+  value,
+}: {
+  disabled: boolean;
+  enabled: boolean;
+  onChange: (subagents: string[]) => void;
+  options: SubagentOption[];
+  value: string[];
+}) {
+  const optionIds = new Set(options.map((option) => option.id));
+  const selected = new Set(value);
+  const preserved = value.filter((subagent) => !optionIds.has(subagent));
+  const specificMode = value.length > 0;
+
+  const setSubagent = (subagentId: string, checked: boolean) => {
+    const next = new Set(value);
+    if (checked) {
+      next.add(subagentId);
+    } else {
+      next.delete(subagentId);
+    }
+    onChange(normalizeToolList(Array.from(next)));
+  };
+
+  return (
+    <div className={`subagent-access${enabled ? "" : " subagent-access--disabled"}`}>
+      <span className="field__label">Subagent allowlist</span>
+      <p className="muted">Limit which profile subagents this employee can start from Task Flow.</p>
+      <div className="subagent-access__modes">
+        <label className="checkbox-row checkbox-row--compact">
+          <input
+            checked={!specificMode}
+            disabled={disabled}
+            onChange={() => onChange([])}
+            type="radio"
+          />
+          <span>Any visible subagent</span>
+        </label>
+        <label className="checkbox-row checkbox-row--compact">
+          <input
+            checked={specificMode}
+            disabled={disabled}
+            onChange={() => {
+              if (!specificMode) {
+                onChange(options[0]?.id ? [options[0].id] : preserved);
+              }
+            }}
+            type="radio"
+          />
+          <span>Only selected subagents</span>
+        </label>
+      </div>
+      {specificMode ? (
+        <div className="subagent-access__list">
+          {options.length ? (
+            options.map((option) => (
+              <label className="employee-tool-card" key={option.id}>
+                <input
+                  checked={selected.has(option.id)}
+                  disabled={disabled}
+                  onChange={(event) => setSubagent(option.id, event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>{option.id}</strong>
+                  {option.summary ? <small>{option.summary}</small> : null}
+                  {option.path ? <code>{option.path}</code> : null}
+                </span>
+              </label>
+            ))
+          ) : (
+            <p className="muted">No profile subagents found. Create subagents in the Subagents tab first.</p>
+          )}
+          {preserved.length ? (
+            <div className="employee-token-panel">
+              <span className="field__label">Preserved unavailable subagents</span>
+              <div className="employee-token-list">
+                {preserved.map((subagent) => (
+                  <button
+                    className="employee-token"
+                    disabled={disabled}
+                    key={subagent}
+                    onClick={() => onChange(normalizeToolList(value.filter((item) => item !== subagent)))}
+                    title={`Remove ${subagent}`}
+                    type="button"
+                  >
+                    <code>{subagent}</code>
+                    <span aria-hidden="true">x</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {!enabled ? <span className="field__hint">Enable Subagent execution first.</span> : null}
+    </div>
   );
 }
 
@@ -632,63 +853,4 @@ function buildGraph(orgChart: TaskFlowOrgChart | null, layoutMode: "tree" | "com
   }));
 
   return { edges, nodes };
-}
-
-function defaultEmployeeDraft(parentId: string, employeeCount: number): TaskFlowEmployeeDraft {
-  const isRoot = parentId === ROOT_CREATE_ID || (!parentId && employeeCount === 0);
-  return {
-    allowed_tools: [],
-    body: isRoot
-      ? "Owns Task Flow decomposition, routing, dependency control, review escalation, and creation of the first discipline-specific employees."
-      : "",
-    can_use_subagents: isRoot,
-    id: isRoot ? "cto" : "",
-    manager_id: parentId === ROOT_CREATE_ID ? null : parentId || null,
-    name: isRoot ? "CTO" : "",
-    role: isRoot ? "executive_orchestrator" : "specialist",
-    status: "active",
-    subagent_allowlist: [],
-    title: isRoot ? "Technical Director" : "",
-  };
-}
-
-function employeeToDraft(employee: TaskFlowEmployee | null | undefined): TaskFlowEmployeeDraft | null {
-  if (!employee) {
-    return null;
-  }
-  return {
-    allowed_tools: employee.allowed_tools || [],
-    body: employee.body || "",
-    can_use_subagents: Boolean(employee.can_use_subagents),
-    id: employee.id,
-    manager_id: employee.manager_id || null,
-    name: employee.name,
-    role: employee.role,
-    status: employee.status === "disabled" || employee.status === "archived" ? employee.status : "active",
-    subagent_allowlist: employee.subagent_allowlist || [],
-    title: employee.title,
-  };
-}
-
-function parseCsv(value: string): string[] {
-  const seen = new Set<string>();
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item) => {
-      if (!item || seen.has(item)) {
-        return false;
-      }
-      seen.add(item);
-      return true;
-    });
-}
-
-function slugifyEmployeeId(value: string) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 120);
 }

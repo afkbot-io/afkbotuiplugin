@@ -270,7 +270,7 @@ export function AppShell({
             aria-label="Dismiss mobile navigation"
             className="workspace-mobile-nav__backdrop"
             onClick={() => setMobileMenuOpen(false)}
-            tabIndex={mobileMenuOpen ? 0 : -1}
+            tabIndex={-1}
             type="button"
           />
           <div aria-label="Workspace navigation" className="workspace-mobile-nav__panel" role="dialog">

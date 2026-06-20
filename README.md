@@ -2,7 +2,7 @@
 
 Unified AFKBOT workspace plugin for automations, Task Flow, and profile-local text libraries.
 
-Current release: `1.0.14`
+Current release: `1.0.19`
 
 ## Overview
 
@@ -18,7 +18,7 @@ Current frontend/runtime contract:
 
 The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*` or `web/dist/assets/features/*` payloads.
 
-## What Is In 1.0.14
+## What Is In 1.0.19
 
 - single-shell workspace with `Automations`, `Task Flow`, `Docs`, `Subagents`, `Skills`, and `Bootstrap`
 - React-native route surfaces for every section, with shared loaders, dialogs, async buttons, and responsive layout primitives
@@ -28,23 +28,26 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 - masked webhook metadata in ordinary automation list/detail payloads, with reveal only through `/automations/{id}/webhook-endpoint`
 - automation inspector with cron/webhook diagnostics, copy actions, graph preview, runtime path, and webhook URL rotation
 - Task Flow board with Plan-first status ordering, flow management modal, flow rename/edit/delete, per-flow filtering, stable silent polling, inspector, review flows, comments, dependencies, runs, session activity, local inspector section navigation, and live chat-style activity modal
-- Task Flow Employee Feed, context bundle, and flow/task document controls expose employee assignments, wake signals, plans, specs, handoffs, and confirmed revisions directly in the board and flow library
+- Task Flow context bundle, live session activity, and flow/task document controls expose assignments, wake signals, knowledge packets, handoffs, review notes, evidence, and confirmed revisions directly in the board and flow library
+- Task Flow includes CTO Review for manually starting the autonomous project-knowledge maintenance sweep and showing checked/created/woken flow results
 - Task Flow employees are profile-local workforce descriptors; profile is the organization boundary, flow is the project, and owner/reviewer/actor controls use canonical `employee` principals
 - Task Flow employee settings and org chart views show managers, direct reports, delegation scope, and runtime-safe owner choices without treating CLI subagents as Task Flow owners
+- Task Flow manager/root employees are expected to run intake/delegation work: they route focused child tasks, wait for evidence, and do not personally complete specialist execution
 - Employees is a first-class workspace route with a full-width React Flow org chart, tree/compact layout controls, click-through employee details, create/edit/delete modals, drag-from-node creation, delegation, tool policy, and org validation details
 - Docs workspace for profile-wide Task Flow document search, scope/status filtering, preview, revision metadata, confirmation, and deletion
 - Task cards show human-readable flow title badges instead of raw flow ids
 - named Task Flow priority chips replace raw `pNN` scores with low-to-critical labels and direction markers
 - inspector discussion and live activity panels keep long content inside their panes, collapse oversized comments, keep the comment composer at the bottom, and let operators jump directly to comments or activity from the task section menu
-- Task Flow operator actions normalize legacy `web-user`, `default`, and `web-user/default` human placeholders to the validated local human principal required by AFKBOT core, including comments, document mutations, flow/task edits, bulk moves, review actions, and human owner/reviewer fields
+- Task Flow operator actions use the validated local human principal required by AFKBOT core for comments, document mutations, flow/task edits, bulk moves, and review actions
 - Task Flow flow/task delete and bulk-delete actions send explicit operator actor payloads, and browser-side employee actor selections are treated as local human operator actions rather than spoofed employee runtime mutations
 - Task Flow live activity opens only from verified active runtime session metadata; stale `last_session_*` task fields no longer create inspector session links
 - Task Flow task patch routes do not accept manual `session_id` or `session_profile_id` binding from the public plugin API
-- Task Flow flow edits preserve the configured operator actor for audit attribution instead of falling back to the legacy human placeholder
+- prompt-mode cron/webhook automations create Task Flow tasks through AFKBOT core as the trusted `automation:<profile_id>:<automation_id>` principal, not as a browser-side operator session
+- Task Flow flow edits preserve validated local human audit attribution across operator-side actions
 - moving a Task Flow task out of `Blocked` clears blocker metadata explicitly, while ordinary task edits preserve existing blocker reasons unless the payload changes them
 - autonomous manager escalation tasks show source-task badges and Task Flow labels on the board so recovery work is visible without opening every task
 - Task Flow comments, task runs, activity, flow documents, and task documents are shown newest-first in the inspector and knowledge panel
-- Task Flow create/edit routes submit canonical `description` payloads while still reading legacy `prompt` tasks during mixed-version upgrades
+- Task Flow create/edit routes submit canonical `description` payloads only
 - profile-local CRUD surfaces for subagents, skills, and bootstrap files with richer markdown-derived summaries
 - last selected profile is restored when the workspace opens without an explicit profile parameter
 - release-contract checks that verify version sync and shipped `web/dist` integrity
@@ -62,12 +65,12 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 ### Task Flow
 
 - kanban-style board inside the same workspace shell
-- Employee Feed modal for the selected Task Flow employee, including assigned tasks, mentions, wake requests, recovery signals, runtime claim rejects, and org chart context
+- task context and live activity modals for selected Task Flow work, including assignments, wake requests, recovery signals, runtime claim rejects, org context, and latest session events
 - employee controls for selecting active Task Flow owners/reviewers from profile-local employee descriptors; CLI subagents remain a separate tool capability, not a Task Flow principal
 - flow library modal with search, add, rename/edit, delete, quick selection, and project-level flow docs
 - task inspector with create/edit/delete, comments, dependencies, runs, review actions, live session activity, context bundle summaries, and flow/task docs
 - review actions stay available for review tasks that are already claimed or running by an AI reviewer
-- durable flow/task document editing and revision confirmation for plans, specs, roadmaps, decisions, handoffs, QA notes, and agent-readable project knowledge
+- durable flow/task document editing and revision confirmation for Project Knowledge Spine docs (`brief`, `plan`, `spec`, `decisions`, `status`) plus task working docs (`handoff`, `notes`, `review`, `evidence`)
 - polling that pauses around active edits and resumes without full-page reloads
 
 ### Profile Libraries
@@ -84,8 +87,8 @@ The shipped bundle no longer includes the old pre-React `web/dist/assets/core/*`
 
 ## Requirements
 
-- AFKBOT UI `1.0.14`
-- AFKBOT `>=1.9.16,<2.0.0`
+- AFKBOT UI `1.0.19`
+- AFKBOT `>=1.9.23,<2.0.0`
 - current AFKBOT `1.x` auth/chat runtime surface, including:
   - `/v1/auth/session`
   - `/v1/auth/logout`
@@ -178,7 +181,6 @@ Release preparation, `dist` integrity checks, and version-sync rules are documen
 - `POST /v1/plugins/afkbotui/task-flow/flows`
 - `DELETE /v1/plugins/afkbotui/task-flow/flows/{flow_id}`
 - `GET /v1/plugins/afkbotui/task-flow/board`
-- `GET /v1/plugins/afkbotui/task-flow/feed`
 - `GET /v1/plugins/afkbotui/task-flow/documents`
 - `GET /v1/plugins/afkbotui/task-flow/employees`
 - `GET /v1/plugins/afkbotui/task-flow/org-chart`

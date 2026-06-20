@@ -86,8 +86,8 @@ let taskFlows = [
     id: "flow-beta",
     title: "Ops Follow-up",
     description: "Backlog for rollout, QA, and release tasks.",
-    default_owner_type: "human",
-    default_owner_ref: "web-user",
+    default_owner_type: "employee",
+    default_owner_ref: "cto",
     created_by_type: "human",
     created_by_ref: "web-user",
     labels: ["ops"],
@@ -132,10 +132,10 @@ const boardTasks = [
     profile_id: "default",
     flow_id: "flow-alpha",
     due_at: "2026-04-22T12:00:00.000Z",
-    owner_type: "human",
-    owner_ref: "web-user",
-    reviewer_type: "human",
-    reviewer_ref: "web-user",
+    owner_type: "employee",
+    owner_ref: "cto",
+    reviewer_type: "employee",
+    reviewer_ref: "planner",
     requires_review: true,
     labels: ["qa"],
   },
@@ -175,6 +175,26 @@ const taskRuns = {
   ],
 };
 
+const taskAttachments = {
+  "task-review": [],
+  "task-rollout": [
+    {
+      id: "attachment-rollout-notes",
+      task_id: "task-rollout",
+      profile_id: "default",
+      name: "rollout-notes.txt",
+      content_type: "text/plain",
+      kind: "text",
+      byte_size: 36,
+      sha256: "mock-rollout-notes-sha256",
+      created_by_type: "human",
+      created_by_ref: "web-user",
+      created_at: "2026-04-21T09:45:00.000Z",
+      updated_at: "2026-04-21T09:45:00.000Z",
+    },
+  ],
+};
+
 const taskDependencies = {
   "task-review": [],
   "task-rollout": [],
@@ -191,6 +211,7 @@ let taskDocuments = {
       body: "Coordinate rollout tasks through confirmed docs and task handoffs.",
       revision: 1,
       confirmation_status: "draft",
+      created_at: "2026-04-21T09:40:00.000Z",
       updated_at: "2026-04-21T09:42:00.000Z",
     },
   ],
@@ -205,6 +226,7 @@ let taskDocuments = {
       revision: 1,
       confirmation_status: "confirmed",
       confirmed_revision: 1,
+      created_at: "2026-04-21T09:41:00.000Z",
       updated_at: "2026-04-21T09:44:00.000Z",
     },
   ],
@@ -512,31 +534,6 @@ function matchApiRoute(pathname, requestUrl = "/") {
     };
   }
 
-  if (pathname === "/v1/plugins/afkbotui/task-flow/feed") {
-    return {
-      feed: {
-        blocked_count: 0,
-        mention_event_count: 1,
-        owner_ref: "cto",
-        owner_type: "employee",
-        recent_events: [
-          {
-            id: 31,
-            task_id: "task-rollout",
-            task_title: "Prepare rollout checklist",
-            event_type: "wake_requested",
-            created_at: "2026-04-21T09:47:00.000Z",
-          },
-        ],
-        review_count: 0,
-        running_count: 0,
-        tasks: boardTasks.filter((task) => task.owner_type === "employee"),
-        todo_count: 1,
-        total_count: 1,
-      },
-    };
-  }
-
   if (pathname === "/v1/plugins/afkbotui/task-flow/employees") {
     const query = String(requestUrlObject.searchParams.get("q") || "").trim().toLowerCase();
     const filteredEmployees = query
@@ -576,20 +573,29 @@ function matchApiRoute(pathname, requestUrl = "/") {
   }
 
   if (pathname === "/v1/plugins/afkbotui/task-flow/documents") {
+    const scopeType = requestUrlObject.searchParams.get("scope_type") || "";
+    const scopeId = requestUrlObject.searchParams.get("scope_id") || "";
+    const documentKey = requestUrlObject.searchParams.get("document_key") || "";
+    const confirmationStatus = requestUrlObject.searchParams.get("confirmation_status") || "";
     const query = String(requestUrlObject.searchParams.get("query") || "").trim().toLowerCase();
-    const scopeType = String(requestUrlObject.searchParams.get("scope_type") || "");
-    const confirmationStatus = String(requestUrlObject.searchParams.get("confirmation_status") || "");
     const documents = Object.values(taskDocuments)
       .flat()
       .filter((document) => !scopeType || document.scope_type === scopeType)
+      .filter((document) => !scopeId || document.scope_id === scopeId)
+      .filter((document) => !documentKey || document.document_key === documentKey)
       .filter((document) => !confirmationStatus || document.confirmation_status === confirmationStatus)
       .filter((document) => {
         if (!query) {
           return true;
         }
-        return [document.title, document.document_key, document.scope_id, document.body].some((value) =>
-          String(value || "").toLowerCase().includes(query),
-        );
+        return [
+          document.id,
+          document.scope_type,
+          document.scope_id,
+          document.document_key,
+          document.title,
+          document.body,
+        ].some((value) => String(value || "").toLowerCase().includes(query));
       });
     return {
       task_documents: documents,
@@ -599,6 +605,37 @@ function matchApiRoute(pathname, requestUrl = "/") {
   if (pathname === "/v1/plugins/afkbotui/task-flow/review") {
     return {
       review_tasks: filteredBoardTasks.filter((task) => task.status === "review"),
+    };
+  }
+
+  if (pathname === "/v1/plugins/afkbotui/task-flow/knowledge-maintenance" && method === "POST") {
+    return {
+      knowledge_maintenance: {
+        generated_at: new Date().toISOString(),
+        profile_id: "default",
+        actor_type: "human",
+        actor_ref: "web-user",
+        checked_flow_count: 1,
+        created_task_count: 1,
+        woken_task_count: 0,
+        skipped_flow_count: 0,
+        flows: [
+          {
+            profile_id: "default",
+            flow_id: "flow-alpha",
+            flow_title: "Website launch",
+            health_status: "needs_attention",
+            reasons: ["unconfirmed_docs:brief,plan,spec"],
+            action: "created",
+            task: {
+              ...boardTasks[0],
+              id: "task-cto-maintenance",
+              source_type: "knowledge_maintenance",
+              title: "Maintain project knowledge",
+            },
+          },
+        ],
+      },
     };
   }
 
@@ -635,6 +672,13 @@ function matchApiRoute(pathname, requestUrl = "/") {
     const taskId = decodeURIComponent(pathname.split("/").at(-2) || "");
     return {
       task_comments: taskComments[taskId] || [],
+    };
+  }
+
+  if (/^\/v1\/plugins\/afkbotui\/task-flow\/tasks\/[^/]+\/attachments$/u.test(pathname)) {
+    const taskId = decodeURIComponent(pathname.split("/").at(-2) || "");
+    return {
+      task_attachments: taskAttachments[taskId] || [],
     };
   }
 

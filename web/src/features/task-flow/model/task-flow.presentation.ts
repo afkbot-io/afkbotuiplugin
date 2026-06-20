@@ -71,18 +71,12 @@ export function formatTaskOwnerSummary(task: TaskFlowTask) {
   if (ownerType === TASK_FLOW_EMPLOYEE_TYPE) {
     return ownerRef ? `Owner: Employee ${ownerRef}` : "Owner: Employee";
   }
-  if (ownerType === TASK_FLOW_HUMAN_TYPE) {
-    return ownerRef ? `Owner: ${ownerRef}` : "Owner: Human";
-  }
   return reviewerSummary || "Owner: Unassigned";
 }
 
 function formatReviewerSummary(reviewerType: string, reviewerRef: string) {
   if (reviewerType === TASK_FLOW_EMPLOYEE_TYPE) {
     return reviewerRef ? `Reviewer: Employee ${reviewerRef}` : "Reviewer: Employee";
-  }
-  if (reviewerType === TASK_FLOW_HUMAN_TYPE) {
-    return reviewerRef ? `Reviewer: ${reviewerRef}` : "Reviewer: Human";
   }
   return "";
 }
@@ -123,9 +117,6 @@ export function formatFlowOwnerSummary(flow: TaskFlowProject) {
   const ownerRef = String(flow.default_owner_ref || "").trim();
   if (ownerType === TASK_FLOW_EMPLOYEE_TYPE) {
     return ownerRef ? `Default owner: Employee ${ownerRef}` : "Default owner: Employee";
-  }
-  if (ownerType === TASK_FLOW_HUMAN_TYPE) {
-    return ownerRef ? `Default owner: ${ownerRef}` : "Default owner: Human";
   }
   return "Default owner: Manual assignment";
 }

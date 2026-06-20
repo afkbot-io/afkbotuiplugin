@@ -23,16 +23,17 @@ import {
   deleteTaskItem,
   deleteTaskProject,
   confirmTaskDocument,
-  getEmployeeFeed,
   getTaskDetail,
   getTaskContext,
+  getTaskAttachmentDownloadHref,
   getTaskFlowBoard,
   getTaskSessionInsights,
+  getRootEmployeeOwnerError,
+  getRootEmployeeOwnerOption,
   listTaskFlowReview,
   listTaskFlowEmployees,
   listTaskDocuments,
   listTaskProjects,
-  isEmployeeActorType,
   normalizeTaskFlowConfig,
   resolveTaskFlowError,
   taskDraftFromTask,
@@ -45,7 +46,9 @@ import {
   bulkDeleteTaskItems,
   putTaskDocument,
   requestTaskReviewChanges,
+  runTaskFlowKnowledgeMaintenance,
   updateTaskProject,
+  withRootEmployeeOwner,
 } from "@/features/task-flow/model/task-flow.api";
 import {
   getTaskSessionKey,
@@ -53,8 +56,15 @@ import {
   shouldAutoRefreshTaskSession,
 } from "@/features/task-flow/model/task-flow.presentation";
 import { taskFlowQueryKeys } from "@/features/task-flow/model/task-flow.query-keys";
-import type { TaskFlowDocument, TaskFlowDocumentDraft, TaskFlowTask, TaskSessionInsights } from "@/features/task-flow/model/task-flow.types";
-import { EmployeeFeedModal } from "@/features/task-flow/ui/EmployeeFeedModal";
+import type {
+  TaskFlowDocument,
+  TaskFlowDocumentDraft,
+  TaskFlowAttachmentInput,
+  TaskFlowKnowledgeMaintenanceSweep,
+  TaskFlowProjectDraft,
+  TaskFlowTask,
+  TaskSessionInsights,
+} from "@/features/task-flow/model/task-flow.types";
 import { TaskBoard } from "@/features/task-flow/ui/TaskBoard";
 import { CreateTaskModal } from "@/features/task-flow/ui/CreateTaskModal";
 import { DeleteSelectedTasksModal } from "@/features/task-flow/ui/DeleteSelectedTasksModal";
@@ -81,7 +91,6 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   ref,
 ) {
   const taskFlowConfig = useMemo(() => normalizeTaskFlowConfig(config), [config]);
-  const employeeFeedEnabled = isEmployeeActorType(taskFlowConfig.task_flow_actor_type);
   const state = useTaskFlowPageState({
     config: taskFlowConfig,
     profileId,
@@ -92,6 +101,8 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   const [savingTask, setSavingTask] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
   const [manualRefreshingBoard, setManualRefreshingBoard] = useState(false);
+  const [runningKnowledgeMaintenance, setRunningKnowledgeMaintenance] = useState(false);
+  const [knowledgeMaintenanceResult, setKnowledgeMaintenanceResult] = useState<TaskFlowKnowledgeMaintenanceSweep | null>(null);
   const [savingDocumentId, setSavingDocumentId] = useState("");
   const [refreshingSessionKeys, setRefreshingSessionKeys] = useState<Set<string>>(() => new Set());
   const [sessionInsights, setSessionInsights] = useState<TaskSessionInsights | null>(null);
@@ -120,30 +131,26 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     queryFn: () => listTaskProjects(api, profileId),
     refetchOnWindowFocus: false,
   });
+  const flows = projectsQuery.data || [];
+  const projectsLoading = Boolean(projectsQuery.isFetching && !projectsQuery.data);
+  const selectedFlowId = flows.some((flow) => flow.id === state.flowFilter) ? state.flowFilter : flows[0]?.id || "";
 
   const boardQuery = useQuery({
-    enabled: active && Boolean(profileId),
-    queryKey: taskFlowQueryKeys.board(profileId, state.flowFilter, taskFlowConfig.task_flow_board_limit_per_column),
-    queryFn: () => getTaskFlowBoard(api, profileId, state.flowFilter, taskFlowConfig),
+    enabled: active && Boolean(profileId) && Boolean(selectedFlowId),
+    queryKey: taskFlowQueryKeys.board(profileId, selectedFlowId, taskFlowConfig.task_flow_board_limit_per_column),
+    queryFn: () => getTaskFlowBoard(api, profileId, selectedFlowId, taskFlowConfig),
     refetchOnWindowFocus: false,
   });
 
   const reviewQuery = useQuery({
-    enabled: active && Boolean(profileId),
+    enabled: active && Boolean(profileId) && Boolean(selectedFlowId),
     queryKey: taskFlowQueryKeys.review(
       profileId,
-      state.flowFilter,
+      selectedFlowId,
       taskFlowConfig.task_flow_actor_type,
       taskFlowConfig.task_flow_actor_ref,
     ),
-    queryFn: () => listTaskFlowReview(api, profileId, state.flowFilter, taskFlowConfig),
-    refetchOnWindowFocus: false,
-  });
-
-  const employeeFeedQuery = useQuery({
-    enabled: active && Boolean(profileId) && employeeFeedEnabled,
-    queryKey: taskFlowQueryKeys.feed(profileId, taskFlowConfig.task_flow_actor_type, taskFlowConfig.task_flow_actor_ref),
-    queryFn: () => getEmployeeFeed(api, profileId, taskFlowConfig),
+    queryFn: () => listTaskFlowReview(api, profileId, selectedFlowId, taskFlowConfig),
     refetchOnWindowFocus: false,
   });
 
@@ -169,21 +176,47 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   });
 
   const flowDocumentsQuery = useQuery({
-    enabled: active && Boolean(profileId) && Boolean(state.flowFilter),
-    queryKey: taskFlowQueryKeys.documents(profileId, "flow", state.flowFilter),
-    queryFn: () => listTaskDocuments(api, profileId, "flow", state.flowFilter),
+    enabled: active && Boolean(profileId) && Boolean(selectedFlowId),
+    queryKey: taskFlowQueryKeys.documents(profileId, "flow", selectedFlowId),
+    queryFn: () => listTaskDocuments(api, profileId, "flow", selectedFlowId),
     refetchOnWindowFocus: false,
   });
 
   const board = boardQuery.data || null;
-  const flows = projectsQuery.data || [];
   const reviewTasks = reviewQuery.data || [];
-  const employeeFeed = employeeFeedEnabled ? employeeFeedQuery.data || null : null;
   const employees = employeesQuery.data || [];
+  const rootEmployee = useMemo(
+    () => getRootEmployeeOwnerOption(profileId, employees),
+    [employees, profileId],
+  );
+  const rootEmployeeError = useMemo(
+    () => getRootEmployeeOwnerError(profileId, employees),
+    [employees, profileId],
+  );
+  const createTaskDraft = useMemo(
+    () => withRootEmployeeOwner(state.createTask.draft, rootEmployee),
+    [rootEmployee, state.createTask.draft],
+  );
   const flowTitleById = useMemo(
     () => new Map(flows.map((flow) => [flow.id, flow.title || flow.id])),
     [flows],
   );
+  useEffect(() => {
+    if (!active || projectsLoading) {
+      return;
+    }
+    const currentFlowId = String(state.flowFilter || "");
+    const hasCurrentFlow = Boolean(currentFlowId) && flows.some((flow) => flow.id === currentFlowId);
+    const nextFlowId = hasCurrentFlow ? currentFlowId : flows[0]?.id || "";
+    if (nextFlowId === currentFlowId) {
+      return;
+    }
+    state.setFlowFilter(nextFlowId);
+    state.selectTask("");
+    state.setSelectedTaskIds(new Set());
+    state.setSessionFeedOpen(false);
+    setSessionInsights(null);
+  }, [active, flows, projectsLoading, state]);
   const selectedListTask = useMemo(
     () => findBoardTask(board, state.selectedTaskId),
     [board, state.selectedTaskId],
@@ -191,6 +224,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   const detail = detailQuery.data || (selectedListTask
     ? {
         task: selectedListTask,
+        task_attachments: [],
         task_comments: [],
         task_dependencies: [],
         task_events: [],
@@ -337,20 +371,20 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
       const nextFlows = projectsResult.data || [];
       const currentFlowFilter = String(state.flowFilter || "");
       const hasCurrentFlow = currentFlowFilter && nextFlows.some((flow) => flow.id === currentFlowFilter);
-      if (currentFlowFilter && !hasCurrentFlow) {
-        state.setFlowFilter("");
+      const nextFlowId = hasCurrentFlow ? currentFlowFilter : nextFlows[0]?.id || "";
+      if (nextFlowId !== currentFlowFilter) {
+        state.setFlowFilter(nextFlowId);
         state.selectTask("");
         state.setSelectedTaskIds(new Set());
         state.setSessionFeedOpen(false);
         setSessionInsights(null);
         return;
       }
+      if (!nextFlowId) {
+        return;
+      }
 
-      await Promise.all([
-        boardQuery.refetch(),
-        reviewQuery.refetch(),
-        ...(employeeFeedEnabled ? [employeeFeedQuery.refetch()] : []),
-      ]);
+      await Promise.all([boardQuery.refetch(), reviewQuery.refetch()]);
       if (state.selectedTaskId) {
         await Promise.all([detailQuery.refetch(), contextQuery.refetch()]);
         if (sessionAutoRefreshEnabled) {
@@ -360,8 +394,6 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     },
     [
       active,
-      employeeFeedEnabled,
-      employeeFeedQuery,
       boardQuery,
       contextQuery,
       detailQuery,
@@ -381,6 +413,34 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
       setManualRefreshingBoard(false);
     }
   }, [refreshAll]);
+
+  const handleRunKnowledgeMaintenance = useCallback(async () => {
+    if (!selectedFlowId) {
+      notify("Select a project flow before running CTO review.", "warning");
+      return;
+    }
+    setRunningKnowledgeMaintenance(true);
+    try {
+      const result = await runTaskFlowKnowledgeMaintenance(api, profileId, selectedFlowId, taskFlowConfig);
+      if (profileIdRef.current !== profileId) {
+        return;
+      }
+      setKnowledgeMaintenanceResult(result);
+      const created = Number(result?.created_task_count || 0);
+      const woken = Number(result?.woken_task_count || 0);
+      notify(
+        `CTO review queued ${created} task${created === 1 ? "" : "s"} and woke ${woken}.`,
+        created || woken ? "success" : "info",
+      );
+      await refreshAll(false);
+    } catch (error) {
+      if (profileIdRef.current === profileId) {
+        notify(resolveTaskFlowError(error), "danger");
+      }
+    } finally {
+      setRunningKnowledgeMaintenance(false);
+    }
+  }, [api, notify, profileId, refreshAll, selectedFlowId, taskFlowConfig]);
 
   useEffect(() => {
     if (!previousActiveRef.current && active) {
@@ -654,7 +714,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
           return;
         }
         if (state.flowFilter === flowId) {
-          state.setFlowFilter("");
+          state.setFlowFilter(flows.find((flow) => flow.id !== flowId)?.id || "");
         }
         if (detail?.task?.flow_id === flowId) {
           state.selectTask("");
@@ -672,11 +732,15 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         state.setModalBusy(false);
       }
     },
-    [api, detail?.task?.flow_id, notify, profileId, refreshAll, state, taskFlowConfig],
+    [api, detail?.task?.flow_id, flows, notify, profileId, refreshAll, state, taskFlowConfig],
   );
 
   const handleCreateTask = useCallback(async () => {
-    const error = validateTaskDraft(state.createTask.draft, validationContext);
+    if (rootEmployeeError) {
+      state.setCreateTaskError(rootEmployeeError);
+      return;
+    }
+    const error = validateTaskDraft(createTaskDraft, validationContext);
     if (error) {
       state.setCreateTaskError(error);
       return;
@@ -684,7 +748,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     state.setCreateTaskError("");
     state.setModalBusy(true);
     try {
-      const task = await createTaskItem(api, profileId, state.createTask.draft, taskFlowConfig);
+      const task = await createTaskItem(api, profileId, createTaskDraft, taskFlowConfig);
       if (profileIdRef.current !== profileId) {
         return;
       }
@@ -702,14 +766,14 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     } finally {
       state.setModalBusy(false);
     }
-  }, [api, notify, profileId, refreshAll, state, taskFlowConfig, validationContext]);
+  }, [api, createTaskDraft, notify, profileId, refreshAll, rootEmployeeError, state, taskFlowConfig, validationContext]);
 
   const handleSaveTask = useCallback(async () => {
     if (!state.selectedTaskId) {
       return;
     }
     const taskId = state.selectedTaskId;
-    const error = validateTaskDraft(editorDraft, validationContext);
+    const error = validateTaskDraft(editorDraft, validationContext, { requireFlow: false });
     if (error) {
       setEditorError(error);
       return;
@@ -734,7 +798,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     } finally {
       setSavingTask(false);
     }
-  }, [api, editorDraft, notify, profileId, refreshAll, state.selectedTaskId, employees, taskFlowConfig]);
+  }, [api, editorDraft, notify, profileId, refreshAll, state.selectedTaskId, taskFlowConfig, validationContext]);
 
   const handleDeleteTask = useCallback(async () => {
     if (!state.selectedTaskId) {
@@ -799,22 +863,24 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   }, [api, notify, profileId, refreshAll, state, taskFlowConfig]);
 
   const handleSubmitComment = useCallback(
-    async (message: string) => {
+    async (message: string, attachments: TaskFlowAttachmentInput[] = [], documentRefs: TaskFlowDocument[] = []) => {
       if (!state.selectedTaskId) {
-        return;
+        return false;
       }
       setSubmittingComment(true);
       try {
-        await createTaskComment(api, profileId, state.selectedTaskId, message, taskFlowConfig);
+        await createTaskComment(api, profileId, state.selectedTaskId, message, taskFlowConfig, attachments, documentRefs);
         notify("Comment added.", "success");
-        await detailQuery.refetch();
+        await Promise.all([detailQuery.refetch(), boardQuery.refetch()]);
+        return true;
       } catch (error) {
         notify(resolveTaskFlowError(error), "danger");
+        return false;
       } finally {
         setSubmittingComment(false);
       }
     },
-    [api, detailQuery, notify, profileId, state.selectedTaskId, taskFlowConfig],
+    [api, boardQuery, detailQuery, notify, profileId, state.selectedTaskId, taskFlowConfig],
   );
 
   const handleSaveDocument = useCallback(
@@ -941,59 +1007,99 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   }, [notify, profileId, profiles, refreshAll, state, employees, employeesQuery, updateConfig]);
 
   const pageError = [projectsQuery.error, boardQuery.error, reviewQuery.error, employeesQuery.error].find(Boolean);
+  const employeesLoading = Boolean(employeesQuery.isFetching && !employeesQuery.data);
+  const noProjectFlows = !projectsLoading && flows.length === 0;
+  const createTaskDisabledReason = employeesLoading
+    ? "Loading employees before routing work through the root intake employee."
+    : rootEmployeeError || (noProjectFlows ? "Create one project flow before adding Task Flow work." : "");
+  const createTaskRecovery = rootEmployeeError
+    ? { label: "Open Employees", onClick: () => navigateToRoute("employees") }
+    : noProjectFlows
+      ? { label: "Open Flows", onClick: state.openManageProjectsModal }
+      : null;
+  const createTaskDisabled = employeesLoading || Boolean(rootEmployeeError) || noProjectFlows;
 
   return (
     <section className="route-page route-page--taskflow taskflow-page" ref={sectionRef}>
       <TaskFlowHeader
-        flowFilter={state.flowFilter}
+        flowFilter={selectedFlowId}
         flows={flows}
+        createTaskDisabled={createTaskDisabled}
+        createTaskDisabledReason={createTaskDisabledReason}
         onClearSelection={state.clearSelection}
-        onCreateTask={() => state.openTaskModal(state.flowFilter)}
+        onCreateTask={() => state.openTaskModal(selectedFlowId)}
         onDeleteSelected={state.openDeleteSelectedModal}
         onOpenEmployees={() => navigateToRoute("employees")}
         onFilterChange={handleFlowFilterChange}
-        onOpenEmployeeFeed={state.openEmployeeFeedModal}
         onManageFlows={state.openManageProjectsModal}
+        onRunKnowledgeMaintenance={() => void handleRunKnowledgeMaintenance()}
         onOpenReview={state.openReviewModal}
         onOpenSettings={state.openSettingsModal}
         onRefresh={() => void refreshBoardManually()}
-        employeeFeedDisabled={!employeeFeedEnabled}
         refreshing={manualRefreshingBoard}
-        employeeFeedCount={employeeFeed?.total_count || 0}
+        knowledgeMaintenanceRunning={runningKnowledgeMaintenance}
         reviewCount={reviewTasks.length}
         selectedCount={state.selectedTaskIds.size}
       />
 
       {pageError ? <div className="inline-alert inline-alert--danger">{resolveTaskFlowError(pageError)}</div> : null}
+      {knowledgeMaintenanceResult ? (
+        <KnowledgeMaintenanceSummary
+          flowTitleById={flowTitleById}
+          onOpenTask={(taskId) => {
+            state.selectTask(taskId);
+            closeSessionFeed();
+            setSessionInsights(null);
+          }}
+          result={knowledgeMaintenanceResult}
+        />
+      ) : null}
+      {createTaskDisabledReason && createTaskRecovery ? (
+        <div className="inline-alert inline-alert--warning taskflow-gate-alert" role="status">
+          <span>{createTaskDisabledReason}</span>
+          <button className="button button--ghost button--compact" onClick={createTaskRecovery.onClick} type="button">
+            {createTaskRecovery.label}
+          </button>
+        </div>
+      ) : null}
 
-      <div className={`taskflow-layout ${selectedTask ? "taskflow-layout--open" : ""}`}>
-        <section className="board-shell glass-panel">
-          <TaskBoard
-            board={board}
-            boardRef={boardRef}
-            flowTitleById={flowTitleById}
-            loading={Boolean(boardQuery.isFetching && !board)}
-            onBoardMouseDown={handleBoardMouseDown}
-            onDragEnd={() => {
-              dragTaskIdRef.current = "";
-            }}
-            onDragStart={(taskId) => {
-              dragTaskIdRef.current = taskId;
-            }}
-            onDropStatus={(status) => void handleDropStatus(status)}
-            onOpenTask={(taskId) => {
-              state.selectTask(taskId);
-              closeSessionFeed();
-              setSessionInsights(null);
-            }}
-            onToggleTask={(taskId, checked) => state.toggleTaskSelection(taskId, checked)}
-            selectedTaskId={state.selectedTaskId}
-            selectedTaskIds={state.selectedTaskIds}
-          />
-        </section>
+      {noProjectFlows ? (
+        <FirstFlowOnboarding
+          busy={state.modalBusy}
+          draft={state.createProject.draft}
+          error={state.createProject.error}
+          onDraftChange={state.setCreateProjectDraft}
+          onSubmit={() => void handleSubmitProject()}
+        />
+      ) : (
+        <div className={`taskflow-layout ${selectedTask ? "taskflow-layout--open" : ""}`}>
+          <section className="board-shell glass-panel">
+            <TaskBoard
+              board={board}
+              boardRef={boardRef}
+              flowTitleById={flowTitleById}
+              loading={Boolean(boardQuery.isFetching && !board)}
+              onBoardMouseDown={handleBoardMouseDown}
+              onDragEnd={() => {
+                dragTaskIdRef.current = "";
+              }}
+              onDragStart={(taskId) => {
+                dragTaskIdRef.current = taskId;
+              }}
+              onDropStatus={(status) => void handleDropStatus(status)}
+              onOpenTask={(taskId) => {
+                state.selectTask(taskId);
+                closeSessionFeed();
+                setSessionInsights(null);
+              }}
+              onToggleTask={(taskId, checked) => state.toggleTaskSelection(taskId, checked)}
+              selectedTaskId={state.selectedTaskId}
+              selectedTaskIds={state.selectedTaskIds}
+            />
+          </section>
 
-        {state.selectedTaskId ? (
-          <TaskInspector
+          {state.selectedTaskId ? (
+            <TaskInspector
             config={taskFlowConfig}
             detail={detail}
             detailLoading={Boolean(detailQuery.isFetching && !detail)}
@@ -1011,10 +1117,12 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
             onRefreshSession={() => void refreshCurrentSessionManually()}
             onRequestChanges={(reviewDraft) => void handleRequestChanges(reviewDraft)}
             onSave={() => void handleSaveTask()}
-            onSubmitComment={(message) => void handleSubmitComment(message)}
+            onSubmitComment={handleSubmitComment}
             commenting={submittingComment}
+            getAttachmentHref={(attachmentId) => getTaskAttachmentDownloadHref(api, profileId, state.selectedTaskId, attachmentId)}
             profileId={profileId}
             profiles={profiles}
+            referenceDocuments={[...(contextQuery.data?.flow_documents || []), ...(contextQuery.data?.task_documents || [])]}
             saving={savingTask}
             sessionError={sessionError}
             sessionRefreshing={refreshingSession}
@@ -1031,28 +1139,10 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
                 savingDocument={savingDocumentId === "new"}
               />
             }
-          />
-        ) : null}
-      </div>
-
-      <EmployeeFeedModal
-        actorRef={taskFlowConfig.task_flow_actor_ref}
-        actorType={taskFlowConfig.task_flow_actor_type}
-        error={employeeFeedQuery.error ? resolveTaskFlowError(employeeFeedQuery.error) : ""}
-        feed={employeeFeed}
-        loading={Boolean(employeeFeedQuery.isFetching && !employeeFeed)}
-        onClose={state.closeModal}
-        onRefresh={() => void employeeFeedQuery.refetch()}
-        onSelectTask={(taskId) => {
-          state.closeModal();
-          state.selectTask(taskId);
-          closeSessionFeed();
-          setSessionInsights(null);
-        }}
-        open={state.activeModal === "agent-feed"}
-        profileId={profileId}
-        employees={employees}
-      />
+            />
+          ) : null}
+        </div>
+      )}
 
       <TaskSessionModal
         error={sessionError}
@@ -1065,7 +1155,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
       />
 
       <ManageProjectsModal
-        activeFlowId={state.flowFilter}
+        activeFlowId={selectedFlowId}
         busy={state.modalBusy}
         config={taskFlowConfig}
         draft={state.createProject.draft}
@@ -1102,7 +1192,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
       <CreateTaskModal
         busy={state.modalBusy}
         config={taskFlowConfig}
-        draft={state.createTask.draft}
+        draft={createTaskDraft}
         error={state.createTask.error}
         flows={flows}
         onCancel={state.closeModal}
@@ -1112,6 +1202,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         profileId={profileId}
         profiles={profiles}
         employees={employees}
+        rootEmployee={rootEmployee}
       />
 
       <TaskFlowSettingsModal
@@ -1160,6 +1251,120 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
     </section>
   );
 });
+
+function FirstFlowOnboarding({
+  busy,
+  draft,
+  error,
+  onDraftChange,
+  onSubmit,
+}: {
+  busy: boolean;
+  draft: TaskFlowProjectDraft;
+  error: string;
+  onDraftChange: (draft: TaskFlowProjectDraft) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <section className="taskflow-first-flow glass-panel">
+      <div className="taskflow-first-flow__copy">
+        <p className="surface-page__eyebrow">First project</p>
+        <h2>Create your first Flow</h2>
+        <p className="muted">
+          Task Flow works project by project. Create a Flow first, then the CTO can receive the intake task and delegate work through employees.
+        </p>
+      </div>
+      <form
+        className="taskflow-first-flow__form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+      >
+        {error ? <div className="inline-alert inline-alert--danger">{error}</div> : null}
+        <label className="field">
+          <span className="field__label">Flow name</span>
+          <input
+            disabled={busy}
+            maxLength={240}
+            onChange={(event) => onDraftChange({ ...draft, title: event.target.value })}
+            placeholder="Mega Chat"
+            required
+            value={draft.title}
+          />
+        </label>
+        <label className="field">
+          <span className="field__label">Purpose</span>
+          <textarea
+            disabled={busy}
+            maxLength={2000}
+            onChange={(event) => onDraftChange({ ...draft, description: event.target.value })}
+            placeholder="What should this project deliver and what context should employees preserve?"
+            rows={5}
+            value={draft.description}
+          />
+        </label>
+        <label className="field">
+          <span className="field__label">Labels</span>
+          <input
+            disabled={busy}
+            onChange={(event) => onDraftChange({ ...draft, labels: event.target.value })}
+            placeholder="product, backend, release"
+            value={draft.labels}
+          />
+        </label>
+        <button className="button button--primary" disabled={busy || !draft.title.trim()} type="submit">
+          {busy ? "Creating..." : "Create Flow"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function KnowledgeMaintenanceSummary({
+  flowTitleById,
+  onOpenTask,
+  result,
+}: {
+  flowTitleById: Map<string, string>;
+  onOpenTask: (taskId: string) => void;
+  result: TaskFlowKnowledgeMaintenanceSweep;
+}) {
+  const flows = Array.isArray(result.flows) ? result.flows : [];
+  return (
+    <div className="inline-alert inline-alert--info taskflow-maintenance-summary" role="status">
+      <div>
+        <strong>CTO knowledge review</strong>
+        <span>
+          {" "}
+          checked {Number(result.checked_flow_count || 0)}, created {Number(result.created_task_count || 0)}, woke{" "}
+          {Number(result.woken_task_count || 0)}
+        </span>
+      </div>
+      {flows.length ? (
+        <div className="taskflow-maintenance-summary__items">
+          {flows.slice(0, 4).map((flow) => {
+            const taskId = flow.task?.id || "";
+            const flowTitle = flowTitleById.get(flow.flow_id) || flow.flow_title || flow.flow_id;
+            const reasons = Array.isArray(flow.reasons) ? flow.reasons : [];
+            return (
+              <div className="taskflow-maintenance-summary__item" key={`${flow.flow_id}-${flow.action || "checked"}`}>
+                <span className="badge badge--muted">{flow.action || flow.health_status || "checked"}</span>
+                <span>{flowTitle}</span>
+                {reasons.length ? <span className="muted">{reasons.join(", ")}</span> : null}
+                {taskId ? (
+                  <button className="button button--ghost button--tiny" onClick={() => onOpenTask(taskId)} type="button">
+                    Open task
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function findBoardTask(board: AppRouteProps["config"] | unknown, taskId: string) {
   const typedBoard = board as { columns?: Array<{ tasks?: TaskFlowTask[] }> } | null;

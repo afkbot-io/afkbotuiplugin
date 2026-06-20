@@ -8,6 +8,8 @@ import {
   defaultProjectDraft,
   defaultTaskDraft,
   getEmployeeOwnerRefOptions,
+  getRootEmployeeOwnerError,
+  getRootEmployeeOwnerOption,
   isCanonicalEmployeeOwnerRef,
   getTaskFlowBoard,
   normalizeActorRef,
@@ -24,6 +26,7 @@ import {
   validateProjectDraft,
   validateSettingsDraft,
   validateTaskDraft,
+  withRootEmployeeOwner,
 } from "@/features/task-flow/model/task-flow.api";
 import {
   compareFlowProjects,
@@ -72,6 +75,14 @@ describe("task-flow api helpers", () => {
     expect(
       validateProjectDraft({
         ...defaultProjectDraft(),
+        default_owner_ref: "web-user",
+        default_owner_type: "human",
+        title: "Alpha",
+      }),
+    ).toBe("Task Flow default owner must be an employee.");
+    expect(
+      validateProjectDraft({
+        ...defaultProjectDraft(),
         default_owner_ref: "",
         default_owner_type: "employee",
         title: "Alpha",
@@ -115,6 +126,7 @@ describe("task-flow api helpers", () => {
         ),
         title: "Task",
         description: "Prompt",
+        flow_id: "flow-alpha",
         priority: "999",
       }),
     ).toBe("Task priority must be between 0 and 100.");
@@ -131,6 +143,22 @@ describe("task-flow api helpers", () => {
         ),
         title: "Task",
         description: "Prompt",
+      }),
+    ).toBe("Project flow is required.");
+    expect(
+      validateTaskDraft({
+        ...defaultTaskDraft(
+          {
+            task_flow_actor_ref: "web-user",
+            task_flow_actor_type: "human",
+            task_flow_board_limit_per_column: 20,
+            task_flow_poll_interval_sec: 5,
+          },
+          [],
+        ),
+        title: "Task",
+        description: "Prompt",
+        flow_id: "flow-alpha",
         due_at: "not-a-date",
       }),
     ).toBe("Due date must be a valid date and time.");
@@ -148,6 +176,7 @@ describe("task-flow api helpers", () => {
           ),
           title: "Task",
           description: "Prompt",
+          flow_id: "flow-alpha",
           priority: "40",
           owner_ref: "researcher",
         },
@@ -166,6 +195,64 @@ describe("task-flow api helpers", () => {
           [],
         ),
         description: "Prompt",
+        flow_id: "flow-alpha",
+        owner_ref: "web-user",
+        owner_type: "human",
+        title: "Task",
+      }),
+    ).toBe("Task Flow owner must be an employee.");
+    expect(
+      validateTaskDraft({
+        ...defaultTaskDraft(
+          {
+            task_flow_actor_ref: "web-user",
+            task_flow_actor_type: "human",
+            task_flow_board_limit_per_column: 20,
+            task_flow_poll_interval_sec: 5,
+          },
+          [],
+        ),
+        description: "Prompt",
+        flow_id: "flow-alpha",
+        owner_ref: "default",
+        reviewer_ref: "web-user",
+        reviewer_type: "human",
+        title: "Task",
+      }),
+    ).toBe("Task Flow reviewer must be an employee.");
+    expect(
+      validateTaskDraft(
+        {
+          ...defaultTaskDraft(
+            {
+              task_flow_actor_ref: "web-user",
+              task_flow_actor_type: "human",
+              task_flow_board_limit_per_column: 20,
+              task_flow_poll_interval_sec: 5,
+            },
+            [],
+          ),
+          title: "Existing task",
+          description: "Prompt",
+          owner_ref: "default",
+        },
+        undefined,
+        { requireFlow: false },
+      ),
+    ).toBe("");
+    expect(
+      validateTaskDraft({
+        ...defaultTaskDraft(
+          {
+            task_flow_actor_ref: "web-user",
+            task_flow_actor_type: "human",
+            task_flow_board_limit_per_column: 20,
+            task_flow_poll_interval_sec: 5,
+          },
+          [],
+        ),
+        description: "Prompt",
+        flow_id: "flow-alpha",
         owner_ref: "",
         owner_type: "employee",
         title: "Task",
@@ -183,6 +270,7 @@ describe("task-flow api helpers", () => {
           [],
         ),
         description: "Prompt",
+        flow_id: "flow-alpha",
         owner_ref: "missing",
         owner_type: "employee",
         title: "Task",
@@ -231,7 +319,7 @@ describe("task-flow api helpers", () => {
         }),
       },
       "default",
-      "",
+      "flow-alpha",
       {
         task_flow_actor_ref: "web-user",
         task_flow_actor_type: "human",
@@ -369,6 +457,34 @@ describe("task-flow api helpers", () => {
         value: "reviewer",
       },
     ]);
+    const rootEmployee = getRootEmployeeOwnerOption("default", [
+      { manager_id: "cto", name: "Developer", owner_ref: "developer", profile_id: "default", status: "active" },
+      { is_root: true, name: "CTO", owner_ref: "cto", profile_id: "default", status: "active" },
+    ]);
+    expect(rootEmployee?.owner_ref).toBe("cto");
+    const multipleRoots = [
+      { is_root: true, name: "CTO", owner_ref: "cto", profile_id: "default", status: "active" },
+      { is_root: true, name: "COO", owner_ref: "coo", profile_id: "default", status: "active" },
+    ];
+    expect(getRootEmployeeOwnerOption("default", multipleRoots)).toBeNull();
+    expect(getRootEmployeeOwnerError("default", multipleRoots)).toMatch(/exactly one active root employee/i);
+    expect(
+      withRootEmployeeOwner(
+        {
+          ...defaultTaskDraft({
+            task_flow_actor_ref: "web-user",
+            task_flow_actor_type: "human",
+            task_flow_board_limit_per_column: 20,
+            task_flow_poll_interval_sec: 5,
+          }),
+          owner_ref: "developer",
+        },
+        rootEmployee,
+      ),
+    ).toMatchObject({
+      owner_ref: "cto",
+      owner_type: "employee",
+    });
     expect(isCanonicalEmployeeOwnerRef("default:researcher")).toBe(true);
     expect(isCanonicalEmployeeOwnerRef("default")).toBe(false);
     expect(
@@ -406,7 +522,7 @@ describe("task-flow api helpers", () => {
       resolveActorRefForType({
         config: {
           task_flow_actor_ref: "web-user",
-          task_flow_actor_type: "employee",
+          task_flow_actor_type: "human",
           task_flow_board_limit_per_column: 20,
           task_flow_poll_interval_sec: 5,
         },
@@ -436,21 +552,6 @@ describe("task-flow api helpers", () => {
       title: "Task",
     });
     expect(
-      taskDraftFromTask({
-        id: "task-legacy",
-        title: "Legacy Task",
-        prompt: "Legacy prompt text",
-        owner_type: "employee",
-        owner_ref: "researcher",
-        status: "todo",
-      }),
-    ).toMatchObject({
-      description: "Legacy prompt text",
-      owner_ref: "researcher",
-      owner_type: "employee",
-      title: "Legacy Task",
-    });
-    expect(
       buildSettingsPatch({
         task_flow_actor_ref: "  ",
         task_flow_actor_type: "",
@@ -475,6 +576,7 @@ describe("task-flow api helpers", () => {
     const draft = {
       ...defaultTaskDraft(config),
       description: "Write the task contract.",
+      flow_id: "flow-alpha",
       title: "Route task",
     };
     const payloads: Record<string, unknown>[] = [];
@@ -571,11 +673,12 @@ describe("task-flow api helpers", () => {
         default_owner_type: "employee",
         title: "Flow",
       },
-      { ...config, task_flow_actor_ref: "cto", task_flow_actor_type: "employee" },
+      config,
     );
 
     expect(payloads[0]).toMatchObject({
       description: "Write the task contract.",
+      flow_id: "flow-alpha",
       title: "Route task",
     });
     expect(payloads[0]).not.toHaveProperty("prompt");
@@ -599,8 +702,8 @@ describe("task-flow api helpers", () => {
       owner_type: "employee",
     });
     expect(payloads[5]).toMatchObject({
-      actor_ref: "cto",
-      actor_type: "employee",
+      actor_ref: "web-user",
+      actor_type: "human",
       default_owner_ref: "researcher",
       default_owner_type: "employee",
     });
@@ -650,8 +753,8 @@ describe("task-flow presentation helpers", () => {
       title: "Beta",
       description: "Review backlog",
       labels: ["review"],
-      default_owner_type: "human",
-      default_owner_ref: "alice",
+      default_owner_type: "employee",
+      default_owner_ref: "teamlead",
       created_by_type: "employee",
       created_by_ref: "teamlead",
       status: "paused",
@@ -664,7 +767,7 @@ describe("task-flow presentation helpers", () => {
       "Owner: Employee cto",
     );
     expect(formatTaskOwnerSummary({ id: "1", owner_type: "human", owner_ref: "alice", status: "todo", title: "Task" })).toBe(
-      "Owner: alice",
+      "Owner: Unassigned",
     );
     expect(
       formatTaskOwnerSummary({ id: "1", owner_type: "employee", owner_ref: "developer", status: "todo", title: "Task" }),

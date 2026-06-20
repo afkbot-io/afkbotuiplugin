@@ -13,9 +13,6 @@ type AuthSessionResponse = {
 };
 type ConfigResponse = Record<string, unknown> & {
   config?: Record<string, unknown>;
-  plugin_config?: {
-    config?: Record<string, unknown>;
-  };
 };
 type ProfilesResponse = {
   profiles?: Array<{
@@ -50,13 +47,20 @@ async function safeJson(response: Response) {
 
 function toApiError(response: Response, payload: unknown) {
   const detail = (payload && typeof payload === "object" ? payload : null) as
-    | { detail?: { error_code?: string; message?: string; reason?: string } | string }
+    | {
+        detail?: { error_code?: string; message?: string; reason?: string } | string;
+        error_code?: string;
+        message?: string;
+        reason?: string;
+      }
     | null;
   const errorDetail =
     detail?.detail && typeof detail.detail === "object"
       ? detail.detail
       : {
-          message: typeof detail?.detail === "string" ? detail.detail : "",
+          error_code: detail?.error_code,
+          message: typeof detail?.detail === "string" ? detail.detail : detail?.message || "",
+          reason: detail?.reason,
         };
   const fallbackMessage =
     response.status >= 500
@@ -431,6 +435,14 @@ export class ApiClient {
     });
   }
 
+  async runTaskFlowKnowledgeMaintenance(profileId: string, payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>("/task-flow/knowledge-maintenance", {
+      body: payload,
+      method: "POST",
+      params: { profile_id: profileId },
+    });
+  }
+
   async putTaskFlowDocument(profileId: string, payload: Record<string, unknown>) {
     return this.request<Record<string, unknown>>("/task-flow/docs", {
       body: payload,
@@ -500,10 +512,38 @@ export class ApiClient {
     });
   }
 
-  async getTaskFeed(profileId: string, params: Record<string, unknown> = {}) {
-    return this.request<Record<string, unknown>>("/task-flow/feed", {
-      params: { profile_id: profileId, ...params },
+  async listTaskAttachments(profileId: string, taskId: string) {
+    return this.request<Record<string, unknown>>(`/task-flow/tasks/${encodeURIComponent(taskId)}/attachments`, {
+      params: { profile_id: profileId },
     });
+  }
+
+  async addTaskAttachments(profileId: string, taskId: string, payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>(`/task-flow/tasks/${encodeURIComponent(taskId)}/attachments`, {
+      body: payload,
+      method: "POST",
+      params: { profile_id: profileId },
+    });
+  }
+
+  async deleteTaskAttachment(profileId: string, taskId: string, attachmentId: string, payload: Record<string, unknown> = {}) {
+    return this.request<Record<string, unknown>>(
+      `/task-flow/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}`,
+      {
+        body: payload,
+        method: "DELETE",
+        params: { profile_id: profileId },
+      },
+    );
+  }
+
+  getTaskAttachmentDownloadUrl(profileId: string, taskId: string, attachmentId: string) {
+    const url = new URL(
+      `${this.basePath}/task-flow/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}/download`,
+      window.location.origin,
+    );
+    appendQuery(url, { profile_id: profileId });
+    return url.pathname + url.search;
   }
 
   async updateTask(profileId: string, taskId: string, payload: Record<string, unknown>) {

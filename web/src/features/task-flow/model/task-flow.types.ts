@@ -28,13 +28,17 @@ export type TaskFlowProfile = {
 };
 
 export type TaskFlowEmployeeOption = {
+  is_root?: boolean | null;
+  manager_id?: string | null;
   name: string;
   origin?: string | null;
   owner_ref?: string | null;
   path?: string | null;
   profile_id?: string | null;
+  role?: string | null;
   summary?: string | null;
   status?: string | null;
+  title?: string | null;
 };
 
 export type TaskFlowOrgChartIssue = {
@@ -100,6 +104,7 @@ export type TaskFlowSession = {
 
 export type TaskFlowTask = {
   active_session?: TaskFlowSession | null;
+  attachment_count?: number | null;
   blocked_reason_code?: string | null;
   blocked_reason_text?: string | null;
   description?: string | null;
@@ -115,7 +120,6 @@ export type TaskFlowTask = {
   owner_type?: TaskFlowActorType | null;
   priority?: number | null;
   profile_id?: string | null;
-  prompt?: string | null;
   review_actionable?: boolean | null;
   requires_review?: boolean | null;
   reviewer_ref?: string | null;
@@ -124,6 +128,55 @@ export type TaskFlowTask = {
   source_type?: TaskFlowSourceType | null;
   status: TaskFlowStatus;
   title: string;
+};
+
+export type TaskFlowAttachmentInput = {
+  byte_size?: number;
+  content_base64: string;
+  content_type?: string | null;
+  kind?: string;
+  name: string;
+};
+
+export type TaskFlowAttachment = {
+  byte_size?: number | null;
+  content_type?: string | null;
+  created_at?: string | null;
+  created_by_ref?: string | null;
+  created_by_type?: string | null;
+  id: string;
+  kind?: string | null;
+  name: string;
+  profile_id?: string | null;
+  sha256?: string | null;
+  task_id?: string | null;
+  updated_at?: string | null;
+};
+
+export type TaskFlowKnowledgeMaintenanceFlow = {
+  action?: string | null;
+  flow_id: string;
+  flow_title?: string | null;
+  health_status?: string | null;
+  missing_flow_document_keys?: string[];
+  open_blocked_task_count?: number | null;
+  open_review_task_count?: number | null;
+  profile_id?: string | null;
+  reasons?: string[];
+  task?: TaskFlowTask | null;
+  unconfirmed_flow_document_keys?: string[];
+};
+
+export type TaskFlowKnowledgeMaintenanceSweep = {
+  actor_ref?: string | null;
+  actor_type?: string | null;
+  checked_flow_count?: number | null;
+  created_task_count?: number | null;
+  flows?: TaskFlowKnowledgeMaintenanceFlow[];
+  generated_at?: string | null;
+  profile_id?: string | null;
+  skipped_flow_count?: number | null;
+  woken_task_count?: number | null;
 };
 
 export type TaskFlowBoardColumn = {
@@ -193,6 +246,7 @@ export type TaskFlowDependency = {
 
 export type TaskFlowTaskDetail = {
   task: TaskFlowTask | null;
+  task_attachments: TaskFlowAttachment[];
   task_comments: TaskFlowComment[];
   task_dependencies: TaskFlowDependency[];
   task_events: TaskFlowEvent[];
@@ -229,23 +283,29 @@ export type TaskFlowContextBundle = {
   flow?: TaskFlowProject | null;
   flow_documents?: TaskFlowDocument[];
   generated_at?: string | null;
+  knowledge_packet?: {
+    blocking_reasons?: string[];
+    context_budget_chars?: number | null;
+    documents?: Array<{
+      confirmation_status?: string | null;
+      document_key?: string | null;
+      excerpt?: string | null;
+      revision?: number | null;
+      scope_id?: string | null;
+      scope_type?: string | null;
+      title?: string | null;
+    }>;
+    health_status?: string | null;
+    missing_flow_document_keys?: string[];
+    ready_for_delegation?: boolean | null;
+    ready_for_execution?: boolean | null;
+    required_flow_document_keys?: string[];
+    unconfirmed_flow_document_keys?: string[];
+  } | null;
   recent_comments?: TaskFlowComment[];
   recent_events?: TaskFlowEvent[];
   task?: TaskFlowTask | null;
   task_documents?: TaskFlowDocument[];
-};
-
-export type TaskFlowEmployeeFeed = {
-  blocked_count?: number;
-  mention_event_count?: number;
-  owner_ref: string;
-  owner_type: string;
-  recent_events?: TaskFlowEvent[];
-  review_count?: number;
-  running_count?: number;
-  tasks?: TaskFlowTask[];
-  todo_count?: number;
-  total_count?: number;
 };
 
 export type TaskFlowDocumentDraft = {
@@ -299,6 +359,7 @@ export type TaskFlowProjectDraft = {
 };
 
 export type TaskFlowTaskDraft = {
+  attachments?: TaskFlowAttachmentInput[];
   blocked_reason_text: string;
   depends_on_task_ids: string;
   due_at: string;

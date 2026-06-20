@@ -26,9 +26,9 @@ test("built dist supports core create and delete flows across workspace surfaces
 
   await page.getByRole("link", { name: "Task Flow" }).click();
   await page.getByRole("button", { name: "Flows" }).click();
-  const flowDialog = page.getByRole("dialog", { name: "Flow Library" });
-  await flowDialog.getByLabel("Title").fill(flowName);
-  await flowDialog.getByLabel("Description").fill("Mutation smoke flow.");
+  const flowDialog = page.getByRole("dialog", { name: "Project Flows" });
+  await flowDialog.getByLabel("Flow name").fill(flowName);
+  await flowDialog.getByLabel("Purpose").fill("Mutation smoke flow.");
   await flowDialog.getByRole("button", { name: "Add Flow" }).click();
   await expect(flowDialog.getByRole("heading", { name: flowName })).toBeVisible();
 

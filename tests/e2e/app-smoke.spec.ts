@@ -62,7 +62,7 @@ test("dist workspace routes render against mock API without runtime failures", a
   await page.getByLabel("Filter task board by flow").selectOption("flow-beta");
   await expect(page.getByRole("button", { name: /Prepare rollout checklist/i })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "No tasks" }).first()).toBeVisible();
-  await page.getByLabel("Filter task board by flow").selectOption("");
+  await page.getByLabel("Filter task board by flow").selectOption("flow-alpha");
   await expect(page.getByRole("button", { name: /Prepare rollout checklist/i })).toBeVisible();
   await expect(page.getByText("Blocked")).toBeVisible();
   await page.getByRole("button", { name: /Prepare rollout checklist/i }).click();
@@ -75,9 +75,18 @@ test("dist workspace routes render against mock API without runtime failures", a
   await page.getByRole("button", { name: "Close live activity modal" }).click();
   await page.getByRole("button", { name: "Close task panel" }).click();
   await page.getByRole("button", { name: "Flows" }).click();
-  await expect(page.getByRole("heading", { name: "Flow Library" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Project Flows" })).toBeVisible();
   await expect(page.getByRole("dialog").getByRole("heading", { name: "Alpha Project" })).toBeVisible();
   await page.getByRole("button", { name: "Close flow manager modal" }).click();
+
+  await openRoute(page, "Docs");
+  await expect(page.getByRole("heading", { name: "Docs" })).toBeVisible();
+  await page.getByRole("region", { name: "Document filters" }).getByLabel("Flow").selectOption("flow-alpha");
+  const flowPlanCard = page.getByRole("button", { name: /Flow plan/i });
+  await expect(flowPlanCard).toBeVisible();
+  await expect(flowPlanCard.getByText("Проект: Alpha Project")).toBeVisible();
+  await expect(page.getByText("Revision")).toBeVisible();
+  await expect(flowPlanCard.getByText("draft", { exact: true })).toBeVisible();
 
   await openRoute(page, "Subagents");
   await expect(page.getByRole("heading", { name: "Subagents" })).toBeVisible();

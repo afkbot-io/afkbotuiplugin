@@ -138,17 +138,17 @@ describe("ApiClient text-library resources", () => {
     );
   });
 
-  it("supports Task Flow docs, context, and agent feed endpoints", async () => {
+  it("supports Task Flow docs, context, and employee endpoints", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({ task_documents: [] }))
       .mockResolvedValueOnce(jsonResponse({ task_documents: [{ id: "doc-2" }] }))
+      .mockResolvedValueOnce(jsonResponse({ knowledge_maintenance: { checked_flow_count: 1 } }))
       .mockResolvedValueOnce(jsonResponse({ task_document: { id: "doc-1" } }))
       .mockResolvedValueOnce(jsonResponse({ task_document: { id: "doc-1", confirmation_status: "confirmed" } }))
       .mockResolvedValueOnce(jsonResponse({ deleted: true, task_document: { id: "doc-1" } }))
       .mockResolvedValueOnce(jsonResponse({ task_flow: { id: "flow-1", title: "Renamed" } }))
       .mockResolvedValueOnce(jsonResponse({ context: { task: { id: "task-1" } } }))
-      .mockResolvedValueOnce(jsonResponse({ feed: { owner_ref: "cto", owner_type: "employee" } }))
       .mockResolvedValueOnce(jsonResponse({ employees: [{ id: "backend-engineer" }] }))
       .mockResolvedValueOnce(jsonResponse({ employee: { id: "backend-engineer" } }))
       .mockResolvedValueOnce(jsonResponse({ employee: { id: "backend-engineer" } }))
@@ -160,12 +160,12 @@ describe("ApiClient text-library resources", () => {
 
     await client.listTaskFlowDocuments("default", "flow", "flow-1");
     await client.listTaskFlowDocumentWorkspace("default", { confirmation_status: "draft", query: "plan", scope_type: "task" });
+    await client.runTaskFlowKnowledgeMaintenance("default", { flow_id: "flow-1" });
     await client.putTaskFlowDocument("default", { document_key: "plan", scope_id: "flow-1", scope_type: "flow" });
     await client.confirmTaskFlowDocument("default", "doc-1", { expected_revision: 2 });
     await client.deleteTaskFlowDocument("default", "doc-1", { expected_revision: 2 });
     await client.updateTaskFlow("default", "flow-1", { title: "Renamed" });
     await client.getTaskContext("default", "task-1");
-    await client.getTaskFeed("default", { owner_ref: "cto", owner_type: "employee" });
     await client.listTaskFlowEmployees("default", { q: "backend" });
     await client.createTaskFlowEmployee("default", { id: "backend-engineer", manager_id: "cto", name: "Backend Engineer", role: "developer", title: "Backend Engineer" });
     await client.updateTaskFlowEmployee("default", "backend-engineer", { id: "backend-engineer", manager_id: "cto", name: "Backend Engineer", role: "developer", status: "disabled", title: "Backend Engineer" });
@@ -185,32 +185,35 @@ describe("ApiClient text-library resources", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
+      `${origin}/v1/plugins/afkbotui/task-flow/knowledge-maintenance?profile_id=default`,
+      expect.objectContaining({
+        body: JSON.stringify({ flow_id: "flow-1" }),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
       `${origin}/v1/plugins/afkbotui/task-flow/docs?profile_id=default`,
       expect.objectContaining({ method: "PUT" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
+      5,
       `${origin}/v1/plugins/afkbotui/task-flow/docs/doc-1/confirm?profile_id=default`,
       expect.objectContaining({ method: "POST" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      5,
+      6,
       `${origin}/v1/plugins/afkbotui/task-flow/docs/doc-1?profile_id=default`,
       expect.objectContaining({ method: "DELETE" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      6,
+      7,
       `${origin}/v1/plugins/afkbotui/task-flow/flows/flow-1?profile_id=default`,
       expect.objectContaining({ method: "PATCH" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      7,
-      `${origin}/v1/plugins/afkbotui/task-flow/tasks/task-1/context?profile_id=default`,
-      expect.objectContaining({ method: "GET" }),
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
       8,
-      `${origin}/v1/plugins/afkbotui/task-flow/feed?profile_id=default&owner_ref=cto&owner_type=employee`,
+      `${origin}/v1/plugins/afkbotui/task-flow/tasks/task-1/context?profile_id=default`,
       expect.objectContaining({ method: "GET" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -249,10 +252,8 @@ describe("ApiClient text-library resources", () => {
   it("invokes onUnauthorized when the auth session probe returns ui_auth_required", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       errorResponse(401, {
-        detail: {
-          error_code: "ui_auth_required",
-          message: "Session expired.",
-        },
+        error_code: "ui_auth_required",
+        reason: "Session expired.",
       }),
     );
     const onUnauthorized = vi.fn();
@@ -262,6 +263,7 @@ describe("ApiClient text-library resources", () => {
 
     await expect(client.getAuthSession()).rejects.toMatchObject({
       code: "ui_auth_required",
+      message: "Session expired.",
       status: 401,
     });
     expect(onUnauthorized).toHaveBeenCalledTimes(1);

@@ -128,7 +128,7 @@ function TaskCard({
   task: TaskFlowTask;
 }) {
   const isSelected = task.id === selectedTaskId || selectedTaskIds.has(task.id);
-  const previewCopy = task.last_comment_message || task.description || task.prompt || "No description yet.";
+  const previewCopy = task.last_comment_message || task.description || "No description yet.";
   const ownerSummary = formatTaskOwnerSummary(task);
   const flowTitle = task.flow_id ? flowTitleById.get(task.flow_id) || task.flow_id : "";
   const activeSession = task.active_session?.dialog_active;
@@ -194,6 +194,7 @@ function TaskCard({
               {label}
             </span>
           ))}
+          {task.attachment_count ? <span className="badge badge--muted">files {task.attachment_count}</span> : null}
           {task.requires_review ? <span className="badge badge--warning">review</span> : null}
           {task.last_comment_created_at ? <span className="badge badge--muted">{formatDateTime(task.last_comment_created_at)}</span> : null}
           {task.due_at ? (

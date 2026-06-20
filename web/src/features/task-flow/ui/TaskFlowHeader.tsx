@@ -10,14 +10,15 @@ type TaskFlowHeaderProps = {
   onDeleteSelected: () => void;
   onOpenEmployees: () => void;
   onFilterChange: (flowId: string) => void;
-  onOpenEmployeeFeed: () => void;
   onManageFlows: () => void;
+  onRunKnowledgeMaintenance: () => void;
   onOpenReview: () => void;
   onOpenSettings: () => void;
   onRefresh: () => void;
-  employeeFeedDisabled: boolean;
+  createTaskDisabled?: boolean;
+  createTaskDisabledReason?: string;
   refreshing: boolean;
-  employeeFeedCount: number;
+  knowledgeMaintenanceRunning?: boolean;
   reviewCount: number;
   selectedCount: number;
 };
@@ -30,14 +31,15 @@ export function TaskFlowHeader({
   onDeleteSelected,
   onOpenEmployees,
   onFilterChange,
-  onOpenEmployeeFeed,
   onManageFlows,
+  onRunKnowledgeMaintenance,
   onOpenReview,
   onOpenSettings,
   onRefresh,
-  employeeFeedDisabled,
+  createTaskDisabled = false,
+  createTaskDisabledReason = "",
   refreshing,
-  employeeFeedCount,
+  knowledgeMaintenanceRunning = false,
   reviewCount,
   selectedCount,
 }: TaskFlowHeaderProps) {
@@ -49,10 +51,11 @@ export function TaskFlowHeader({
             <select
               aria-label="Filter task board by flow"
               className="select"
+              disabled={!flows.length}
               onChange={(event) => onFilterChange(event.target.value)}
-              value={flowFilter}
+              value={flows.some((flow) => flow.id === flowFilter) ? flowFilter : ""}
             >
-              <option value="">All Flows</option>
+              {!flows.length ? <option value="">Create a flow first</option> : null}
               {flows.map((flow) => (
                 <option key={flow.id} value={flow.id}>
                   {flow.title}
@@ -70,15 +73,13 @@ export function TaskFlowHeader({
           <button className="button button--ghost button--compact" onClick={onOpenReview} type="button">
             Review <span className="button__count">{reviewCount}</span>
           </button>
-          <button
+          <AsyncButton
             className="button button--ghost button--compact"
-            disabled={employeeFeedDisabled}
-            onClick={onOpenEmployeeFeed}
-            title={employeeFeedDisabled ? "Select the root employee or an employee in Task Flow settings." : undefined}
-            type="button"
-          >
-            Employee Feed <span className="button__count">{employeeFeedCount}</span>
-          </button>
+            idleLabel="CTO Review"
+            loading={knowledgeMaintenanceRunning}
+            onClick={onRunKnowledgeMaintenance}
+            pendingLabel="Reviewing…"
+          />
           <button className="button button--ghost button--compact" onClick={onOpenEmployees} type="button">
             Employees
           </button>
@@ -98,7 +99,13 @@ export function TaskFlowHeader({
               </button>
             </>
           ) : null}
-          <button className="button button--primary" onClick={onCreateTask} type="button">
+          <button
+            className="button button--primary"
+            disabled={createTaskDisabled}
+            onClick={onCreateTask}
+            title={createTaskDisabledReason}
+            type="button"
+          >
             New Task
           </button>
         </>

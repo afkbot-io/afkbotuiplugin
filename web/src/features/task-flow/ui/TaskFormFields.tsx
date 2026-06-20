@@ -1,8 +1,8 @@
 import { ActorRefField } from "@/features/task-flow/ui/ActorRefField";
+import { TaskAttachmentPicker } from "@/features/task-flow/ui/TaskAttachmentPicker";
 import {
   resolveActorRefForType,
   TASK_FLOW_EMPLOYEE_TYPE,
-  TASK_FLOW_HUMAN_TYPE,
   TASK_FLOW_STATUS_OPTIONS,
 } from "@/features/task-flow/model/task-flow.api";
 import type {
@@ -20,10 +20,12 @@ type TaskFormFieldsProps = {
   onChange: (draft: TaskFlowTaskDraft) => void;
   profileId: string;
   profiles: TaskFlowProfile[];
+  lockedOwner?: TaskFlowEmployeeOption | null;
   showBlockedReason?: boolean;
   showFlowField?: boolean;
   showStatus?: boolean;
   employees: TaskFlowEmployeeOption[];
+  attachmentLabel?: string;
 };
 
 export function TaskFormFields({
@@ -33,10 +35,12 @@ export function TaskFormFields({
   onChange,
   profileId,
   profiles,
+  lockedOwner = null,
   showBlockedReason = false,
   showFlowField = false,
   showStatus = false,
   employees,
+  attachmentLabel = "Files",
 }: TaskFormFieldsProps) {
   const handleFieldChange = <K extends keyof TaskFlowTaskDraft>(key: K, value: TaskFlowTaskDraft[K]) => {
     onChange({
@@ -81,11 +85,11 @@ export function TaskFormFields({
   return (
     <>
       <label className="field">
-        <span className="field__label">Title</span>
+        <span className="field__label">Task title</span>
         <input maxLength={240} onChange={(event) => handleFieldChange("title", event.target.value)} required value={draft.title} />
       </label>
       <label className="field">
-        <span className="field__label">Description</span>
+        <span className="field__label">What should be done</span>
         <textarea
           maxLength={12000}
           onChange={(event) => handleFieldChange("description", event.target.value)}
@@ -93,6 +97,7 @@ export function TaskFormFields({
           rows={8}
           value={draft.description}
         />
+        <span className="field__hint">Describe the result, constraints, files/links, and acceptance criteria. The intake employee will decompose and delegate.</span>
       </label>
       <div className="field-grid">
         {showStatus ? (
@@ -109,9 +114,9 @@ export function TaskFormFields({
         ) : null}
         {showFlowField ? (
           <label className="field field--compact">
-            <span className="field__label">Flow</span>
-            <select onChange={(event) => handleFieldChange("flow_id", event.target.value)} value={draft.flow_id}>
-              <option value="">All Flows</option>
+            <span className="field__label">Project flow</span>
+            <select onChange={(event) => handleFieldChange("flow_id", event.target.value)} required value={draft.flow_id}>
+              <option disabled value="">Select project</option>
               {flows.map((flow) => (
                 <option key={flow.id} value={flow.id}>
                   {flow.title}
@@ -131,40 +136,51 @@ export function TaskFormFields({
           />
         </label>
       </div>
+      {lockedOwner ? (
+        <div className="field-grid">
+          <label className="field field--compact">
+            <span className="field__label">Assignee type</span>
+            <input readOnly value="Employee" />
+          </label>
+          <label className="field field--compact">
+            <span className="field__label">Intake employee</span>
+            <input readOnly value={lockedOwner.summary || lockedOwner.name || lockedOwner.owner_ref || ""} />
+          </label>
+        </div>
+      ) : (
+        <div className="field-grid">
+          <label className="field field--compact">
+            <span className="field__label">Assignee type</span>
+            <select onChange={(event) => handleOwnerTypeChange(event.target.value)} value={draft.owner_type}>
+              <option value="">None</option>
+              <option value={TASK_FLOW_EMPLOYEE_TYPE}>Employee</option>
+            </select>
+          </label>
+          <ActorRefField
+            config={config}
+            label="Assignee"
+            name="owner_ref"
+            onChange={(value) => handleFieldChange("owner_ref", value)}
+            profileId={profileId}
+            profiles={profiles}
+            employees={employees}
+            typeValue={draft.owner_type}
+            value={draft.owner_ref}
+          />
+        </div>
+      )}
       <div className="field-grid">
         <label className="field field--compact">
-          <span className="field__label">Owner Type</span>
-          <select onChange={(event) => handleOwnerTypeChange(event.target.value)} value={draft.owner_type}>
-            <option value="">None</option>
-            <option value={TASK_FLOW_EMPLOYEE_TYPE}>Employee</option>
-            <option value={TASK_FLOW_HUMAN_TYPE}>Human</option>
-          </select>
-        </label>
-        <ActorRefField
-          config={config}
-          label="Owner Ref"
-          name="owner_ref"
-          onChange={(value) => handleFieldChange("owner_ref", value)}
-          profileId={profileId}
-          profiles={profiles}
-          employees={employees}
-          typeValue={draft.owner_type}
-          value={draft.owner_ref}
-        />
-      </div>
-      <div className="field-grid">
-        <label className="field field--compact">
-          <span className="field__label">Reviewer Type</span>
+          <span className="field__label">Reviewer type</span>
           <select onChange={(event) => handleReviewerTypeChange(event.target.value)} value={draft.reviewer_type}>
             <option value="">None</option>
             <option value={TASK_FLOW_EMPLOYEE_TYPE}>Employee</option>
-            <option value={TASK_FLOW_HUMAN_TYPE}>Human</option>
           </select>
         </label>
         <ActorRefField
           allowBlank
           config={config}
-          label="Reviewer Ref"
+          label="Reviewer"
           name="reviewer_ref"
           onChange={(value) => handleFieldChange("reviewer_ref", value)}
           profileId={profileId}
@@ -195,14 +211,20 @@ export function TaskFormFields({
         <span className="field__label">Labels</span>
         <input onChange={(event) => handleFieldChange("labels", event.target.value)} value={draft.labels} />
       </label>
+      <TaskAttachmentPicker
+        label={attachmentLabel}
+        onChange={(attachments) => handleFieldChange("attachments", attachments)}
+        value={draft.attachments || []}
+      />
       {showFlowField ? (
         <label className="field">
           <span className="field__label">Depends On</span>
           <input
             onChange={(event) => handleFieldChange("depends_on_task_ids", event.target.value)}
-            placeholder="task-id-1, task-id-2…"
+            placeholder="task-id-1, task-id-2"
             value={draft.depends_on_task_ids}
           />
+          <span className="field__hint">Optional. Use existing task ids only when this task cannot start before them.</span>
         </label>
       ) : null}
       {showBlockedReason ? (

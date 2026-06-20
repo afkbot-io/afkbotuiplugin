@@ -1,7 +1,5 @@
 import {
-  TASK_FLOW_EMPLOYEE_TYPE,
   TASK_FLOW_HUMAN_TYPE,
-  resolveActorRefForType,
 } from "@/features/task-flow/model/task-flow.api";
 import type {
   TaskFlowConfig,
@@ -9,7 +7,6 @@ import type {
   TaskFlowSettingsDraft,
   TaskFlowEmployeeOption,
 } from "@/features/task-flow/model/task-flow.types";
-import { ActorRefField } from "@/features/task-flow/ui/ActorRefField";
 import { AsyncButton } from "@/shared/ui/AsyncButton";
 import { ModalDialog } from "@/shared/ui/ModalDialog";
 
@@ -36,29 +33,11 @@ export function TaskFlowSettingsModal({
   onDraftChange,
   onSubmit,
   open,
-  profileId,
-  profiles,
-  employees,
 }: TaskFlowSettingsModalProps) {
-  const handleActorRefChange = (value: string) => {
-    onDraftChange({
-      ...draft,
-      task_flow_actor_ref: value,
-    });
-  };
-
   const handleActorTypeChange = (actorType: string) => {
     onDraftChange({
       ...draft,
-      task_flow_actor_ref: resolveActorRefForType({
-        config,
-        currentRef: draft.task_flow_actor_ref,
-        previousType: draft.task_flow_actor_type,
-        profileId,
-        profiles,
-        employees,
-        type: actorType,
-      }),
+      task_flow_actor_ref: config.task_flow_actor_ref || "web-user",
       task_flow_actor_type: actorType,
     });
   };
@@ -67,7 +46,7 @@ export function TaskFlowSettingsModal({
     <ModalDialog
       busy={busy}
       closeLabel="Close settings modal"
-      description="Choose which employee or operator the board acts as, then tune sync and board density."
+      description="Choose the public operator identity, then tune sync and board density."
       eyebrow="Task Flow Settings"
       onClose={onCancel}
       onSubmit={onSubmit}
@@ -99,26 +78,23 @@ export function TaskFlowSettingsModal({
         </div>
         <div className="field-grid">
           <label className="field field--compact">
-            <span className="field__label">Team Role</span>
+            <span className="field__label">Operator Role</span>
             <select onChange={(event) => handleActorTypeChange(event.target.value)} value={draft.task_flow_actor_type}>
               <option value={TASK_FLOW_HUMAN_TYPE}>Human</option>
-              <option value={TASK_FLOW_EMPLOYEE_TYPE}>Employee</option>
             </select>
           </label>
-          <ActorRefField
-            config={config}
-            label="Team Member"
-            name="task_flow_actor_ref"
-            onChange={handleActorRefChange}
-            profileId={profileId}
-            profiles={profiles}
-            employees={employees}
-            typeValue={draft.task_flow_actor_type}
-            value={draft.task_flow_actor_ref}
-          />
+          <label className="field field--compact">
+            <span className="field__label">Operator</span>
+            <input
+              aria-readonly="true"
+              disabled
+              name="task_flow_actor_ref"
+              value={config.task_flow_actor_ref || "web-user"}
+            />
+          </label>
         </div>
         <div className="inline-alert inline-alert--info">
-          Task Flow actions can be performed as a human operator or a profile-local employee.
+          Public UI actions are attributed to a validated human operator. Employees act only from trusted Task Flow runtime sessions.
         </div>
         <div className="button-row">
           <AsyncButton className="button button--primary" idleLabel="Save Settings" loading={busy} pendingLabel="Saving…" type="submit" />
