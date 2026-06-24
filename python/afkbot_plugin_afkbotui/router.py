@@ -136,6 +136,7 @@ class TaskFlowEmployeeCreatePayload(BaseModel):
     status: Literal["active", "disabled", "archived"] = "active"
     manager_id: str | None = Field(default=None, max_length=120)
     body: str = Field(default="", max_length=8000)
+    can_delegate_to: list[str] = Field(default_factory=list, max_length=80)
     allowed_tools: list[str] = Field(default_factory=list, max_length=80)
     can_use_subagents: bool = False
     subagent_allowlist: list[str] = Field(default_factory=list, max_length=80)
@@ -2611,7 +2612,7 @@ def _render_task_flow_employee_markdown(payload: TaskFlowEmployeeCreatePayload) 
         lines.append(f"manager_id: {_frontmatter_scalar(payload.manager_id)}")
     lines.extend(
         [
-            "can_delegate_to: []",
+            f"can_delegate_to: {_frontmatter_list(payload.can_delegate_to)}",
             f"allowed_tools: {_frontmatter_list(allowed_tools)}",
             f"can_use_subagents: {str(payload.can_use_subagents).lower()}",
             f"subagent_allowlist: {_frontmatter_list(payload.subagent_allowlist)}",

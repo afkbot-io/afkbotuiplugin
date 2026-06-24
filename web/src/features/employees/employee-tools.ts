@@ -126,6 +126,7 @@ export function defaultEmployeeDraft(parentId: string, employeeCount: number): T
     body: isRoot
       ? "Owns Task Flow intake, decomposition, routing, dependency control, review escalation, and delegation to the right leads."
       : "",
+    can_delegate_to: [],
     can_use_subagents: false,
     id: isRoot ? "cto" : "",
     manager_id: parentId === ROOT_CREATE_ID ? null : parentId || null,
@@ -144,6 +145,7 @@ export function employeeToDraft(employee: TaskFlowEmployee | null | undefined): 
   return {
     allowed_tools: employee.allowed_tools || [],
     body: employee.body || "",
+    can_delegate_to: employee.can_delegate_to || [],
     can_use_subagents: Boolean(employee.can_use_subagents),
     id: employee.id,
     manager_id: employee.manager_id || null,

@@ -36,6 +36,7 @@ describe("employee tool policy helpers", () => {
       employeeToDraft({
         allowed_tools: ["task.*"],
         body: "Review docs.",
+        can_delegate_to: ["developer", "qa"],
         can_use_subagents: true,
         derived_reports: [],
         id: "reviewer",
@@ -48,6 +49,7 @@ describe("employee tool policy helpers", () => {
       }),
     ).toMatchObject({
       allowed_tools: ["task.*"],
+      can_delegate_to: ["developer", "qa"],
       can_use_subagents: true,
       manager_id: "cto",
       status: "disabled",

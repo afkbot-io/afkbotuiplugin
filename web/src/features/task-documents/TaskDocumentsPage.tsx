@@ -80,6 +80,16 @@ export const TaskDocumentsPage = forwardRef<RouteHandle, AppRouteProps>(function
   const trimmedQuery = query.trim();
   const queryKey = ["task-flow-documents", profileId, trimmedQuery, scopeType, flowId, documentKey, confirmationStatus];
 
+  useEffect(() => {
+    setQuery("");
+    setScopeType("flow");
+    setFlowId("");
+    setDocumentKey("");
+    setConfirmationStatus("");
+    setSelectedDocumentId("");
+    setPendingDeleteId("");
+  }, [profileId]);
+
   const flowsQuery = useQuery({
     enabled: active && Boolean(profileId),
     queryKey: ["task-flow-documents", profileId, "flows"],

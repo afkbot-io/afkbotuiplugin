@@ -51,6 +51,24 @@ def test_task_flow_write_payloads_reject_unknown_legacy_fields() -> None:
             model.model_validate(payload)
 
 
+def test_employee_payload_renders_delegation_allowlist() -> None:
+    """Employee create/update should preserve manager delegation config."""
+
+    payload = router_module.TaskFlowEmployeeCreatePayload(
+        id="cto",
+        name="CTO",
+        title="Technical Director",
+        role="executive_orchestrator",
+        can_delegate_to=["teamlead", "qa"],
+        allowed_tools=["task.*"],
+        body="Owns intake and delegates execution.",
+    )
+
+    markdown = router_module._render_task_flow_employee_markdown(payload)
+
+    assert 'can_delegate_to: ["teamlead", "qa"]' in markdown
+
+
 def test_serialize_graph_preview_validation_exposes_stable_shape() -> None:
     payload = _serialize_graph_preview_validation(
         {
@@ -783,14 +801,17 @@ def test_task_flow_bulk_and_review_routes_resolve_human_actor_placeholders(monke
     assert human_bulk_response.status_code == 403
     assert human_bulk_response.json()["detail"]["error_code"] == "task_employee_principal_required"
 
-    review_response = client.get("/v1/plugins/afkbotui/task-flow/review", params={"profile_id": "default"})
+    review_response = client.get(
+        "/v1/plugins/afkbotui/task-flow/review",
+        params={"flow_id": "flow-1", "profile_id": "default"},
+    )
     assert review_response.status_code == 200
     assert observed["list_review_tasks"]["actor_type"] == "human"
     assert observed["list_review_tasks"]["actor_ref"] == "cli_user:local"
 
     all_reviewers_response = client.get(
         "/v1/plugins/afkbotui/task-flow/review",
-        params={"profile_id": "default", "all_reviewers": "true"},
+        params={"flow_id": "flow-1", "profile_id": "default", "all_reviewers": "true"},
     )
     assert all_reviewers_response.status_code == 200
     assert observed["list_review_tasks"]["actor_type"] is None
@@ -1020,10 +1041,12 @@ def test_task_flow_docs_context_and_feed_routes_forward_to_service(monkeypatch) 
     assert workspace_docs_response.json()["task_documents"][0]["id"] == "doc-task-handoff"
     assert observed["list_documents"] == {
         "confirmation_status": "draft",
+        "document_key": None,
         "limit": 25,
         "offset": 5,
         "profile_id": "default",
         "query": "handoff",
+        "scope_id": None,
         "scope_type": "task",
     }
 

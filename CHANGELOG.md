@@ -2,6 +2,25 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.20 - 2026-06-24
+
+- redesign the plugin as a native agent workspace with a persistent left sidebar,
+  profile switcher, bottom auth controls, responsive mobile drawer, and
+  collapsible desktop navigation
+- add the native AFKBOT Chat route backed by plugin chat APIs, WebSocket progress
+  streaming, question resume, secure-field submission, and polling fallback
+- ship PWA metadata, service worker, and app icon assets with the embedded
+  `web/dist` bundle
+- make Task Flow, Automations, Skills, Bootstrap, Docs, Employees, and Subagents
+  responsive across mobile, tablet, desktop, and 2K layouts without full-page
+  reload jumps
+- let employee create/edit forms choose explicit delegation targets without raw
+  frontmatter editing
+- keep Task Flow document, attachment, and project-scoped task surfaces aligned
+  with AFKBOT `1.9.24` actor, delegation-budget, and file-access contracts
+- keep the release aligned with AFKBOT `1.9.24+` employee-only Task Flow guards
+  and sync release metadata to version `1.0.20`
+
 ## 1.0.19 - 2026-06-19
 
 - require AFKBOT `1.9.23+` for manager-intake delegation guards, coordinator

@@ -70,6 +70,7 @@ export type TaskFlowEmployee = {
 export type TaskFlowEmployeeDraft = {
   allowed_tools?: string[];
   body?: string;
+  can_delegate_to?: string[];
   can_use_subagents?: boolean;
   id: string;
   manager_id?: string | null;

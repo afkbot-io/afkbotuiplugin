@@ -101,6 +101,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
   const [savingTask, setSavingTask] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
   const [manualRefreshingBoard, setManualRefreshingBoard] = useState(false);
+  const [boardPanning, setBoardPanning] = useState(false);
   const [runningKnowledgeMaintenance, setRunningKnowledgeMaintenance] = useState(false);
   const [knowledgeMaintenanceResult, setKnowledgeMaintenanceResult] = useState<TaskFlowKnowledgeMaintenanceSweep | null>(null);
   const [savingDocumentId, setSavingDocumentId] = useState("");
@@ -480,7 +481,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
 
   useTaskFlowPolling({
     active,
-    enabled: !state.activeModal && !savingTask && !submittingComment && !boardPanRef.current.active,
+    enabled: !state.activeModal && !savingTask && !submittingComment && !boardPanning,
     intervalMs: taskFlowConfig.task_flow_poll_interval_sec * 1000,
     onPoll: async (incremental) => {
       await refreshAll(Boolean(incremental));
@@ -516,6 +517,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
         scrollLeft: 0,
         startX: 0,
       };
+      setBoardPanning(false);
       boardRef.current?.classList.remove("board-viewport--panning");
       sectionRef.current?.classList.remove("taskflow-page--panning");
     };
@@ -546,6 +548,7 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
       scrollLeft: boardRef.current.scrollLeft,
       startX: event.clientX,
     };
+    setBoardPanning(true);
     boardRef.current.classList.add("board-viewport--panning");
     sectionRef.current?.classList.add("taskflow-page--panning");
     event.preventDefault();

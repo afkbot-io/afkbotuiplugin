@@ -73,9 +73,20 @@ export const EmployeesPage = forwardRef<RouteHandle, AppRouteProps>(function Emp
     refetchOnWindowFocus: false,
   });
 
+  useEffect(() => {
+    setSelectedEmployeeId("");
+    setCreateParentId("");
+    setEditingEmployeeId("");
+    setDeletingEmployeeId("");
+  }, [profileId]);
+
   const createEmployeeMutation = useMutation({
-    mutationFn: (draft: TaskFlowEmployeeDraft) => createTaskFlowEmployee(api, profileId, draft),
-    onSuccess: async () => {
+    mutationFn: ({ draft, requestProfileId }: { draft: TaskFlowEmployeeDraft; requestProfileId: string }) =>
+      createTaskFlowEmployee(api, requestProfileId, draft),
+    onSuccess: async (_employee, variables) => {
+      if (variables.requestProfileId !== profileId) {
+        return;
+      }
       setCreateParentId("");
       await refresh();
       notify("Employee created", "success");
@@ -84,9 +95,12 @@ export const EmployeesPage = forwardRef<RouteHandle, AppRouteProps>(function Emp
   });
 
   const updateEmployeeMutation = useMutation({
-    mutationFn: ({ employeeId, draft }: { employeeId: string; draft: TaskFlowEmployeeDraft }) =>
-      updateTaskFlowEmployee(api, profileId, employeeId, draft),
-    onSuccess: async (employee) => {
+    mutationFn: ({ draft, employeeId, requestProfileId }: { employeeId: string; draft: TaskFlowEmployeeDraft; requestProfileId: string }) =>
+      updateTaskFlowEmployee(api, requestProfileId, employeeId, draft),
+    onSuccess: async (employee, variables) => {
+      if (variables.requestProfileId !== profileId) {
+        return;
+      }
       setEditingEmployeeId("");
       if (employee?.id) {
         setSelectedEmployeeId(employee.id);
@@ -98,8 +112,12 @@ export const EmployeesPage = forwardRef<RouteHandle, AppRouteProps>(function Emp
   });
 
   const deleteEmployeeMutation = useMutation({
-    mutationFn: (employeeId: string) => deleteTaskFlowEmployee(api, profileId, employeeId),
-    onSuccess: async () => {
+    mutationFn: ({ employeeId, requestProfileId }: { employeeId: string; requestProfileId: string }) =>
+      deleteTaskFlowEmployee(api, requestProfileId, employeeId),
+    onSuccess: async (_result, variables) => {
+      if (variables.requestProfileId !== profileId) {
+        return;
+      }
       setDeletingEmployeeId("");
       setSelectedEmployeeId("");
       await refresh();
@@ -248,7 +266,7 @@ export const EmployeesPage = forwardRef<RouteHandle, AppRouteProps>(function Emp
         employees={employeeRows}
         mode="create"
         onClose={() => setCreateParentId("")}
-        onSubmit={(draft) => createEmployeeMutation.mutate(draft)}
+        onSubmit={(draft) => createEmployeeMutation.mutate({ draft, requestProfileId: profileId })}
         parent={createParent}
         parentId={createParentId}
         subagentOptions={subagentsQuery.data || []}
@@ -262,7 +280,7 @@ export const EmployeesPage = forwardRef<RouteHandle, AppRouteProps>(function Emp
         onClose={() => setEditingEmployeeId("")}
         onSubmit={(draft) => {
           if (editingEmployee?.id) {
-            updateEmployeeMutation.mutate({ employeeId: editingEmployee.id, draft });
+            updateEmployeeMutation.mutate({ employeeId: editingEmployee.id, draft, requestProfileId: profileId });
           }
         }}
         parent={editingEmployee?.manager_id ? orgChart?.employees[editingEmployee.manager_id] || null : null}
@@ -273,7 +291,7 @@ export const EmployeesPage = forwardRef<RouteHandle, AppRouteProps>(function Emp
         busy={deleteEmployeeMutation.isPending}
         employee={deletingEmployee}
         onClose={() => setDeletingEmployeeId("")}
-        onConfirm={(employeeId) => deleteEmployeeMutation.mutate(employeeId)}
+        onConfirm={(employeeId) => deleteEmployeeMutation.mutate({ employeeId, requestProfileId: profileId })}
       />
     </section>
   );
@@ -408,6 +426,7 @@ function EmployeeFormModal({
     onSubmit({
       ...draft,
       allowed_tools: draft.allowed_tools || [],
+      can_delegate_to: draft.can_delegate_to || [],
       manager_id: draft.manager_id === ROOT_CREATE_ID ? null : draft.manager_id || null,
       status: draft.status || "active",
       subagent_allowlist: draft.subagent_allowlist || [],
@@ -487,6 +506,13 @@ function EmployeeFormModal({
           value={allowedTools}
           onChange={(allowed_tools) => update({ allowed_tools })}
         />
+        <DelegateAccessField
+          disabled={busy}
+          employees={employees}
+          employeeId={draft.id}
+          onChange={(can_delegate_to) => update({ can_delegate_to })}
+          value={draft.can_delegate_to || []}
+        />
         <div className="form-grid form-grid--two">
           <label className="field field--checkbox">
             <span>Subagent execution</span>
@@ -529,6 +555,82 @@ function EmployeeFormModal({
         </div>
       </form>
     </ModalDialog>
+  );
+}
+
+function DelegateAccessField({
+  disabled,
+  employeeId,
+  employees,
+  onChange,
+  value,
+}: {
+  disabled: boolean;
+  employeeId: string;
+  employees: TaskFlowEmployee[];
+  onChange: (employeeIds: string[]) => void;
+  value: string[];
+}) {
+  const options = employees.filter((employee) => employee.id !== employeeId);
+  const optionIds = new Set(options.map((employee) => employee.id));
+  const selected = new Set(value);
+  const preserved = value.filter((employee) => !optionIds.has(employee));
+  const setDelegate = (delegateId: string, checked: boolean) => {
+    const next = new Set(value);
+    if (checked) {
+      next.add(delegateId);
+    } else {
+      next.delete(delegateId);
+    }
+    onChange(normalizeToolList(Array.from(next)));
+  };
+
+  return (
+    <div className="subagent-access">
+      <span className="field__label">Delegation targets</span>
+      <p className="muted">Choose extra employees this role can assign work to beyond direct reports.</p>
+      <div className="subagent-access__list">
+        {options.length ? (
+          options.map((employee) => (
+            <label className="employee-tool-card" key={employee.id}>
+              <input
+                checked={selected.has(employee.id)}
+                disabled={disabled}
+                onChange={(event) => setDelegate(employee.id, event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                <strong>{employee.name}</strong>
+                <small>{employee.title} · {employee.role}</small>
+                <code>{employee.id}</code>
+              </span>
+            </label>
+          ))
+        ) : (
+          <p className="muted">Create more employees to configure explicit delegation targets.</p>
+        )}
+        {preserved.length ? (
+          <div className="employee-token-panel">
+            <span className="field__label">Preserved unavailable employees</span>
+            <div className="employee-token-list">
+              {preserved.map((delegateId) => (
+                <button
+                  className="employee-token"
+                  disabled={disabled}
+                  key={delegateId}
+                  onClick={() => onChange(normalizeToolList(value.filter((item) => item !== delegateId)))}
+                  title={`Remove ${delegateId}`}
+                  type="button"
+                >
+                  <code>{delegateId}</code>
+                  <span aria-hidden="true">x</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
