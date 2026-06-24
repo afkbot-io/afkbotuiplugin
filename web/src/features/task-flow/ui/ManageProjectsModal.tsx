@@ -17,7 +17,6 @@ import {
   resolveActorRefForType,
 } from "@/features/task-flow/model/task-flow.api";
 import type {
-  TaskFlowConfig,
   TaskFlowDocument,
   TaskFlowDocumentDraft,
   TaskFlowProfile,
@@ -31,7 +30,6 @@ import { ModalDialog } from "@/shared/ui/ModalDialog";
 type ManageProjectsModalProps = {
   activeFlowId: string;
   busy: boolean;
-  config: TaskFlowConfig;
   draft: TaskFlowProjectDraft;
   editingFlowId: string;
   error: string;
@@ -63,7 +61,6 @@ type ManageProjectsModalProps = {
 export function ManageProjectsModal({
   activeFlowId,
   busy,
-  config,
   draft,
   editingFlowId,
   error,
@@ -98,11 +95,9 @@ export function ManageProjectsModal({
     onDraftChange({
       ...draft,
       default_owner_ref: resolveActorRefForType({
-        config,
         currentRef: draft.default_owner_ref,
         previousType: draft.default_owner_type,
         profileId,
-        profiles,
         employees,
         type: defaultOwnerType,
       }),
@@ -266,7 +261,6 @@ export function ManageProjectsModal({
                 </select>
               </label>
               <ActorRefField
-                config={config}
                 label="Default assignee"
                 name="default_owner_ref"
                 onChange={(value) => onDraftChange({ ...draft, default_owner_ref: value })}

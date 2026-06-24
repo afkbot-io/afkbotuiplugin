@@ -14,7 +14,6 @@ import {
   resolveActorRefForType,
 } from "@/features/task-flow/model/task-flow.api";
 import type {
-  TaskFlowConfig,
   TaskFlowAttachmentInput,
   TaskFlowProfile,
   TaskFlowEmployeeOption,
@@ -28,7 +27,6 @@ import { AsyncButton } from "@/shared/ui/AsyncButton";
 import { SurfaceLoader } from "@/shared/ui/SurfaceLoader";
 
 type TaskInspectorProps = {
-  config: TaskFlowConfig;
   detail: TaskFlowTaskDetail | null;
   detailLoading: boolean;
   draft: TaskFlowTaskDraft;
@@ -56,7 +54,6 @@ type TaskInspectorProps = {
 };
 
 export function TaskInspector({
-  config,
   detail,
   detailLoading,
   draft,
@@ -169,11 +166,9 @@ export function TaskInspector({
       ...current,
       owner_ref: resolveActorRefForType({
         allowBlank: true,
-        config,
         currentRef: current.owner_ref,
         previousType: current.owner_type,
         profileId,
-        profiles,
         employees,
         type: ownerType,
       }),
@@ -206,7 +201,6 @@ export function TaskInspector({
           <form className="editor-form" onSubmit={handleSubmit} ref={editSectionRef}>
             <TaskFormFields
               attachmentLabel="Add files on save"
-              config={config}
               draft={draft}
               onChange={onDraftChange}
               profileId={profileId}
@@ -273,7 +267,6 @@ export function TaskInspector({
               </label>
               <ActorRefField
                 allowBlank
-                config={config}
                 label="Owner Ref"
                 name="review_owner_ref"
                 onChange={(value) => setReviewDraft((current) => ({ ...current, owner_ref: value }))}

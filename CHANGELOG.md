@@ -2,6 +2,16 @@
 
 All notable changes to this plugin are tracked here.
 
+## 1.0.21 - 2026-06-25
+
+- require AFKBOT `1.9.25+` for Task Flow v2 wake rows, context digest fields,
+  and document hash metadata used by the native workspace
+- keep Task Flow project/task forms employee-only for owner and reviewer
+  selection while showing relation, wake, and knowledge state in the inspector
+- filter audit-only wake events out of the generic activity feed and surface
+  recent employee wakes in the dedicated knowledge panel
+- sync release metadata to version `1.0.21`
+
 ## 1.0.20 - 2026-06-24
 
 - redesign the plugin as a native agent workspace with a persistent left sidebar,

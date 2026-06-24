@@ -10,7 +10,7 @@ import {
 } from "./workspace";
 
 describe("workspace helpers", () => {
-  it("normalizes config from runtime keys while forcing public Task Flow actor to human", () => {
+  it("normalizes config from runtime keys while forcing public Task Flow actor to server-managed human", () => {
     expect(
       normalizeConfig({
         poll_interval_sec: "7",
@@ -24,7 +24,7 @@ describe("workspace helpers", () => {
       task_flow_poll_interval_sec: 9,
       task_flow_board_limit_per_column: 25,
       task_flow_actor_type: "human",
-      task_flow_actor_ref: "cli_user:local",
+      task_flow_actor_ref: "web-user",
     });
   });
 

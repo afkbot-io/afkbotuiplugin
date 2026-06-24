@@ -90,9 +90,12 @@ export function TaskKnowledgePanel({
             <ContextMetric label="Flow docs" value={context.flow_documents?.length || 0} />
             <ContextMetric label="Task docs" value={context.task_documents?.length || 0} />
             <ContextMetric label="Dependencies" value={context.dependencies?.length || 0} />
+            <ContextMetric label="Relations" value={context.relations?.length || 0} />
+            <ContextMetric label="Open wakes" value={context.recent_wakes?.length || 0} />
           </div>
 
           <KnowledgePacketSummary context={context} />
+          <TaskFlowV2Summary context={context} />
 
           <DocumentList
             busyDocumentId={busyDocumentId}
@@ -180,6 +183,55 @@ export function TaskKnowledgePanel({
         <p className="muted-copy">Select a task to load its working context.</p>
       )}
     </section>
+  );
+}
+
+function TaskFlowV2Summary({ context }: { context: TaskFlowContextBundle }) {
+  const relations = context.relations || [];
+  const wakes = sortByNewest(context.recent_wakes || [], "created_at");
+  if (!relations.length && !wakes.length) {
+    return null;
+  }
+  return (
+    <div className="knowledge-doc-list">
+      <div className="knowledge-doc-list__head">
+        <h5>Task Flow v2</h5>
+        <div className="knowledge-doc-list__actions">
+          <span className="badge badge--muted">{relations.length} relations</span>
+          <span className="badge badge--muted">{wakes.length} wakes</span>
+        </div>
+      </div>
+      {relations.length ? (
+        <div className="knowledge-context__group">
+          <h5>Relations</h5>
+          {relations.slice(0, 8).map((relation) => (
+            <p key={relation.id}>
+              <span className={`badge ${relation.is_blocking ? "badge--warning" : "badge--muted"}`}>
+                {formatStatusLabel(relation.relation_type)}
+              </span>{" "}
+              <span className="detail-item__value--mono">{relation.source_task_id}</span>
+              {" -> "}
+              <span className="detail-item__value--mono">{relation.target_task_id}</span>
+              {relation.satisfied_on_status ? ` / ${relation.satisfied_on_status}` : ""}
+            </p>
+          ))}
+        </div>
+      ) : null}
+      {wakes.length ? (
+        <div className="knowledge-context__group">
+          <h5>Wake queue</h5>
+          {wakes.slice(0, 6).map((wake) => (
+            <p key={wake.id}>
+              <span className={`badge ${wake.status === "pending" ? "badge--success" : "badge--muted"}`}>
+                {wake.status || "wake"}
+              </span>{" "}
+              {wake.reason_code || "wake_requested"} · {wake.owner_type}:{wake.owner_ref}
+              {wake.coalesced_count ? ` · ${wake.coalesced_count} duplicates` : ""} · {formatDateTime(wake.created_at)}
+            </p>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -318,7 +370,10 @@ function DocumentList({
 
 function ContextTimeline({ context }: { context: TaskFlowContextBundle }) {
   const tasks = [...(context.dependency_tasks || []), ...(context.dependent_tasks || []), ...(context.delegated_tasks || [])];
-  const recentEvents = sortByNewest(context.recent_events || [], "created_at");
+  const recentEvents = sortByNewest(
+    (context.recent_events || []).filter((event) => event.event_type !== "wake_requested"),
+    "created_at",
+  );
   return (
     <div className="knowledge-context">
       {tasks.length ? (
@@ -331,7 +386,7 @@ function ContextTimeline({ context }: { context: TaskFlowContextBundle }) {
           ))}
         </div>
       ) : null}
-      {(context.recent_events || []).length ? (
+      {recentEvents.length ? (
         <div className="knowledge-context__group">
           <h5>Recent context events</h5>
           {recentEvents.slice(0, 5).map((event) => (

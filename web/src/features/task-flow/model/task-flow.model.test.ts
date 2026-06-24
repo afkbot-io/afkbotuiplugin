@@ -397,36 +397,18 @@ describe("task-flow api helpers", () => {
       normalizeActorRef(
         "human",
         "",
-        {
-          task_flow_actor_ref: "web-user",
-          task_flow_actor_type: "human",
-          task_flow_board_limit_per_column: 20,
-          task_flow_poll_interval_sec: 5,
-        },
       ),
-    ).toBe("web-user");
+    ).toBeNull();
     expect(
       normalizeActorRef(
         "employee",
         "alpha",
-        {
-          task_flow_actor_ref: "web-user",
-          task_flow_actor_type: "human",
-          task_flow_board_limit_per_column: 20,
-          task_flow_poll_interval_sec: 5,
-        },
       ),
     ).toBe("alpha");
     expect(
       normalizeActorRef(
         "employee",
         "default:researcher",
-        {
-          task_flow_actor_ref: "web-user",
-          task_flow_actor_type: "human",
-          task_flow_board_limit_per_column: 20,
-          task_flow_poll_interval_sec: 5,
-        },
       ),
     ).toBe("default:researcher");
     expect(normalizeActorType("employee")).toBe("employee");
@@ -489,47 +471,26 @@ describe("task-flow api helpers", () => {
     expect(isCanonicalEmployeeOwnerRef("default")).toBe(false);
     expect(
       resolveActorRefForType({
-        config: {
-          task_flow_actor_ref: "web-user",
-          task_flow_actor_type: "human",
-          task_flow_board_limit_per_column: 20,
-          task_flow_poll_interval_sec: 5,
-        },
         currentRef: "",
         profileId: "default",
-        profiles: [{ id: "default" }],
         employees: [{ name: "researcher" }],
         type: "employee",
       }),
     ).toBe("researcher");
     expect(
       resolveActorRefForType({
-        config: {
-          task_flow_actor_ref: "web-user",
-          task_flow_actor_type: "human",
-          task_flow_board_limit_per_column: 20,
-          task_flow_poll_interval_sec: 5,
-        },
         currentRef: "cli_user:alice",
         previousType: "human",
         profileId: "default",
-        profiles: [{ id: "default" }],
         employees: [{ name: "researcher" }],
         type: "employee",
       }),
     ).toBe("researcher");
     expect(
       resolveActorRefForType({
-        config: {
-          task_flow_actor_ref: "web-user",
-          task_flow_actor_type: "human",
-          task_flow_board_limit_per_column: 20,
-          task_flow_poll_interval_sec: 5,
-        },
         currentRef: "researcher",
         previousType: "employee",
         profileId: "default",
-        profiles: [{ id: "default" }],
         employees: [{ name: "researcher", owner_ref: "researcher", profile_id: "default" }],
         type: "employee",
       }),

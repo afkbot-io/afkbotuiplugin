@@ -1103,7 +1103,6 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
 
           {state.selectedTaskId ? (
             <TaskInspector
-            config={taskFlowConfig}
             detail={detail}
             detailLoading={Boolean(detailQuery.isFetching && !detail)}
             draft={editorDraft}
@@ -1160,7 +1159,6 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
       <ManageProjectsModal
         activeFlowId={selectedFlowId}
         busy={state.modalBusy}
-        config={taskFlowConfig}
         draft={state.createProject.draft}
         editingFlowId={editingFlowId}
         error={state.createProject.error || state.deleteState.error}
@@ -1194,7 +1192,6 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
 
       <CreateTaskModal
         busy={state.modalBusy}
-        config={taskFlowConfig}
         draft={createTaskDraft}
         error={state.createTask.error}
         flows={flows}
@@ -1210,16 +1207,12 @@ export const TaskFlowPage = forwardRef<RouteHandle, AppRouteProps>(function Task
 
       <TaskFlowSettingsModal
         busy={state.modalBusy}
-        config={taskFlowConfig}
         draft={state.settings.draft}
         error={state.settings.error}
         onCancel={state.closeModal}
         onDraftChange={state.setSettingsDraft}
         onSubmit={() => void handleSaveSettings()}
         open={state.activeModal === "settings"}
-        profileId={profileId}
-        profiles={profiles}
-        employees={employees}
       />
 
       <ReviewQueueModal

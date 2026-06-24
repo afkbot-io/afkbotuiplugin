@@ -1,14 +1,12 @@
-import type { TaskFlowConfig, TaskFlowProfile, TaskFlowEmployeeOption } from "@/features/task-flow/model/task-flow.types";
+import type { TaskFlowProfile, TaskFlowEmployeeOption } from "@/features/task-flow/model/task-flow.types";
 import {
   getProfileIdFallback,
   getEmployeeOwnerRefOptions,
   TASK_FLOW_EMPLOYEE_TYPE,
-  TASK_FLOW_HUMAN_TYPE,
 } from "@/features/task-flow/model/task-flow.api";
 
 type ActorRefFieldProps = {
   allowBlank?: boolean;
-  config: TaskFlowConfig;
   label: string;
   name: string;
   profileId: string;
@@ -21,7 +19,6 @@ type ActorRefFieldProps = {
 
 export function ActorRefField({
   allowBlank = false,
-  config,
   label,
   name,
   onChange,
@@ -51,20 +48,6 @@ export function ActorRefField({
             </option>
           ))}
         </select>
-      </label>
-    );
-  }
-
-  if (typeValue === TASK_FLOW_HUMAN_TYPE) {
-    return (
-      <label className="field field--compact">
-        <span className="field__label">{label}</span>
-        <input
-          name={name}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={config.task_flow_actor_ref || "web-user"}
-          value={value}
-        />
       </label>
     );
   }

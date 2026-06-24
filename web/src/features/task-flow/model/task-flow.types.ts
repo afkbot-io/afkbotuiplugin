@@ -245,6 +245,44 @@ export type TaskFlowDependency = {
   task_id?: string | null;
 };
 
+export type TaskFlowRelation = {
+  created_at?: string | null;
+  created_by_ref?: string | null;
+  created_by_type?: string | null;
+  details?: Record<string, unknown>;
+  flow_id?: string | null;
+  id: string;
+  is_blocking?: boolean | null;
+  profile_id?: string | null;
+  relation_type: string;
+  satisfied_on_status?: string | null;
+  source_task_id: string;
+  target_task_id: string;
+};
+
+export type TaskFlowWake = {
+  claimed_at?: string | null;
+  claimed_by?: string | null;
+  coalesced_count?: number | null;
+  created_at?: string | null;
+  finished_at?: string | null;
+  flow_id?: string | null;
+  id: string;
+  last_coalesced_at?: string | null;
+  owner_ref?: string | null;
+  owner_type?: string | null;
+  payload?: Record<string, unknown>;
+  priority?: number | null;
+  profile_id?: string | null;
+  reason_code?: string | null;
+  run_after?: string | null;
+  source_event_id?: number | null;
+  status?: string | null;
+  task_id: string;
+  task_run_id?: number | null;
+  updated_at?: string | null;
+};
+
 export type TaskFlowTaskDetail = {
   task: TaskFlowTask | null;
   task_attachments: TaskFlowAttachment[];
@@ -261,6 +299,7 @@ export type TaskFlowDocument = {
   confirmed_by_ref?: string | null;
   confirmed_by_type?: string | null;
   confirmed_revision?: number | null;
+  content_hash?: string | null;
   created_at?: string | null;
   document_key: string;
   id: string;
@@ -278,6 +317,7 @@ export type TaskFlowDocument = {
 export type TaskFlowContextBundle = {
   delegated_tasks?: TaskFlowTask[];
   dependencies?: TaskFlowDependency[];
+  relations?: TaskFlowRelation[];
   dependency_tasks?: TaskFlowTask[];
   dependent_tasks?: TaskFlowTask[];
   dependents?: TaskFlowDependency[];
@@ -305,6 +345,7 @@ export type TaskFlowContextBundle = {
   } | null;
   recent_comments?: TaskFlowComment[];
   recent_events?: TaskFlowEvent[];
+  recent_wakes?: TaskFlowWake[];
   task?: TaskFlowTask | null;
   task_documents?: TaskFlowDocument[];
 };

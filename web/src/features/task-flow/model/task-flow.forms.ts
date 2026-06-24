@@ -18,20 +18,11 @@ type ActorRefValidationContext = {
   profiles?: TaskFlowProfile[];
   employees: TaskFlowEmployeeOption[];
 };
-type ActorRefValidationLabel = "actor" | "default owner" | "owner" | "reviewer";
+type ActorRefValidationLabel = "default owner" | "owner" | "reviewer";
 
 export function normalizeTaskFlowConfig(config: Record<string, unknown>): TaskFlowConfig {
-  const actorType = normalizeActorType(config.task_flow_actor_type || "human");
-  if (actorType !== TASK_FLOW_HUMAN_TYPE) {
-    return {
-      task_flow_actor_ref: "web-user",
-      task_flow_actor_type: TASK_FLOW_HUMAN_TYPE,
-      task_flow_board_limit_per_column: Number(config.task_flow_board_limit_per_column || 20),
-      task_flow_poll_interval_sec: Number(config.task_flow_poll_interval_sec || 5),
-    };
-  }
   return {
-    task_flow_actor_ref: String(config.task_flow_actor_ref || "web-user"),
+    task_flow_actor_ref: "web-user",
     task_flow_actor_type: TASK_FLOW_HUMAN_TYPE,
     task_flow_board_limit_per_column: Number(config.task_flow_board_limit_per_column || 20),
     task_flow_poll_interval_sec: Number(config.task_flow_poll_interval_sec || 5),
@@ -180,14 +171,13 @@ export function validateReviewDraft(draft: TaskFlowReviewDraft, context?: ActorR
 
 export function validateSettingsDraft(draft: TaskFlowSettingsDraft, context?: ActorRefValidationContext) {
   void context;
+  void draft.task_flow_actor_ref;
+  void draft.task_flow_actor_type;
   if (normalizeNumberField(draft.task_flow_poll_interval_sec, { fallback: null, min: 1, max: 300 }) === null) {
     return "Poll interval must be between 1 and 300 seconds.";
   }
   if (normalizeNumberField(draft.task_flow_board_limit_per_column, { fallback: null, min: 1, max: 200 }) === null) {
     return "Board limit must be between 1 and 200 tasks per column.";
-  }
-  if (normalizeActorType(draft.task_flow_actor_type) !== TASK_FLOW_HUMAN_TYPE) {
-    return "Task Flow public UI actions must use a human operator.";
   }
   return "";
 }
@@ -243,14 +233,14 @@ export function getProfileIdFallback(profiles: TaskFlowProfile[]) {
   return profiles.find((item) => item.is_default)?.id || profiles[0]?.id || "default";
 }
 
-export function normalizeActorRef(type: unknown, value: unknown, config: TaskFlowConfig) {
+export function normalizeActorRef(type: unknown, value: unknown) {
   const normalizedType = normalizeActorType(type);
   const normalizedValue = String(value || "").trim();
   if (!normalizedType) {
     return null;
   }
-  if (normalizedType === TASK_FLOW_HUMAN_TYPE) {
-    return normalizedValue || config.task_flow_actor_ref;
+  if (normalizedType !== TASK_FLOW_EMPLOYEE_TYPE) {
+    return null;
   }
   return normalizedValue || null;
 }
@@ -332,19 +322,15 @@ export function withRootEmployeeOwner(
 
 export function resolveActorRefForType({
   allowBlank = false,
-  config,
   currentRef,
-  profiles,
   profileId,
   previousType,
   employees,
   type,
 }: {
   allowBlank?: boolean;
-  config: TaskFlowConfig;
   currentRef: unknown;
   previousType?: unknown;
-  profiles: TaskFlowProfile[];
   profileId: string;
   employees: TaskFlowEmployeeOption[];
   type: unknown;
@@ -363,13 +349,7 @@ export function resolveActorRefForType({
     }
     return options[0]?.value || (allowBlank ? "" : "");
   }
-  if (normalizedType === TASK_FLOW_HUMAN_TYPE) {
-    if (normalizedPreviousType === normalizedType && normalizedRef) {
-      return normalizedRef;
-    }
-    return config.task_flow_actor_ref || "web-user";
-  }
-  return normalizedRef;
+  return "";
 }
 
 export function isCanonicalEmployeeOwnerRef(value: unknown) {

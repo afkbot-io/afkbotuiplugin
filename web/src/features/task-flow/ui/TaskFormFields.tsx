@@ -6,7 +6,6 @@ import {
   TASK_FLOW_STATUS_OPTIONS,
 } from "@/features/task-flow/model/task-flow.api";
 import type {
-  TaskFlowConfig,
   TaskFlowProfile,
   TaskFlowProject,
   TaskFlowEmployeeOption,
@@ -14,7 +13,6 @@ import type {
 } from "@/features/task-flow/model/task-flow.types";
 
 type TaskFormFieldsProps = {
-  config: TaskFlowConfig;
   draft: TaskFlowTaskDraft;
   flows?: TaskFlowProject[];
   onChange: (draft: TaskFlowTaskDraft) => void;
@@ -29,7 +27,6 @@ type TaskFormFieldsProps = {
 };
 
 export function TaskFormFields({
-  config,
   draft,
   flows = [],
   onChange,
@@ -53,11 +50,9 @@ export function TaskFormFields({
     onChange({
       ...draft,
       owner_ref: resolveActorRefForType({
-        config,
         currentRef: draft.owner_ref,
         previousType: draft.owner_type,
         profileId,
-        profiles,
         employees,
         type: ownerType,
       }),
@@ -70,11 +65,9 @@ export function TaskFormFields({
       ...draft,
       reviewer_ref: resolveActorRefForType({
         allowBlank: true,
-        config,
         currentRef: draft.reviewer_ref,
         previousType: draft.reviewer_type,
         profileId,
-        profiles,
         employees,
         type: reviewerType,
       }),
@@ -157,7 +150,6 @@ export function TaskFormFields({
             </select>
           </label>
           <ActorRefField
-            config={config}
             label="Assignee"
             name="owner_ref"
             onChange={(value) => handleFieldChange("owner_ref", value)}
@@ -179,7 +171,6 @@ export function TaskFormFields({
         </label>
         <ActorRefField
           allowBlank
-          config={config}
           label="Reviewer"
           name="reviewer_ref"
           onChange={(value) => handleFieldChange("reviewer_ref", value)}

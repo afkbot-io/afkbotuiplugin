@@ -344,6 +344,29 @@ function createApi({
               task_id: taskId,
             },
           ],
+          recent_wakes: [
+            {
+              coalesced_count: 2,
+              created_at: "2026-04-21T12:05:00.000Z",
+              id: "wake-1",
+              owner_ref: "cto",
+              owner_type: "employee",
+              reason_code: "task_created",
+              status: "pending",
+              task_id: taskId,
+            },
+          ],
+          relations: [
+            {
+              created_at: "2026-04-21T12:03:00.000Z",
+              id: "rel-1",
+              is_blocking: true,
+              relation_type: "blocked_by",
+              satisfied_on_status: "completed",
+              source_task_id: taskId,
+              target_task_id: "task-child",
+            },
+          ],
           task,
           task_documents: documents.get(`task:${taskId}`) || [],
         },
@@ -690,7 +713,10 @@ describe("TaskFlowPage", () => {
     expect(within(knowledgeSection).getByText("Flow plan")).toBeInTheDocument();
     const docsCopy = within(knowledgeSection).getByText("Latest flow status").compareDocumentPosition(within(knowledgeSection).getByText("Flow plan"));
     expect(docsCopy & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(knowledgeSection).getByText("wake_requested")).toBeInTheDocument();
+    expect(within(knowledgeSection).queryByText("wake_requested")).not.toBeInTheDocument();
+    expect(within(knowledgeSection).getByText("Task Flow v2")).toBeInTheDocument();
+    expect(within(knowledgeSection).getByText("task_created", { exact: false })).toBeInTheDocument();
+    expect(within(knowledgeSection).getByText("task-child", { exact: false })).toBeInTheDocument();
 
     await user.selectOptions(within(knowledgeSection).getByLabelText("Document"), "handoff");
     await user.clear(within(knowledgeSection).getByLabelText("Title"));
@@ -1312,7 +1338,7 @@ describe("TaskFlowPage", () => {
     expect(await screen.findByText("Task Flow")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Settings" }));
     const dialog = await screen.findByRole("dialog", { name: "Task Flow Settings" });
-    expect(within(dialog).getByText(/validated human operator/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/attributed by the server/i)).toBeInTheDocument();
 
     const pollInput = screen.getByDisplayValue("5");
     await user.clear(pollInput);

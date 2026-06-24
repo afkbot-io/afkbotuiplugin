@@ -1,6 +1,5 @@
 import { TaskFormFields } from "@/features/task-flow/ui/TaskFormFields";
 import type {
-  TaskFlowConfig,
   TaskFlowProfile,
   TaskFlowProject,
   TaskFlowEmployeeOption,
@@ -11,7 +10,6 @@ import { ModalDialog } from "@/shared/ui/ModalDialog";
 
 type CreateTaskModalProps = {
   busy: boolean;
-  config: TaskFlowConfig;
   draft: TaskFlowTaskDraft;
   error: string;
   flows: TaskFlowProject[];
@@ -27,7 +25,6 @@ type CreateTaskModalProps = {
 
 export function CreateTaskModal({
   busy,
-  config,
   draft,
   error,
   flows,
@@ -54,7 +51,6 @@ export function CreateTaskModal({
     >
         {error ? <div className="inline-alert inline-alert--danger">{error}</div> : null}
         <TaskFormFields
-          config={config}
           draft={draft}
           flows={flows}
           onChange={onDraftChange}
